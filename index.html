@@ -1,29 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cargoworks.es – Bike Logistics</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Erica+One&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    .hero-title {
+      font-family: 'Erica One', sans-serif;
+      font-size: clamp(3rem, 10vw, 8rem); /* responsive */
+      line-height: 1.1;
+      text-transform: uppercase;
+      letter-spacing: -0.02em;
+
+      /* Gradient: brighter, bluish deep purple → shiny violet */
+      background: linear-gradient(90deg, #2a0066 0%, #7a2cff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      color: transparent;
+
+      /* Subtle shadow for readability */
+      text-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+  </style>
 </head>
-<body class="bg-white text-gray-900 flex flex-col items-center justify-center min-h-screen px-4">
+<body class="bg-white text-gray-900 flex flex-col items-center justify-center min-h-screen px-4 text-center">
 
   <!-- Logo -->
   <div class="mt-10">
-    <img src="cargoworks_logo.png" alt="Cargoworks Logo" class="w-40 h-40 mx-auto">
+    <img src="cargoworks_logo.png" alt="Cargoworks Logo" class="w-32 h-32 sm:w-40 sm:h-40 mx-auto">
   </div>
 
-<!-- Hero Section with Original Colors and No Glitch -->
-<h1 class="text-5xl md:text-7xl font-bold text-center mt-6 font-[Bebas+Neue] bg-clip-text text-transparent" style="background: linear-gradient(to right, #1e3a8a, #7c3aed); -webkit-background-clip: text;">
-  CARGOWORKS
-</h1>
-<p class="text-lg md:text-xl text-gray-600 text-center mt-4 px-4">
-  Reliable and socially conscious Bike logistics service. Made for Barcelona with Love.
-</p>
+  <!-- Hero Title -->
+  <h1 class="hero-title mt-6 text-center">CARGOWORKS</h1>
+  <h2 class="hero-caption mt-1 text-center">Reliable and socially conscious Bike Logistics service. For Barcelona, with Love.
 
   <!-- Contact buttons -->
-  <div class="flex flex-col sm:flex-row gap-4 mt-8">
+  <div class="flex flex-col sm:flex-row gap-4 mt-8 justify-center">
     <a href="https://wa.me/34608081955" target="_blank" 
        class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-6 rounded-lg shadow-md text-center">
        WhatsApp
@@ -39,16 +60,16 @@
   </div>
 
   <!-- Zone Map / Pricing -->
-  <div class="mt-12 max-w-xl w-full">
+  <div class="mt-12 max-w-xl w-full mx-auto">
     <h2 class="text-xl font-semibold text-center mb-4">Pricing Zones</h2>
-    <img src="cargoworks_zones_blue.png" alt="Delivery Zones" class="rounded-xl shadow-md w-full">
+    <img src="cargoworks_zones_blue.png" alt="Delivery Zones" class="rounded-xl shadow-md w-full mx-auto">
     <p class="text-sm text-gray-500 text-center mt-2">Contact us for details on weight, timing, and weekend deliveries.</p>
   </div>
 
   <!-- Conditions -->
-  <div class="mt-12 max-w-xl w-full">
+  <div class="mt-12 max-w-xl w-full mx-auto">
     <h2 class="text-xl font-semibold text-center mb-4">Additional Conditions</h2>
-    <img src="cargoworks_conditions_blue.png" alt="Conditions" class="rounded-xl shadow-md w-full">
+    <img src="cargoworks_conditions_blue.png" alt="Conditions" class="rounded-xl shadow-md w-full mx-auto">
   </div>
 
   <!-- Footer -->
