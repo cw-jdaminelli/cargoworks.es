@@ -13,9 +13,70 @@
     <img src="cargoworks_logo.png" alt="Cargoworks Logo" class="w-40 h-40 mx-auto">
   </div>
 
-  <!-- Company name -->
-  <h1 class="text-3xl font-bold mt-6 text-center">CARGOWORKS</h1>
-  <p class="text-lg text-gray-600 text-center mt-2">Reliable and socially conscious Bike logistics service. Made for Barcelona with Love.</p>
+<!-- Hero Section with Font, Color, and Glitch -->
+<h1 class="text-4xl md:text-6xl font-bold text-center mt-6 font-[Oswald] glitch-hero bg-clip-text text-transparent">
+  CARGOWORKS
+</h1>
+<p class="text-lg md:text-xl text-gray-600 text-center mt-4 px-4">
+  Reliable and socially conscious Bike logistics service. Made for Barcelona with Love.
+</p>
+
+<!-- Add to <head> or <style> tag (before </body>) for glitch and gradient -->
+<style>
+  .glitch-hero {
+    background: linear-gradient(to right, #1e3a8a, #7c3aed); /* Deep metallic blue to purple */
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    position: relative;
+    animation: glitch 2s infinite;
+  }
+  .glitch-hero::before,
+  .glitch-hero::after {
+    content: attr(data-text); /* Duplicate text for layers */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .glitch-hero::before {
+    animation: glitch-1 0.5s infinite;
+    z-index: -1;
+    color: #1e40af; /* Deeper blue shift */
+    clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%);
+  }
+  .glitch-hero::after {
+    animation: glitch-2 0.5s infinite reverse;
+    z-index: -2;
+    color: #8b5cf6; /* Purple shift */
+    clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%);
+  }
+  @keyframes glitch {
+    0%, 100% { transform: translate(0); }
+    10% { transform: translate(-2px, -2px); }
+    20% { transform: translate(2px, -1px); }
+    30% { transform: translate(-1px, 2px); }
+    40% { transform: translate(1px, -2px); }
+    50% { transform: translate(-2px, 1px); }
+    60% { transform: translate(2px, 2px); }
+    70% { transform: translate(-1px, -1px); }
+    80% { transform: translate(1px, 1px); }
+    90% { transform: translate(-2px, 2px); }
+  }
+  @keyframes glitch-1 {
+    0%, 100% { transform: translate(0); }
+    50% { transform: translate(-1px, 1px); }
+  }
+  @keyframes glitch-2 {
+    0%, 100% { transform: translate(0); }
+    50% { transform: translate(1px, -1px); }
+  }
+  /* Mobile Responsiveness */
+  @media (max-width: 768px) {
+    .glitch-hero { animation-duration: 3s; } /* Slower on mobile for smoothness */
+  }
+</style>
 
   <!-- Contact buttons -->
   <div class="flex flex-col sm:flex-row gap-4 mt-8">
