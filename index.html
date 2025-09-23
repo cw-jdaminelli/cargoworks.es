@@ -14,17 +14,38 @@
     <img src="cargoworks_logo.png" alt="Cargoworks Logo" class="w-40 h-40 mx-auto">
   </div>
 
-<!-- Hero Section with Font, Color, and Glitch -->
-<h1 class="text-5xl md:text-7xl font-bold text-center mt-6 font-[Bebas+Neue] glitch-hero bg-clip-text text-transparent relative">
-  CARGOWORKS
-  <span class="absolute inset-0" aria-hidden="true" data-text="CARGOWORKS"></span>
-</h1>
-<p class="text-lg md:text-xl text-gray-600 text-center mt-4 px-4">
-  Reliable and socially conscious Bike logistics service. Made for Barcelona with Love.
-</p>
+<!-- Hero Section with Glitch and Matrix -->
+<div class="relative bg-black/95 py-12 overflow-hidden">
+  <div class="absolute inset-0 matrix-bg opacity-10"></div>
+  <div class="mx-auto max-w-5xl px-4 relative">
+    <h1 class="text-5xl md:text-7xl font-bold text-center mt-6 font-[Bebas+Neue] glitch-hero bg-clip-text text-transparent">
+      CARGOWORKS
+    </h1>
+    <p class="text-lg md:text-xl text-gray-300 text-center mt-4 px-4">
+      Reliable and socially conscious Bike logistics service. Made for Barcelona with Love.
+    </p>
+  </div>
+</div>
 
 <!-- Add to <head> or <style> tag (before </body>) -->
 <style>
+  /* Matrix Background (like itnig.net) */
+  .matrix-bg {
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 255, 0, 0.1),
+      rgba(0, 255, 0, 0.1) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+    animation: matrix-scroll 10s linear infinite;
+  }
+  @keyframes matrix-scroll {
+    0% { background-position: 0 0; }
+    100% { background-position: 0 -100px; }
+  }
+
+  /* Glitch Effect (itnig.net-inspired) */
   .glitch-hero {
     background: linear-gradient(to right, #1e3a8a, #7c3aed); /* Metallic blue to purple */
     background-clip: text;
@@ -35,35 +56,38 @@
   }
   .glitch-hero::before,
   .glitch-hero::after {
-    content: attr(data-text);
+    content: "CARGOWORKS";
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: linear-gradient(to right, #facc15, #eab308); /* Yellow shift like itnig */
+    background: linear-gradient(to right, #facc15, #eab308); /* Yellow glitch like itnig */
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    clip-path: inset(0 10% 0 0); /* Partial reveal */
-    overflow: hidden;
+    clip-path: inset(2px 5% 2px 5%);
   }
   .glitch-hero::before {
-    animation: glitch-flicker 1.5s infinite;
+    animation: glitch-shift 1.5s infinite;
     transform: translate(-1px, 1px);
+    filter: hue-rotate(10deg);
   }
   .glitch-hero::after {
-    animation: glitch-flicker 1.5s infinite 0.5s;
+    animation: glitch-shift 1.5s infinite 0.3s;
     transform: translate(1px, -1px);
+    filter: hue-rotate(-10deg);
   }
-  @keyframes glitch-flicker {
-    0%, 100% { opacity: 1; }
-    10%, 30%, 50%, 70%, 90% { opacity: 0.7; transform: translate(0); }
-    20%, 40%, 60%, 80% { opacity: 0.9; transform: translateY(-1px) scale(1.01); }
+  @keyframes glitch-shift {
+    0%, 70%, 100% { transform: translate(0, 0); opacity: 0.9; }
+    10%, 30% { transform: translate(-1px, 1px); opacity: 0.6; }
+    20%, 40% { transform: translate(1px, -1px); opacity: 0.7; }
+    50%, 60% { transform: translate(0, 0); opacity: 0.8; }
   }
   /* Mobile Responsiveness */
   @media (max-width: 768px) {
-    .glitch-hero { text-4xl md:text-6xl; animation-duration: 2s; } /* Slower, smaller on mobile */
+    .glitch-hero { text-4xl md:text-6xl; animation-duration: 2s; }
+    .matrix-bg { animation-duration: 15s; } /* Slower scroll on mobile */
   }
 </style>
 
