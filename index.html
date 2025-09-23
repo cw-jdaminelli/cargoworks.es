@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cargoworks.es – Bike Logistics</title>
@@ -14,67 +15,55 @@
   </div>
 
 <!-- Hero Section with Font, Color, and Glitch -->
-<h1 class="text-4xl md:text-6xl font-bold text-center mt-6 font-[Oswald] glitch-hero bg-clip-text text-transparent">
+<h1 class="text-5xl md:text-7xl font-bold text-center mt-6 font-[Bebas+Neue] glitch-hero bg-clip-text text-transparent relative">
   CARGOWORKS
+  <span class="absolute inset-0" aria-hidden="true" data-text="CARGOWORKS"></span>
 </h1>
 <p class="text-lg md:text-xl text-gray-600 text-center mt-4 px-4">
   Reliable and socially conscious Bike logistics service. Made for Barcelona with Love.
 </p>
 
-<!-- Add to <head> or <style> tag (before </body>) for glitch and gradient -->
+<!-- Add to <head> or <style> tag (before </body>) -->
 <style>
   .glitch-hero {
-    background: linear-gradient(to right, #1e3a8a, #7c3aed); /* Deep metallic blue to purple */
+    background: linear-gradient(to right, #1e3a8a, #7c3aed); /* Metallic blue to purple */
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     position: relative;
-    animation: glitch 2s infinite;
+    filter: drop-shadow(0 0 4px rgba(124, 58, 237, 0.5)); /* Metallic glow */
   }
   .glitch-hero::before,
   .glitch-hero::after {
-    content: attr(data-text); /* Duplicate text for layers */
+    content: attr(data-text);
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
+    background: linear-gradient(to right, #facc15, #eab308); /* Yellow shift like itnig */
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    clip-path: inset(0 10% 0 0); /* Partial reveal */
+    overflow: hidden;
   }
   .glitch-hero::before {
-    animation: glitch-1 0.5s infinite;
-    z-index: -1;
-    color: #1e40af; /* Deeper blue shift */
-    clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%);
+    animation: glitch-flicker 1.5s infinite;
+    transform: translate(-1px, 1px);
   }
   .glitch-hero::after {
-    animation: glitch-2 0.5s infinite reverse;
-    z-index: -2;
-    color: #8b5cf6; /* Purple shift */
-    clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%);
+    animation: glitch-flicker 1.5s infinite 0.5s;
+    transform: translate(1px, -1px);
   }
-  @keyframes glitch {
-    0%, 100% { transform: translate(0); }
-    10% { transform: translate(-2px, -2px); }
-    20% { transform: translate(2px, -1px); }
-    30% { transform: translate(-1px, 2px); }
-    40% { transform: translate(1px, -2px); }
-    50% { transform: translate(-2px, 1px); }
-    60% { transform: translate(2px, 2px); }
-    70% { transform: translate(-1px, -1px); }
-    80% { transform: translate(1px, 1px); }
-    90% { transform: translate(-2px, 2px); }
-  }
-  @keyframes glitch-1 {
-    0%, 100% { transform: translate(0); }
-    50% { transform: translate(-1px, 1px); }
-  }
-  @keyframes glitch-2 {
-    0%, 100% { transform: translate(0); }
-    50% { transform: translate(1px, -1px); }
+  @keyframes glitch-flicker {
+    0%, 100% { opacity: 1; }
+    10%, 30%, 50%, 70%, 90% { opacity: 0.7; transform: translate(0); }
+    20%, 40%, 60%, 80% { opacity: 0.9; transform: translateY(-1px) scale(1.01); }
   }
   /* Mobile Responsiveness */
   @media (max-width: 768px) {
-    .glitch-hero { animation-duration: 3s; } /* Slower on mobile for smoothness */
+    .glitch-hero { text-4xl md:text-6xl; animation-duration: 2s; } /* Slower, smaller on mobile */
   }
 </style>
 
