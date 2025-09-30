@@ -1,0 +1,617 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600;700;800&display=swap');
+
+/* ===== Glitch Effect for Hero Title ===== */
+.glitch {
+  position: relative;
+  color: inherit;
+  display: inline-block;
+}
+
+/* ===== Theme & layout variables (easy tuning) ===== */
+:root {
+  /* block sizing */
+  --block-min: 220px;    /* minimum width of a block */
+  --block-preferred: 28%; /* preferred flex-basis */
+  --block-max: 320px;    /* maximum width of a block */
+  --img-aspect: 16 / 9;  /* aspect ratio for .img-wrap (use '1 / 1' for square) */
+
+  /* background animation */
+  --bg-animation-duration: 20s; /* controls the speed of the gradientFlow animation */
+}
+
+/* Image / block content balance */
+:root {
+  /* How tall the image area should be inside a block. Can be '40%' (percent of block height), '160px', or 'auto'.
+     If you use a percent it will try to use that percentage of the block's height (block min-height applies).
+     Default 'auto' keeps the aspect-ratio box size. */
+  --block-image-height: 50%;
+
+  /* Default crop focus: use any object-position values like 'center top', '40% 20%', 'center center' */
+  --img-position: bottom 50%;
+}
+
+/* Hero caption sizing */
+:root {
+  --hero-caption-height: 4.5rem;   /* height of the caption box */
+  --hero-caption-max-size: 18px;   /* starting font-size for caption autosize (slightly larger) */
+}
+
+/* Tie the hero title size to a variable so other elements (caption) can match it */
+:root {
+  --hero-title-size: clamp(5rem, 9vw, 9rem);
+}
+
+/* Apply modern font across body (keep headline fonts untouched) */
+body {
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+.glitch::before, .glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  width: 110%;
+  z-index: -1;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+  color: inherit;
+}
+.glitch::before {
+  top: 10px;
+  left: 15px;
+  color: #e0287d;
+}
+.glitch::after {
+  top: 5px;
+  left: -10px;
+  color: #1bc7fb;
+}
+.glitch span {
+  animation: paths 5s step-end infinite;
+}
+.glitch::before {
+  animation: paths 5s step-end infinite, opacity 5s step-end infinite, font 8s step-end infinite, movement 10s step-end infinite;
+}
+.glitch::after {
+  animation: paths 5s step-end infinite, opacity 5s step-end infinite, font 7s step-end infinite, movement 8s step-end infinite;
+}
+@keyframes paths {
+  0% { clip-path: polygon(0% 43%,83% 43%,83% 22%,23% 22%,23% 24%,91% 24%,91% 26%,18% 26%,18% 83%,29% 83%,29% 17%,41% 17%,41% 39%,18% 39%,18% 82%,54% 82%,54% 88%,19% 88%,19% 4%,39% 4%,39% 14%,76% 14%,76% 52%,23% 52%,23% 35%,19% 35%,19% 8%,36% 8%,36% 31%,73% 31%,73% 16%,1% 16%,1% 56%,50% 56%,50% 8%); }
+  5% { clip-path: polygon(0% 29%,44% 29%,44% 83%,94% 83%,94% 56%,11% 56%,11% 64%,94% 64%,94% 70%,88% 70%,88% 32%,18% 32%,18% 96%,10% 96%,10% 62%,9% 62%,9% 84%,68% 84%,68% 50%,52% 50%,52% 55%,35% 55%,35% 87%,25% 87%,25% 39%,15% 39%,15% 88%,52% 88%); }
+  30% { clip-path: polygon(0% 53%,93% 53%,93% 62%,68% 62%,68% 37%,97% 37%,97% 89%,13% 89%,13% 45%,51% 45%,51% 88%,17% 88%,17% 54%,81% 54%,81% 75%,79% 75%,79% 76%,38% 76%,38% 28%,61% 28%,61% 12%,55% 12%,55% 62%,68% 62%,68% 51%,0% 51%,0% 92%,63% 92%,63% 4%,65% 4%); }
+  45% { clip-path: polygon(0% 33%,2% 33%,2% 69%,58% 69%,58% 94%,55% 94%,55% 25%,33% 25%,33% 85%,16% 85%,16% 19%,5% 19%,5% 20%,79% 20%,79% 96%,93% 96%,93% 50%,5% 50%,5% 74%,55% 74%,55% 57%,96% 57%,96% 59%,87% 59%,87% 65%,82% 65%,82% 39%,63% 39%,63% 92%,4% 92%,4% 36%,24% 36%,24% 70%,1% 70%,1% 43%,15% 43%,15% 28%,23% 28%,23% 71%,90% 71%,90% 86%,97% 86%,97% 1%,60% 1%,60% 67%,71% 67%,71% 91%,17% 91%,17% 14%,39% 14%,39% 30%,58% 30%,58% 11%,52% 11%,52% 83%,68% 83%); }
+  76% { clip-path: polygon(0% 26%,15% 26%,15% 73%,72% 73%,72% 70%,77% 70%,77% 75%,8% 75%,8% 42%,4% 42%,4% 61%,17% 61%,17% 12%,26% 12%,26% 63%,73% 63%,73% 43%,90% 43%,90% 67%,50% 67%,50% 41%,42% 41%,42% 46%,50% 46%,50% 84%,96% 84%,96% 78%,49% 78%,49% 25%,63% 25%,63% 14%); }
+  90% { clip-path: polygon(0% 41%,13% 41%,13% 6%,87% 6%,87% 93%,10% 93%,10% 13%,89% 13%,89% 6%,3% 6%,3% 8%,16% 8%,16% 79%,0% 79%,0% 99%,92% 99%,92% 90%,5% 90%,5% 60%,0% 60%,0% 48%,89% 48%,89% 13%,80% 13%,80% 43%,95% 43%,95% 19%,80% 19%,80% 85%,38% 85%,38% 62%); }
+  1%,7%,33%,47%,78%,93% { clip-path: none; }
+}
+@keyframes movement {
+  0% { top: 0px; left: -20px; }
+  15% { top: 10px; left: 10px; }
+  60% { top: 5px; left: -10px; }
+  75% { top: -5px; left: 20px; }
+  100% { top: 10px; left: 5px; }
+}
+@keyframes opacity {
+  0% { opacity: 0.1; }
+  5% { opacity: 0.7; }
+  30% { opacity: 0.4; }
+  45% { opacity: 0.6; }
+  76% { opacity: 0.4; }
+  90% { opacity: 0.8; }
+  1%,7%,33%,47%,78%,93% { opacity: 0; }
+}
+@keyframes font {
+  0% { font-weight: 100; color: #e0287d; filter: blur(3px); }
+  20% { font-weight: 500; color: #fff; filter: blur(0); }
+  50% { font-weight: 300; color: #1bc7fb; filter: blur(2px); }
+  60% { font-weight: 700; color: #fff; filter: blur(0); }
+  90% { font-weight: 500; color: #e0287d; filter: blur(6px); }
+}
+/* ===== Reset ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; min-height: 100%; }
+body { line-height: 1.5; overflow-x: hidden; background: transparent; }
+
+/* ===== Dedicated animated background element ===== */
+.bg-anim {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: 300% 300%;
+  background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
+  filter: saturate(1.1) contrast(1.05);
+}
+/* Light theme gradient */
+body.light .bg-anim {
+  /* light theme — brighter, high-contrast accents but still soft */
+  background-image: linear-gradient(-45deg, #f6e6ff 0%, #ffd7e6 30%, #fff9f3 55%, #fff1b6 75%, #d0f0ff 100%);
+}
+/* Dark theme gradient - deeper hues */
+body.dark .bg-anim {
+  /* dark theme — deep hues with cool accents */
+  background-image: linear-gradient(-45deg, #1a0f2d 0%, #2d1a4d 30%, #231a36 55%, #143249 75%, #0b1b2a 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+/* ===== Split hero (two-column top blocks) ===== */
+.split-hero.container {
+  display: flex;
+  width: 100%;
+  height: 60vh;
+  margin-top: 0;
+}
+.split-hero.container > div {
+  position: relative;
+  flex: 1;
+  min-height: 100%;
+  transition: flex 0.5s ease-out;
+  color: #03588d;
+  font-family: sans-serif;
+  text-align: center;
+  margin: 0; /* reset offsets — layout is edge-to-edge */
+}
+.split-hero.container .left {
+  flex-shrink: 0;
+  width: 50%;
+  background-color: #ff4c5b; /* fallback */
+  /* CSS file is in css/effects/, so ../../img/ points to repo img/ folder */
+  background-image: url('../../img/hero-left.jpg'); /* replace with your uploaded image */
+  background-size: cover;
+  background-position: center;
+}
+.split-hero.container .left:hover { flex: 1.5; }
+.split-hero.container .left h2 {
+  position: absolute;
+  top: 30%;
+  left: 40%;
+  transform: translate(-50%,-50%);
+  font-family: 'Adamina', serif;
+  color: #fff;
+  background: rgba(0,0,0,0.25);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.split-hero.container .right {
+  background: #c7dffe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.split-hero.container .right .hero-text {
+  max-width: 540px;
+  text-align: left;
+}
+.split-hero.container .right h1 {
+  font-family: 'Adamina', serif;
+  margin: 0 0 0.5rem 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  color: #03588d;
+}
+.split-hero.container .right h5 {
+  font-family: 'Adamina', serif;
+  color: #34241f;
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+.split-hero.container .right .btn { margin-top: 0.75rem; }
+
+/* responsive tweak */
+@media (max-width: 800px) {
+  .hero-gif { width: 0.6em; max-width: 4.5rem; } 
+  /* hide the decorative GIF on mobile for a cleaner header */
+  .hero-gif { display: none !important; }
+  .hero-gif { max-height: 48px; width: auto; }
+  .split-hero.container .left h2 { left: 50%; top: 25%; }
+}
+
+/* ===== HERO / Banner ===== */
+.hero-section {
+  position: relative;
+  width: 100vw;
+  height: 43vh;
+  padding-top: 4rem; /* bring the title slightly higher */
+  padding-bottom: 6rem; /* internal padding reduced; external margin will create separation */
+  display: flex;
+  align-items: flex-start; /* place title near the top */
+  justify-content: center;
+  background-image: url('https://images.unsplash.com/photo-1556463066-ecc2154f6852?ixlib=rb-4.1.0&q=80&fm=jpg&w=2000');
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: 50% 100%;
+}
+
+/*add spacing between bottom blocks*/
+/* top overlay sits beneath the nav to keep links legible over the image */
+.hero-section::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 18%;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.98) 0%,
+    rgba(255,255,255,0.8) 40%,
+    rgba(255,255,255,0) 100%
+  );
+  z-index: 1;
+}
+body.dark .hero-section::after {
+  background: linear-gradient(
+    to bottom,
+    rgba(15,10,30,0.98) 0%,
+    rgba(15,10,30,0.8) 40%,
+    rgba(15,10,30,0) 100%
+  );
+}
+
+/* create a small external gap after the banner to separate it from following content */
+.hero-section { margin-bottom: 2.25rem; }
+
+/* ===== Nav ===== */
+.hero-nav {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.1rem 3rem;
+  z-index: 2;
+}
+.nav-links {
+  list-style: none;
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+.nav-links a {
+  text-decoration: none;
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 700;
+  font-size: 1.8rem;
+  color: #2d1a4d;             /* Light theme nav */
+}
+body.dark .nav-links a { color: #fdfdfd; }  /* Dark theme nav */
+
+.nav-controls { display: flex; gap: 1rem; align-items: center; }
+
+/* ===== Hero title ===== */
+.hero-title {
+  position: relative;
+  z-index: 3;
+  margin: 0;
+  padding-top: 0.1rem;
+  font-family: 'Bebas Neue', sans-serif;
+  color: #ffffff;
+  font-weight: 900;
+  font-size: var(--hero-title-size);
+  text-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+
+/* Hero inner wrapper to place a small GIF to the left of the title */
+.hero-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.25rem; /* slightly larger gap between GIF and title */
+  z-index: 3;
+}
+.hero-gif {
+  /* make the GIF slightly smaller than the title: use a fraction of the hero title font-size
+     since the title uses --hero-title-size, we can approximate with an em based on that size.
+     0.65em keeps the GIF smaller than the title height. */
+  width: 5.5rem;
+  max-width: 5.5rem; /* cap size on very large screens */
+  height: auto;
+  display: block;
+  transform: translateY(4%); /* small nudge to optically center with title */
+}
+
+@media (max-width: 640px) {
+  .hero-gif { width: auto; }
+  .hero-inner { gap: 0.6rem; }
+  .hero-title { font-size: clamp(1.8rem, 8vw, 2.6rem); }
+}
+
+.hero-caption {
+  margin: 1rem auto 2rem auto;
+  text-align: center;
+  max-width: 900px;
+  font-size: var(--hero-caption-max-size, 1.15rem);
+  /* allow the caption to grow naturally instead of forcing a specific height */
+  height: auto !important;
+  min-height: 0;
+  display: block;
+  align-items: unset;
+  justify-content: unset;
+  overflow: visible;
+  white-space: normal; /* allow wrapping */
+}
+
+/* Blocky, imposing caption variant that visually sits in the same rectangle as the hero title */
+.hero-caption.hero-caption--match {
+  font-family: 'Oswald', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0 0.5rem; /* keep minimal padding for readability */
+  background: transparent; /* remove block background so text floats on the animated BG */
+  backdrop-filter: none;
+  border-radius: 0;
+  box-shadow: none;
+  color: inherit;
+  display: block; /* keep block-level for reliable centering via margin:auto */
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+  align-items: unset;
+  justify-content: unset;
+  width: auto; /* JS will set exact width to match the hero title */
+}
+
+/* Position the caption between the banner and the page content */
+.hero-caption {
+  position: relative;
+  display: block;
+  text-align: center;
+  max-width: 1280px;
+  width: min(94%, 1280px);
+    margin: 0.5rem auto 1.75rem; /* relies on hero margin-bottom for separation */
+  white-space: normal;
+  overflow: visible;
+  padding: 0 0.5rem;
+  pointer-events: auto;
+  text-shadow: 0 6px 18px rgba(0,0,0,0.25);
+}
+
+/* Dark theme blending */
+body.dark .hero-caption.hero-caption--match { color: #f7f7fb; }
+
+/* inner wrapper used by JS autosize/stretch logic */
+.hero-caption .fit-inner {
+  display: inline-block;
+  transform-origin: center center;
+  white-space: normal;
+}
+
+/* ===== Smaller block styles (scaled-down variant of user's design) ===== */
+.blocks.container {
+  display: flex;
+  gap: 1rem;
+  padding: 2rem 1rem;
+  margin-top: 2rem; /* bring blocks closer to caption */
+  justify-content: center;
+  flex-wrap: wrap; /* allow wrapping to multiple rows */
+  align-items: stretch;
+}
+.blocks.container > .block {
+  /* flexible sizing using variables */
+  flex: 1 1 clamp(var(--block-min, 220px), var(--block-preferred, 28%), var(--block-max, 320px));
+  min-height: 200px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--block-bg, #ffffff);
+  border: 1px solid rgba(16,24,40,0.06);
+  box-shadow: 0 10px 30px rgba(10,10,10,0.10);
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+  display: flex;
+  flex-direction: column;
+}
+/* Theme-aware block background */
+body.light .blocks.container > .block { --block-bg: #ffffff; color: #053559; }
+body.dark .blocks.container > .block { --block-bg: #2f2244; color: #e8e8f8; border-color: rgba(255,255,255,0.04); box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+.blocks.container > .block .img-wrap {
+  width: 100%;
+  aspect-ratio: var(--img-aspect, 16 / 9); /* consistent aspect ratio for images */
+  /* If a specific height is requested, override the aspect-ratio sizing and set a fixed height */
+  height: var(--block-image-height, auto);
+  /* make this the containing block for the absolutely-positioned <img> */
+  position: relative;
+  background: #f5f7fa;
+  overflow: hidden;
+}
+.blocks.container > .block .img-wrap img {
+  position: absolute;
+  inset: 0; /* top:0; right:0; bottom:0; left:0 */
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* fill width/height while preserving aspect ratio (crops as needed) */
+  /* Use the CSS variable --img-position to control the crop anchor. Set per-block with inline style or helper classes.
+     Examples:
+       <div class="img-wrap" style="--img-position: 40% 20%"><img ...>
+       <div class="img-wrap img-pos-top"><img ...>
+  */
+  object-position: var(--img-position, center center); /* default to center center */
+  display: block;
+  max-width: none;
+  max-height: none;
+}
+/*set spacing between bottom blocks*/
+.section + .section {
+  margin-top: 24px;     /* add 24px between stacked sections */
+}
+
+/* Position helpers - apply the class to the .img-wrap to control the crop anchor.
+   Use helper classes or override inline with `style="--img-position: <x%> <y%>"` on the .img-wrap element.
+*/
+.blocks.container > .block .img-wrap.img-pos-top img { object-position: center top; }
+.blocks.container > .block .img-wrap.img-pos-center img { object-position: center center; }
+.blocks.container > .block .img-wrap.img-pos-bottom img { object-position: center bottom; }
+
+/* If you'd rather let the image scale to width without cropping, switch to:
+   .img-wrap img { position: static; width:100%; height:auto; object-fit: contain; }
+   But that will leave letterboxing/blank space in taller/shorter wrappers.
+*/
+.blocks.container > .block .block-inner {
+  padding: 1rem 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start; /* align text to top */
+  gap: 5px; /* vertical gap between h3 and p inside blocks */
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: inherit;
+  margin-bottom: 2rem;
+  text-align: top;
+  height: 150px;
+text-justify: left;
+  background: transparent;
+}
+.blocks.container > .block:hover { transform: translateY(-6px); box-shadow: 0 12px 30px rgba(0,0,0,0.12); }
+
+@media (max-width: 880px) {
+  .blocks.container { flex-direction: column; align-items: stretch; }
+  .blocks.container > .block { width: 100%; }
+  .hero-caption { position: relative; margin: 2.5rem auto 1rem; width: calc(100% - 2rem); font-size: 15px; }
+  /* crop the hero on mobile so the image frames tighter like the desktop crop */
+  .hero-section { padding-bottom: 4.5rem; height: 30vh; background-position: 50% 85%; background-size: cover; }
+}
+
+/* (caption now positioned inside the hero; styles consolidated above) */
+body.dark .hero-caption { color: #f8f8f8; }
+
+/* ===== Content ===== */
+.content {
+  max-width: 1000px;
+  margin: 0 auto 3rem;
+  padding: 0 1rem;
+  display: grid;
+  gap: rem;
+}
+.section {
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+.section h2 {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  font-weight: 800;
+}
+/* Light theme section style */
+body.light .section {
+  background: #fff9f7;
+  color: #2d1a4d;
+}
+body.light .section h2 { color: #6a4cff; }
+/* Dark theme section style */
+body.dark .section {
+  background: #291a44;
+  color: #f4f4f4;
+}
+body.dark .section h2 { color: #ff6fa8; }
+.zone-map {
+  width: 100%;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+}
+
+/* Ensure section content aligns to top and uses blocked layout */
+.section { display: flex; flex-direction: column; justify-content: flex-start; gap: 1rem; }
+.section p, .section ul, .section ol { margin: 0; }
+.section p { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+
+/* ===== Footer ===== */
+footer {
+  text-align: center;
+  padding: 2rem 1rem;
+  font-size: 0.9rem;
+  opacity: 0.85;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  color: inherit;
+}
+
+/* ===== Fancy Theme Toggle (CodePen-inspired) ===== */
+.visually-hidden { 
+  position: absolute !important;
+  height: 1px; width: 1px;
+  overflow: hidden;
+  clip: rect(1px, 1px, 1px, 1px);
+  white-space: nowrap;
+}
+.switch {
+  display: inline-flex;
+  align-items: center;
+  margin: 5px 0;
+  position: relative;
+}
+.switch .switch__toggle { cursor: pointer; }
+.switch [type=checkbox] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.switch .switch__toggle::before,
+.switch .switch__toggle::after {
+  content: '';
+  display: block;
+  margin: 0 3px;
+  transition: all 200ms cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+.switch .switch__toggle::before {
+  height: 1.2em; width: 2.2em;
+  border-radius: 999px;
+  opacity: 0.6;
+  border: 0.15rem solid #eef3f6;
+  background: linear-gradient(to bottom right, #0052D4, #65C7F7, #9CECFB);
+}
+.switch .switch__toggle::after {
+  position: absolute;
+  top: 50%;
+  transform: translate(0.3rem, -50%);
+  height: 0.7em; width: 0.7em; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0.08em 0.02em #fbee8d,
+              0 0 0.5em 0 #FFEB3B,
+              inset -0.06em -0.06em 0 0 #fbee8e,
+              inset -0.08em -0.08em 0 0.15em #fff5b2;
+}
+/* Checked states */
+.switch [type=checkbox]:checked + .switch__toggle::before {
+  background: linear-gradient(to top left, #021B79, #9CECFB);
+}
+.switch [type=checkbox]:checked + .switch__toggle::after {
+  background: transparent;
+  transform: translate(180%, -50%);
+  box-shadow: inset -0.045em -0.045em 0 0 #fbe7ef,
+              inset -0.14em -0.14em 0 0 #fffff7;
+}
+
+/* ===== Language Dropdown ===== */
+.lang-select {
+  appearance: none;
+  background: #fff;
+  border: 2px solid #2d1a4d;
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #2d1a4d;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.lang-select:hover { background: #f0f0f0; }
+body.dark .lang-select {
+  background: #2d1a4d;
+  color: #fff;
+  border-color: #fff;
+}
+body.dark .lang-select:hover { background: #3b2160; }
+
+/* ===== Small screens ===== */
+@media (max-width: 640px) {
+  .hero-nav { padding: 0.5rem 1rem; }
+  .nav-links a { font-size: 1.2rem; }
+  .hero-title { margin-bottom: 2vh; font-size: 2.5rem; }
+}
