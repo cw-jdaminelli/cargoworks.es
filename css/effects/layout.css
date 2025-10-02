@@ -17,7 +17,7 @@
   --img-aspect: 16 / 9;  /* aspect ratio for .img-wrap (use '1 / 1' for square) */
 
   /* background animation */
-  --bg-animation-duration: 20s; /* controls the speed of the gradientFlow animation */
+  --bg-animation-duration: 25s; /* controls the speed of the gradientFlow animation */
 }
 
 /* Image / block content balance */
@@ -128,12 +128,12 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 /* Light theme gradient */
 body.light .bg-anim {
   /* light theme — brighter, high-contrast accents but still soft */
-  background-image: linear-gradient(-45deg, #f6e6ff 0%, #ffd7e6 30%, #fff9f3 55%, #fff1b6 75%, #d0f0ff 100%);
+  background-image: linear-gradient(-25deg, #f6e6ff 0%, #b6fbb6 30%, #fff9f3 55%, #b6efff 75%, #cd9de8 100%);
 }
 /* Dark theme gradient - deeper hues */
 body.dark .bg-anim {
   /* dark theme — deep hues with cool accents */
-  background-image: linear-gradient(-45deg, #1a0f2d 0%, #2d1a4d 30%, #231a36 55%, #143249 75%, #0b1b2a 100%);
+  background-image: linear-gradient(-55deg, #1a0f2d 0%, #2d1a4d 30%, #102c0e 55%, #143249 75%, #2d052c 100%);
 }
 @keyframes gradientFlow {
   0%   { background-position:   0% 50%; }
@@ -217,7 +217,7 @@ body.dark .bg-anim {
 .hero-section {
   position: relative;
   width: 100vw;
-  height: 43vh;
+  height: 50vh;
   padding-top: 4rem; /* bring the title slightly higher */
   padding-bottom: 6rem; /* internal padding reduced; external margin will create separation */
   display: flex;
