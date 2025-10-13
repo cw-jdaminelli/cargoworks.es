@@ -1,54 +1,138 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cargoworks.es – Bike Logistics</title>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/>
+	<title>CARGOWORKS.es – Smart Logistics</title>
 
-  <!-- Google Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Antonio:wght@100..700&display=swap" rel="stylesheet">
+	<!-- Fonts -->
+	<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css">
 
-  <!-- Link CSS -->
-  <link rel="stylesheet" href="css/styles.css">
+	<!-- CSS -->
+	<link rel="stylesheet" href="css/effects/layout.css"/>
+
+	<!-- Preload hero images (Barcelona set) -->
+	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1468793195345-d9d67818016d?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1734872083965-025e07ac5912?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1698861560273-afb83a672ce6?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1507619579562-f2e10da1ec86?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1688199412486-b486eff757da?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1564221710304-0b37c8b9d729?q=80&w=1600&auto=format&fit=crop">
 </head>
 <body>
-  <nav>
-    <ul>
-      <li><a href="#about">About</a></li>
-      <li><a href="#services">Services</a></li>
-      <li><a href="#zones">Zones</a></li>
-    </ul>
-  </nav>
+	<!-- Animated background layer -->
+	<div class="bg-anim" aria-hidden="true"></div>
 
-  <section id="hero">
-    <h1>CARGOWORKS</h1>
-    <p>Fast, clean, and human-powered bike logistics for Barcelona</p>
-  </section>
+	<!-- Fixed nav strip -->
+	<header class="site-header">
+			<nav class="hero-nav">
+				<ul class="nav-links">
+				<li><a href="#about" id="navAbout" data-i18n="navAbout">About</a></li>
+				<li><a href="#services" id="navServices" data-i18n="navServices">Services</a></li>
+				<li><a href="#zones" id="navZones" data-i18n="navZones">Zones</a></li>
+			</ul>
+			<div class="nav-controls">
+				<label for="langSelect" class="visually-hidden">🌐</label>
+				<select id="langSelect" class="lang-select">
+					<option value="ca">Català</option>
+					<option value="es">Castellano</option>
+					<option value="pt">Português</option>
+					<option value="en" selected>English</option>
+				</select>
+			</div>
+		</nav>
+	</header>
 
-  <section id="about">
-    <h2>About Us</h2>
-    <p>We are a reliable and socially conscious bike logistics service in Barcelona.</p>
-  </section>
+	<!-- HERO (banner) -->
+	<section class="hero-section" id="top">
+		<div class="hero-inner">
+			<h1 class="hero-title">CARGOWORKS</h1>
+		</div>
+	</section>
 
-  <section id="services">
-    <h2>Services</h2>
-    <ul>
-      <li>Messenger & courier deliveries</li>
-      <li>Cargo bike consulting</li>
-      <li>Logistics solutions for businesses</li>
-    </ul>
-  </section>
+	<!-- central hero caption -->
+	<p class="hero-caption hero-caption--match" id="heroCaption" data-i18n="heroCaption">We’re Cargoworks — a crew of riders who know the city by heart. We deliver urgent parcels, meals and supplies with the speed of a local and the care of a neighbor. No corporate fluff, just honest, human-powered logistics: reliable, low-impact, and tuned to the rhythms of our streets. We show up on time, treat every drop-off like a promise, and keep the city moving without choking it. For businesses that want speed, accountability and a community edge, we’re the practical, professional choice — run by people who care.</p>
 
-  <section id="zones">
-    <h2>Zone Map & Prices</h2>
-    <img src="cargoworks_zones_blue.png" alt="Delivery Zones">
-  </section>
+	<!-- START sticky-cards preview (temporary) -->
+	<style>
+		.sc-empty { min-height: 34vh; padding: 3rem 1rem; background: rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; color:#fff; text-align:center; }
+		.sc-empty--top { margin-top: clamp(1.8rem, 4.2vw, 2.8rem); }
+		.sc-wrapper { height: auto; padding: clamp(3rem, 8vh, 6rem) 0; width: min(94vw, 1100px); margin: 0 auto; position: relative; }
+		.sc-card { width: 100%; height: clamp(320px, 58vh, 520px); background:#ffffff; border-radius:16px; padding: clamp(2.5rem, 5vw, 4rem); box-shadow:0 16px 48px rgba(0,0,0,0.18); display:flex; flex-direction:column; justify-content:flex-end; gap: 1rem; }
+		.sc-card h2 { font-family: 'Oswald', 'Inter', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; font-size: clamp(1.6rem, 4vw, 2.4rem); margin: 0; }
+		.sc-card p { font-family: 'Inter', system-ui, sans-serif; font-size: clamp(1rem, 2vw, 1.2rem); line-height: 1.6; margin: 0; }
+		@media (max-width:900px){ .sc-card{padding: clamp(2rem, 7vw, 3rem);} }
+		@media (max-width:560px){ .sc-empty{min-height: 28vh;} .sc-empty--top{margin-top: clamp(1.2rem, 6vw, 2rem);} .sc-card{padding: 1.75rem;} }
+	</style>
 
-  <footer>
-    <p>© 2025 Cargoworks – Bike Logistics Barcelona</p>
-  </footer>
+	<section class="sc-empty sc-empty--top"><h1 data-i18n="scrollDown">Ride through our services deck</h1></section>
+	<div class="sc-cards">
+		<div class="sc-wrapper"><div class="sc-card"><h2 data-i18n="card1Title">Same-day Deliveries</h2><p data-i18n="card1Body">Rapid, reliable cargo-bike courier service across Barcelona's central zones.</p></div></div>
+		<div class="sc-wrapper"><div class="sc-card"><h2 data-i18n="card2Title">Sustainable Logistics</h2><p data-i18n="card2Body">Low-emission, human-powered deliveries tailored for local businesses.</p></div></div>
+		<div class="sc-wrapper"><div class="sc-card"><h2 data-i18n="card3Title">Fleet & Consulting</h2><p data-i18n="card3Body">Fleet support, consulting and cargo-bike solutions for urban logistics.</p></div></div>
+		<div class="sc-wrapper"><div class="sc-card"><h2 data-i18n="card4Title">More Services</h2><p data-i18n="card4Body">Fleet maintenance, training and local logistics expertise.</p></div></div>
+	</div>
+	<section class="sc-empty"><h1 data-i18n="scrollUp">Head back to the overview</h1></section>
+	<!-- END sticky-cards preview -->
 
-  <!-- Link JS -->
-  <script src="js/scripts.js"></script>
+	<section class="site-map" aria-label="Site map and contacts">
+		<div class="site-map__column">
+			<h3 data-i18n="siteExplore">Explore</h3>
+			<ul class="site-map__list">
+				<li><a href="#about" data-i18n="siteAbout">About</a></li>
+				<li><a href="#services" data-i18n="siteServices">Services</a></li>
+				<li><a href="#zones" data-i18n="siteZones">Zones</a></li>
+				<li><a href="#faq" data-i18n="siteFaq">FAQ</a></li>
+			</ul>
+		</div>
+		<div class="site-map__column">
+			<h3 data-i18n="siteSolutions">Solutions</h3>
+			<ul class="site-map__list">
+				<li><a href="#services" data-i18n="siteMessenger">Messenger &amp; Courier</a></li>
+				<li><a href="#services" data-i18n="siteCargo">Cargo Bike Consulting</a></li>
+				<li><a href="#services" data-i18n="siteRoutes">Route Planning</a></li>
+				<li><a href="#services" data-i18n="siteMaintenance">Fleet Maintenance</a></li>
+			</ul>
+		</div>
+		<div class="site-map__column">
+			<h3 data-i18n="siteContact">Contact</h3>
+			<p class="site-map__contact" data-i18n="siteContactBlurb">Reach our coordinators for bookings, partnerships, or support 7 days a week.</p>
+			<p class="site-map__contact"><strong data-i18n="siteEmailLabel">Email</strong>: <a href="mailto:info@cargoworks.es">info@cargoworks.es</a><br><strong data-i18n="sitePhoneLabel">Phone</strong>: <a href="tel:+34608081955">+34 608 08 19 55</a></p>
+			<p class="site-map__contact"><strong data-i18n="siteHoursLabel">Hours</strong>: <span data-i18n="siteHoursText">7:00 - 17:00 Mon-Fri and 7:00 - 15:00 Saturday and Sunday, with the exception of booked jobs.</span></p>
+		</div>
+	</section>
+
+	<!-- GSAP (from CDN) to drive the sticky behavior for preview -->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.1/gsap.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.1/ScrollTrigger.min.js"></script>
+	<script>
+		gsap.registerPlugin(ScrollTrigger);
+		document.querySelectorAll('.sc-wrapper').forEach((wrapper, i, arr) => {
+			const card = wrapper.querySelector('.sc-card');
+			if (i === arr.length - 1) return;
+			gsap.timeline({
+				scrollTrigger: {
+					trigger: wrapper,
+					start: 'top top',
+					end: 'bottom top',
+					scrub: true,
+					pin: true,
+					pinSpacing: false
+				}
+			}).set(card, { opacity: 1, scale: 1 }).to(card, { opacity: 0, scale: 0.6, ease: 'none' }, 0.01);
+		});
+	</script>
+
+	<footer>
+		<span data-i18n="footerCopy">© 2025 Cargoworks – Bike Logistics Barcelona</span>
+		<a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener" data-i18n="footerInstagram">Instagram</a>
+	</footer>
+
+	<!-- JS -->
+	<script src="js/js/translations.js"></script>
+	<script src="js/js/main.js"></script>
 </body>
 </html>

@@ -1,0 +1,1647 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap');
+
+/* ===== Glitch Effect for Hero Title ===== */
+.glitch {
+  position: relative;
+  color: inherit;
+  display: inline-block;
+}
+
+/* ===== Theme & layout variables (easy tuning) ===== */
+:root {
+  /* block sizing */
+  --block-min: 220px;    /* minimum width of a block */
+  --block-preferred: 28%; /* preferred flex-basis */
+  --block-max: 320px;    /* maximum width of a block */
+  --img-aspect: 16 / 9;  /* aspect ratio for .img-wrap (use '1 / 1' for square) */
+
+  /* background animation */
+  --bg-animation-duration: 25s; /* controls the speed of the gradientFlow animation */
+  --header-height: 72px;
+}
+
+/* Image / block content balance */
+:root {
+  /* How tall the image area should be inside a block. Can be '40%' (percent of block height), '160px', or 'auto'.
+     If you use a percent it will try to use that percentage of the block's height (block min-height applies).
+     Default 'auto' keeps the aspect-ratio box size. */
+  --block-image-height: 50%;
+
+  /* Default crop focus: use any object-position values like 'center top', '40% 20%', 'center center' */
+  --img-position: bottom 50%;
+}
+
+/* Hero caption sizing */
+:root {
+  --hero-caption-height: 4.5rem;   /* height of the caption box */
+  --hero-caption-max-size: 20px;   /* starting font-size for caption autosize (slightly larger) */
+}
+
+/* Tie the hero title size to a variable so other elements (caption) can match it */
+:root {
+  --hero-title-size: clamp(5rem, 9vw, 9rem);
+}
+
+/* Apply modern font across body (keep headline fonts untouched) */
+body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.glitch::before, .glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  width: 110%;
+  z-index: -1;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+  color: inherit;
+}
+.glitch::before {
+  top: 10px;
+  left: 15px;
+  color: #e0287d;
+}
+.glitch::after {
+  top: 5px;
+  left: -10px;
+  color: #1bc7fb;
+}
+.glitch span {
+  animation: paths 5s step-end infinite;
+}
+.glitch::before {
+  animation: paths 5s step-end infinite, opacity 5s step-end infinite, font 8s step-end infinite, movement 10s step-end infinite;
+}
+.glitch::after {
+  animation: paths 5s step-end infinite, opacity 5s step-end infinite, font 7s step-end infinite, movement 8s step-end infinite;
+}
+@keyframes paths {
+  0% { clip-path: polygon(0% 43%,83% 43%,83% 22%,23% 22%,23% 24%,91% 24%,91% 26%,18% 26%,18% 83%,29% 83%,29% 17%,41% 17%,41% 39%,18% 39%,18% 82%,54% 82%,54% 88%,19% 88%,19% 4%,39% 4%,39% 14%,76% 14%,76% 52%,23% 52%,23% 35%,19% 35%,19% 8%,36% 8%,36% 31%,73% 31%,73% 16%,1% 16%,1% 56%,50% 56%,50% 8%); }
+  5% { clip-path: polygon(0% 29%,44% 29%,44% 83%,94% 83%,94% 56%,11% 56%,11% 64%,94% 64%,94% 70%,88% 70%,88% 32%,18% 32%,18% 96%,10% 96%,10% 62%,9% 62%,9% 84%,68% 84%,68% 50%,52% 50%,52% 55%,35% 55%,35% 87%,25% 87%,25% 39%,15% 39%,15% 88%,52% 88%); }
+  30% { clip-path: polygon(0% 53%,93% 53%,93% 62%,68% 62%,68% 37%,97% 37%,97% 89%,13% 89%,13% 45%,51% 45%,51% 88%,17% 88%,17% 54%,81% 54%,81% 75%,79% 75%,79% 76%,38% 76%,38% 28%,61% 28%,61% 12%,55% 12%,55% 62%,68% 62%,68% 51%,0% 51%,0% 92%,63% 92%,63% 4%,65% 4%); }
+  45% { clip-path: polygon(0% 33%,2% 33%,2% 69%,58% 69%,58% 94%,55% 94%,55% 25%,33% 25%,33% 85%,16% 85%,16% 19%,5% 19%,5% 20%,79% 20%,79% 96%,93% 96%,93% 50%,5% 50%,5% 74%,55% 74%,55% 57%,96% 57%,96% 59%,87% 59%,87% 65%,82% 65%,82% 39%,63% 39%,63% 92%,4% 92%,4% 36%,24% 36%,24% 70%,1% 70%,1% 43%,15% 43%,15% 28%,23% 28%,23% 71%,90% 71%,90% 86%,97% 86%,97% 1%,60% 1%,60% 67%,71% 67%,71% 91%,17% 91%,17% 14%,39% 14%,39% 30%,58% 30%,58% 11%,52% 11%,52% 83%,68% 83%); }
+  76% { clip-path: polygon(0% 26%,15% 26%,15% 73%,72% 73%,72% 70%,77% 70%,77% 75%,8% 75%,8% 42%,4% 42%,4% 61%,17% 61%,17% 12%,26% 12%,26% 63%,73% 63%,73% 43%,90% 43%,90% 67%,50% 67%,50% 41%,42% 41%,42% 46%,50% 46%,50% 84%,96% 84%,96% 78%,49% 78%,49% 25%,63% 25%,63% 14%); }
+  90% { clip-path: polygon(0% 41%,13% 41%,13% 6%,87% 6%,87% 93%,10% 93%,10% 13%,89% 13%,89% 6%,3% 6%,3% 8%,16% 8%,16% 79%,0% 79%,0% 99%,92% 99%,92% 90%,5% 90%,5% 60%,0% 60%,0% 48%,89% 48%,89% 13%,80% 13%,80% 43%,95% 43%,95% 19%,80% 19%,80% 85%,38% 85%,38% 62%); }
+  1%,7%,33%,47%,78%,93% { clip-path: none; }
+}
+@keyframes movement {
+  0% { top: 0px; left: -20px; }
+  15% { top: 10px; left: 10px; }
+  60% { top: 5px; left: -10px; }
+  75% { top: -5px; left: 20px; }
+  100% { top: 10px; left: 5px; }
+}
+@keyframes opacity {
+  0% { opacity: 0.1; }
+  5% { opacity: 0.7; }
+  30% { opacity: 0.4; }
+  45% { opacity: 0.6; }
+  76% { opacity: 0.4; }
+  90% { opacity: 0.8; }
+  1%,7%,33%,47%,78%,93% { opacity: 0; }
+}
+@keyframes font {
+  0% { font-weight: 100; color: #e0287d; filter: blur(3px); }
+  20% { font-weight: 500; color: #fff; filter: blur(0); }
+  50% { font-weight: 300; color: #1bc7fb; filter: blur(2px); }
+  60% { font-weight: 700; color: #fff; filter: blur(0); }
+  90% { font-weight: 500; color: #e0287d; filter: blur(6px); }
+}
+/* ===== Reset ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; min-height: 100%; }
+body { line-height: 1.5; overflow-x: hidden; background: transparent; }
+
+/* ===== Dedicated animated background element ===== */
+.bg-anim {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: 300% 300%;
+  background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
+  filter: saturate(0.9) contrast(1.0);
+  opacity: 0.65;
+  background-image: linear-gradient(-18deg, #f8f6f2 0%, #f1f3f6 38%, #eef5f1 68%, #f6f3f8 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+/* ===== Split hero (two-column top blocks) ===== */
+.split-hero.container {
+  display: flex;
+  width: 100%;
+  height: 60vh;
+  margin-top: 0;
+}
+.split-hero.container > div {
+  position: relative;
+  flex: 1;
+  min-height: 100%;
+  transition: flex 0.5s ease-out;
+  color: #03588d;
+  font-family: sans-serif;
+  text-align: center;
+  margin: 0; /* reset offsets — layout is edge-to-edge */
+}
+.split-hero.container .left {
+  flex-shrink: 0;
+  width: 50%;
+  background-color: #ff4c5b; /* fallback */
+  /* CSS file is in css/effects/, so ../../img/ points to repo img/ folder */
+  background-image: url('../../img/hero-left.jpg'); /* replace with your uploaded image */
+  background-size: cover;
+  background-position: center;
+}
+.split-hero.container .left:hover { flex: 1.5; }
+.split-hero.container .left h2 {
+  position: absolute;
+  top: 30%;
+  left: 40%;
+  transform: translate(-50%,-50%);
+  font-family: 'Adamina', serif;
+  color: #fff;
+  background: rgba(0,0,0,0.25);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.split-hero.container .right {
+  background: #c7dffe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.split-hero.container .right .hero-text {
+  max-width: 540px;
+  text-align: left;
+}
+.split-hero.container .right h1 {
+  font-family: 'Adamina', serif;
+  margin: 0 0 0.5rem 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  color: #03588d;
+}
+.split-hero.container .right h5 {
+  font-family: 'Adamina', serif;
+  color: #34241f;
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+.split-hero.container .right .btn { margin-top: 0.75rem; }
+
+/* responsive tweak */
+@media (max-width: 800px) {
+  .hero-gif { width: 0.6em; max-width: 4.5rem; } 
+  /* hide the decorative GIF on mobile for a cleaner header */
+  .hero-gif { display: none !important; }
+  .hero-gif { max-height: 48px; width: auto; }
+  .split-hero.container .left h2 { left: 50%; top: 25%; }
+}
+
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(45, 26, 77, 0.12);
+  z-index: 5;
+}
+
+/* ===== HERO / Banner ===== */
+.hero-section {
+  position: relative;
+  width: 100vw;
+  min-height: 40vh;
+  height: 40vh;
+  margin-top: var(--header-height);
+  padding: clamp(1.8rem, 5vw, 3.6rem) 1.5rem clamp(2.2rem, 4vw, 3.8rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: var(--hero-image, url('https://images.unsplash.com/photo-1556463066-ecc2154f6852?ixlib=rb-4.1.0&q=80&fm=jpg&w=2000'));
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: var(--hero-focus, 50% 70%);
+  margin-bottom: 2.5rem;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+
+/* ===== Hero caption ===== */
+.hero-caption {
+  position: relative;
+  display: block;
+  margin: clamp(2.1rem, 5.2vw, 2.9rem) auto clamp(3.8rem, 8vw, 4.8rem);
+  text-align: center;
+  width: clamp(58ch, 92vw, 1180px);
+  max-width: 1200px;
+  padding: 0 clamp(1.25rem, 4vw, 3rem);
+  font-family: 'Oswald', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--hero-caption-max-size, 1.15rem);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.65;
+  color: inherit;
+  text-shadow: 0 6px 18px rgba(0,0,0,0.25);
+}
+
+.hero-caption.hero-caption--match {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  width: auto;
+  max-width: min(92vw, 1200px);
+  padding: 0 clamp(1.1rem, 3.5vw, 2.8rem);
+}
+
+.hero-caption .fit-inner {
+  display: inline-block;
+  transform-origin: center center;
+  white-space: normal;
+}
+
+/* ===== Site map / contact ===== */
+.site-map {
+  margin: 3rem auto 2.25rem;
+  width: min(1200px, 94vw);
+  padding: clamp(2.5rem, 6vw, 4rem) clamp(1.5rem, 6vw, 5rem);
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 24px;
+  box-shadow: 0 18px 48px rgba(35, 35, 60, 0.18);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: clamp(1.5rem, 4vw, 3rem);
+}
+
+.site-map__column h3 {
+  font-family: 'Oswald', 'Inter', system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+  color: #2d1a4d;
+}
+
+.site-map__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.site-map__list a {
+  text-decoration: none;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.95rem;
+  color: #2d1a4d;
+  opacity: 0.88;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.site-map__list a:hover,
+.site-map__list a:focus {
+  opacity: 1;
+  transform: translateX(3px);
+}
+
+.site-map__contact {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.95rem;
+  color: #2d1a4d;
+  line-height: 1.6;
+}
+
+.site-map__contact a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.site-map__contact a:hover,
+.site-map__contact a:focus {
+  text-decoration: underline;
+}
+
+/* ===== Nav ===== */
+.hero-nav {
+  width: min(1100px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(1.5rem, 5vw, 3rem);
+}
+.nav-links {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 4vw, 2.25rem);
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+}
+.nav-links a {
+  text-decoration: none;
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.1rem, 2vw, 1.6rem);
+  color: #2d1a4d;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.nav-links a:hover,
+.nav-links a:focus {
+  opacity: 0.75;
+  transform: translateY(-2px);
+}
+
+.nav-controls { display: flex; align-items: center; gap: 1rem; flex: 0 0 auto; }
+
+/* ===== Hero title ===== */
+.hero-title {
+  position: relative;
+  z-index: 3;
+  margin: 0;
+  padding-top: 0.1rem;
+  font-family: 'Barlow Condensed', 'Oswald', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 700;
+  font-size: var(--hero-title-size);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.8;
+
+  /* Outline and fill (neutral) */
+  -webkit-text-fill-color: #ffffff;
+  -webkit-text-stroke: 2.2px rgba(18, 16, 36, 0.95);
+  text-shadow: 0 12px 30px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.58);
+}
+
+/* Kill the glitch effect everywhere (even if class remains in HTML) */
+.glitch, .glitch span { animation: none !important; clip-path: none !important; }
+.glitch::before, .glitch::after {
+  content: none !important;
+  display: none !important;
+  animation: none !important;
+}
+
+/* Neutral outlined hero title */
+.hero-title {
+  /* keep your current sizing and font */
+  -webkit-text-fill-color: #ffffff;
+  -webkit-text-stroke: 2.7px rgba(18, 16, 36, 0.95);
+  text-shadow: 0 12px 30px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.58);
+}
+
+/* Optional: class to force neutral shadow (if you want to toggle) */
+.hero-title.shadow-neutral {
+  -webkit-text-fill-color: #ffffff;
+  -webkit-text-stroke: 1.8px rgba(32, 30, 52, 0.9);
+  text-shadow: 0 10px 26px rgba(0,0,0,0.42), 0 1px 0 rgba(255,255,255,0.5);
+}
+
+/* Subtle neutral dotted background pattern */
+.background {
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(#dcdcdc 10%, transparent 5%),
+    radial-gradient(#ececec 10%, transparent 5%);
+  background-size: 20px 20px;
+}
+
+/* ===== Reset ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; min-height: 100%; }
+body { line-height: 1.5; overflow-x: hidden; background: transparent; }
+
+/* ===== Dedicated animated background element ===== */
+.bg-anim {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: 300% 300%;
+  background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
+  filter: saturate(1.2) contrast(1.08);
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+/* ===== Split hero (two-column top blocks) ===== */
+.split-hero.container {
+  display: flex;
+  width: 100%;
+  height: 60vh;
+  margin-top: 0;
+}
+.split-hero.container > div {
+  position: relative;
+  flex: 1;
+  min-height: 100%;
+  transition: flex 0.5s ease-out;
+  color: #03588d;
+  font-family: sans-serif;
+  text-align: center;
+  margin: 0; /* reset offsets — layout is edge-to-edge */
+}
+.split-hero.container .left {
+  flex-shrink: 0;
+  width: 50%;
+  background-color: #ff4c5b; /* fallback */
+  /* CSS file is in css/effects/, so ../../img/ points to repo img/ folder */
+  background-image: url('../../img/hero-left.jpg'); /* replace with your uploaded image */
+  background-size: cover;
+  background-position: center;
+}
+.split-hero.container .left:hover { flex: 1.5; }
+.split-hero.container .left h2 {
+  position: absolute;
+  top: 30%;
+  left: 40%;
+  transform: translate(-50%,-50%);
+  font-family: 'Adamina', serif;
+  color: #fff;
+  background: rgba(0,0,0,0.25);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.split-hero.container .right {
+  background: #c7dffe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.split-hero.container .right .hero-text {
+  max-width: 540px;
+  text-align: left;
+}
+.split-hero.container .right h1 {
+  font-family: 'Adamina', serif;
+  margin: 0 0 0.5rem 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  color: #03588d;
+}
+.split-hero.container .right h5 {
+  font-family: 'Adamina', serif;
+  color: #34241f;
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+.split-hero.container .right .btn { margin-top: 0.75rem; }
+
+/* responsive tweak */
+@media (max-width: 800px) {
+  .hero-gif { width: 0.6em; max-width: 4.5rem; } 
+  /* hide the decorative GIF on mobile for a cleaner header */
+  .hero-gif { display: none !important; }
+  .hero-gif { max-height: 48px; width: auto; }
+  .split-hero.container .left h2 { left: 50%; top: 25%; }
+}
+
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(45, 26, 77, 0.12);
+  z-index: 5;
+}
+
+/* ===== HERO / Banner ===== */
+.hero-section {
+  position: relative;
+  width: 100vw;
+  min-height: 40vh;
+  height: 40vh;
+  margin-top: var(--header-height);
+  padding: clamp(1.8rem, 5vw, 3.6rem) 1.5rem clamp(2.2rem, 4vw, 3.8rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: var(--hero-image, url('https://images.unsplash.com/photo-1556463066-ecc2154f6852?ixlib=rb-4.1.0&q=80&fm=jpg&w=2000'));
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: var(--hero-focus, 50% 70%);
+  margin-bottom: 2.5rem;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+
+/* ===== Nav ===== */
+.hero-nav {
+  width: min(1100px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(1.5rem, 5vw, 3rem);
+}
+.nav-links {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 4vw, 2.25rem);
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+}
+.nav-links a {
+  text-decoration: none;
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.1rem, 2vw, 1.6rem);
+  color: #2d1a4d;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.nav-links a:hover,
+.nav-links a:focus {
+  opacity: 0.75;
+  transform: translateY(-2px);
+}
+
+.nav-controls { display: flex; align-items: center; gap: 1rem; flex: 0 0 auto; }
+
+/* ===== Hero title ===== */
+.hero-title {
+  position: relative;
+  z-index: 3;
+  margin: 0;
+  padding-top: 0.1rem;
+  font-family: 'Barlow Condensed', 'Oswald', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 700;
+  font-size: var(--hero-title-size);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.8;
+
+  /* Outline and fill (neutral) */
+  -webkit-text-fill-color: #f5f5f5;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.8);
+  text-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+
+/* Kill the glitch effect everywhere (even if class remains in HTML) */
+.glitch, .glitch span { animation: none !important; clip-path: none !important; }
+.glitch::before, .glitch::after {
+  content: none !important;
+  display: none !important;
+  animation: none !important;
+}
+
+/* Neutral outlined hero title */
+.hero-title {
+  /* keep your current sizing and font */
+  -webkit-text-fill-color: #f5f5f5;
+  -webkit-text-stroke: 1px #bdbdbd; /* softer neutral stroke */
+  text-shadow: 2px 2px rgba(255,255,255,0.85), 8px 10px rgba(0,0,0,0.14);
+}
+
+/* Optional: class to force neutral shadow (if you want to toggle) */
+.hero-title.shadow-neutral {
+  -webkit-text-stroke: 1px #bdbdbd;
+  text-shadow: 2px 2px rgba(255,255,255,0.85), 8px 10px rgba(0,0,0,0.14);
+}
+
+/* Subtle neutral dotted background pattern */
+.background {
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(#dcdcdc 10%, transparent 5%),
+    radial-gradient(#ececec 10%, transparent 5%);
+  background-size: 20px 20px;
+}
+
+/* ===== Reset ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; min-height: 100%; }
+body { line-height: 1.5; overflow-x: hidden; background: transparent; }
+
+/* ===== Dedicated animated background element ===== */
+.bg-anim {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: 300% 300%;
+  background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
+  filter: saturate(1.2) contrast(1.08);
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+/* ===== Split hero (two-column top blocks) ===== */
+.split-hero.container {
+  display: flex;
+  width: 100%;
+  height: 60vh;
+  margin-top: 0;
+}
+.split-hero.container > div {
+  position: relative;
+  flex: 1;
+  min-height: 100%;
+  transition: flex 0.5s ease-out;
+  color: #03588d;
+  font-family: sans-serif;
+  text-align: center;
+  margin: 0; /* reset offsets — layout is edge-to-edge */
+}
+.split-hero.container .left {
+  flex-shrink: 0;
+  width: 50%;
+  background-color: #ff4c5b; /* fallback */
+  /* CSS file is in css/effects/, so ../../img/ points to repo img/ folder */
+  background-image: url('../../img/hero-left.jpg'); /* replace with your uploaded image */
+  background-size: cover;
+  background-position: center;
+}
+.split-hero.container .left:hover { flex: 1.5; }
+.split-hero.container .left h2 {
+  position: absolute;
+  top: 30%;
+  left: 40%;
+  transform: translate(-50%,-50%);
+  font-family: 'Adamina', serif;
+  color: #fff;
+  background: rgba(0,0,0,0.25);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.split-hero.container .right {
+  background: #c7dffe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.split-hero.container .right .hero-text {
+  max-width: 540px;
+  text-align: left;
+}
+.split-hero.container .right h1 {
+  font-family: 'Adamina', serif;
+  margin: 0 0 0.5rem 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  color: #03588d;
+}
+.split-hero.container .right h5 {
+  font-family: 'Adamina', serif;
+  color: #34241f;
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+.split-hero.container .right .btn { margin-top: 0.75rem; }
+
+/* responsive tweak */
+@media (max-width: 800px) {
+  .hero-gif { width: 0.6em; max-width: 4.5rem; } 
+  /* hide the decorative GIF on mobile for a cleaner header */
+  .hero-gif { display: none !important; }
+  .hero-gif { max-height: 48px; width: auto; }
+  .split-hero.container .left h2 { left: 50%; top: 25%; }
+}
+
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(45, 26, 77, 0.12);
+  z-index: 5;
+}
+
+/* ===== HERO / Banner ===== */
+.hero-section {
+  position: relative;
+  width: 100vw;
+  min-height: 40vh;
+  height: 40vh;
+  margin-top: var(--header-height);
+  padding: clamp(1.8rem, 5vw, 3.6rem) 1.5rem clamp(2.2rem, 4vw, 3.8rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: var(--hero-image, url('https://images.unsplash.com/photo-1556463066-ecc2154f6852?ixlib=rb-4.1.0&q=80&fm=jpg&w=2000'));
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: var(--hero-focus, 50% 70%);
+  margin-bottom: 2.5rem;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+
+/* ===== Nav ===== */
+.hero-nav {
+  width: min(1100px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(1.5rem, 5vw, 3rem);
+}
+.nav-links {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 4vw, 2.25rem);
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+}
+.nav-links a {
+  text-decoration: none;
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.1rem, 2vw, 1.6rem);
+  color: #2d1a4d;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.nav-links a:hover,
+.nav-links a:focus {
+  opacity: 0.75;
+  transform: translateY(-2px);
+}
+
+.nav-controls { display: flex; align-items: center; gap: 1rem; flex: 0 0 auto; }
+
+/* ===== Hero title ===== */
+.hero-title {
+  position: relative;
+  z-index: 3;
+  margin: 0;
+  padding-top: 0.1rem;
+  font-family: 'Barlow Condensed', 'Oswald', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 700;
+  font-size: var(--hero-title-size);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.8;
+
+  /* Outline and fill (neutral) */
+  -webkit-text-fill-color: #f5f5f5;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.8);
+  text-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+
+/* Kill the glitch effect everywhere (even if class remains in HTML) */
+.glitch, .glitch span { animation: none !important; clip-path: none !important; }
+.glitch::before, .glitch::after {
+  content: none !important;
+  display: none !important;
+  animation: none !important;
+}
+
+/* Neutral outlined hero title */
+.hero-title {
+  /* keep your current sizing and font */
+  -webkit-text-fill-color: #f5f5f5;
+  -webkit-text-stroke: 1px #bdbdbd; /* softer neutral stroke */
+  text-shadow: 2px 2px rgba(255,255,255,0.85), 8px 10px rgba(0,0,0,0.14);
+}
+
+/* Optional: class to force neutral shadow (if you want to toggle) */
+.hero-title.shadow-neutral {
+  -webkit-text-stroke: 1px #bdbdbd;
+  text-shadow: 2px 2px rgba(255,255,255,0.85), 8px 10px rgba(0,0,0,0.14);
+}
+
+/* Subtle neutral dotted background pattern */
+.background {
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(#dcdcdc 10%, transparent 5%),
+    radial-gradient(#ececec 10%, transparent 5%);
+  background-size: 20px 20px;
+}
+
+/* ===== Reset ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; min-height: 100%; }
+body { line-height: 1.5; overflow-x: hidden; background: transparent; }
+
+/* ===== Dedicated animated background element ===== */
+.bg-anim {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: 300% 300%;
+  background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
+  filter: saturate(1.2) contrast(1.08);
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+/* ===== Split hero (two-column top blocks) ===== */
+.split-hero.container {
+  display: flex;
+  width: 100%;
+  height: 60vh;
+  margin-top: 0;
+}
+.split-hero.container > div {
+  position: relative;
+  flex: 1;
+  min-height: 100%;
+  transition: flex 0.5s ease-out;
+  color: #03588d;
+  font-family: sans-serif;
+  text-align: center;
+  margin: 0; /* reset offsets — layout is edge-to-edge */
+}
+.split-hero.container .left {
+  flex-shrink: 0;
+  width: 50%;
+  background-color: #ff4c5b; /* fallback */
+  /* CSS file is in css/effects/, so ../../img/ points to repo img/ folder */
+  background-image: url('../../img/hero-left.jpg'); /* replace with your uploaded image */
+  background-size: cover;
+  background-position: center;
+}
+.split-hero.container .left:hover { flex: 1.5; }
+.split-hero.container .left h2 {
+  position: absolute;
+  top: 30%;
+  left: 40%;
+  transform: translate(-50%,-50%);
+  font-family: 'Adamina', serif;
+  color: #fff;
+  background: rgba(0,0,0,0.25);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.split-hero.container .right {
+  background: #c7dffe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.split-hero.container .right .hero-text {
+  max-width: 540px;
+  text-align: left;
+}
+.split-hero.container .right h1 {
+  font-family: 'Adamina', serif;
+  margin: 0 0 0.5rem 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  color: #03588d;
+}
+.split-hero.container .right h5 {
+  font-family: 'Adamina', serif;
+  color: #34241f;
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+.split-hero.container .right .btn { margin-top: 0.75rem; }
+
+/* responsive tweak */
+@media (max-width: 800px) {
+  .hero-gif { width: 0.6em; max-width: 4.5rem; } 
+  /* hide the decorative GIF on mobile for a cleaner header */
+  .hero-gif { display: none !important; }
+  .hero-gif { max-height: 48px; width: auto; }
+  .split-hero.container .left h2 { left: 50%; top: 25%; }
+}
+
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(45, 26, 77, 0.12);
+  z-index: 5;
+}
+
+/* ===== HERO / Banner ===== */
+.hero-section {
+  position: relative;
+  width: 100vw;
+  min-height: 40vh;
+  height: 40vh;
+  margin-top: var(--header-height);
+  padding: clamp(1.8rem, 5vw, 3.6rem) 1.5rem clamp(2.2rem, 4vw, 3.8rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: var(--hero-image, url('https://images.unsplash.com/photo-1556463066-ecc2154f6852?ixlib=rb-4.1.0&q=80&fm=jpg&w=2000'));
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: var(--hero-focus, 50% 70%);
+  margin-bottom: 2.5rem;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+
+/* ===== Nav ===== */
+.hero-nav {
+  width: min(1100px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(1.5rem, 5vw, 3rem);
+}
+.nav-links {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 4vw, 2.25rem);
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+}
+.nav-links a {
+  text-decoration: none;
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.1rem, 2vw, 1.6rem);
+  color: #2d1a4d;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.nav-links a:hover,
+.nav-links a:focus {
+  opacity: 0.75;
+  transform: translateY(-2px);
+}
+
+.nav-controls { display: flex; align-items: center; gap: 1rem; flex: 0 0 auto; }
+
+/* ===== Hero title ===== */
+.hero-title {
+  position: relative;
+  z-index: 3;
+  margin: 0;
+  padding-top: 0.1rem;
+  font-family: 'Barlow Condensed', 'Oswald', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 700;
+  font-size: var(--hero-title-size);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.8;
+
+  /* Outline and fill (neutral) */
+  -webkit-text-fill-color: #f5f5f5;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.8);
+  text-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+
+/* Kill the glitch effect everywhere (even if class remains in HTML) */
+.glitch, .glitch span { animation: none !important; clip-path: none !important; }
+.glitch::before, .glitch::after {
+  content: none !important;
+  display: none !important;
+  animation: none !important;
+}
+
+/* Neutral outlined hero title */
+.hero-title {
+  /* keep your current sizing and font */
+  -webkit-text-fill-color: #f5f5f5;
+  -webkit-text-stroke: 1px #bdbdbd; /* softer neutral stroke */
+  text-shadow: 2px 2px rgba(255,255,255,0.85), 8px 10px rgba(0,0,0,0.14);
+}
+
+/* Optional: class to force neutral shadow (if you want to toggle) */
+.hero-title.shadow-neutral {
+  -webkit-text-stroke: 1px #bdbdbd;
+  text-shadow: 2px 2px rgba(255,255,255,0.85), 8px 10px rgba(0,0,0,0.14);
+}
+
+/* Subtle neutral dotted background pattern */
+.background {
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(#dcdcdc 10%, transparent 5%),
+    radial-gradient(#ececec 10%, transparent 5%);
+  background-size: 20px 20px;
+}
+
+/* ===== Reset ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; min-height: 100%; }
+body { line-height: 1.5; overflow-x: hidden; background: transparent; }
+
+/* ===== Dedicated animated background element ===== */
+.bg-anim {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: 300% 300%;
+  background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
+  filter: saturate(1.2) contrast(1.08);
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+/* ===== Split hero (two-column top blocks) ===== */
+.split-hero.container {
+  display: flex;
+  width: 100%;
+  height: 60vh;
+  margin-top: 0;
+}
+.split-hero.container > div {
+  position: relative;
+  flex: 1;
+  min-height: 100%;
+  transition: flex 0.5s ease-out;
+  color: #03588d;
+  font-family: sans-serif;
+  text-align: center;
+  margin: 0; /* reset offsets — layout is edge-to-edge */
+}
+.split-hero.container .left {
+  flex-shrink: 0;
+  width: 50%;
+  background-color: #ff4c5b; /* fallback */
+  /* CSS file is in css/effects/, so ../../img/ points to repo img/ folder */
+  background-image: url('../../img/hero-left.jpg'); /* replace with your uploaded image */
+  background-size: cover;
+  background-position: center;
+}
+.split-hero.container .left:hover { flex: 1.5; }
+.split-hero.container .left h2 {
+  position: absolute;
+  top: 30%;
+  left: 40%;
+  transform: translate(-50%,-50%);
+  font-family: 'Adamina', serif;
+  color: #fff;
+  background: rgba(0,0,0,0.25);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.split-hero.container .right {
+  background: #c7dffe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.split-hero.container .right .hero-text {
+  max-width: 540px;
+  text-align: left;
+}
+.split-hero.container .right h1 {
+  font-family: 'Adamina', serif;
+  margin: 0 0 0.5rem 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  color: #03588d;
+}
+.split-hero.container .right h5 {
+  font-family: 'Adamina', serif;
+  color: #34241f;
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+.split-hero.container .right .btn { margin-top: 0.75rem; }
+
+/* responsive tweak */
+@media (max-width: 800px) {
+  .hero-gif { width: 0.6em; max-width: 4.5rem; } 
+  /* hide the decorative GIF on mobile for a cleaner header */
+  .hero-gif { display: none !important; }
+  .hero-gif { max-height: 48px; width: auto; }
+  .split-hero.container .left h2 { left: 50%; top: 25%; }
+}
+
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(45, 26, 77, 0.12);
+  z-index: 5;
+}
+
+/* ===== HERO / Banner ===== */
+.hero-section {
+  position: relative;
+  width: 100vw;
+  min-height: 40vh;
+  height: 40vh;
+  margin-top: var(--header-height);
+  padding: clamp(1.8rem, 5vw, 3.6rem) 1.5rem clamp(2.2rem, 4vw, 3.8rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: var(--hero-image, url('https://images.unsplash.com/photo-1556463066-ecc2154f6852?ixlib=rb-4.1.0&q=80&fm=jpg&w=2000'));
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: var(--hero-focus, 50% 70%);
+  margin-bottom: 2.5rem;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+
+/* ===== Nav ===== */
+.hero-nav {
+  width: min(1100px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(1.5rem, 5vw, 3rem);
+}
+.nav-links {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 4vw, 2.25rem);
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+}
+.nav-links a {
+  text-decoration: none;
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.1rem, 2vw, 1.6rem);
+  color: #2d1a4d;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.nav-links a:hover,
+.nav-links a:focus {
+  opacity: 0.75;
+  transform: translateY(-2px);
+}
+
+.nav-controls { display: flex; align-items: center; gap: 1rem; flex: 0 0 auto; }
+
+/* ===== Hero title ===== */
+.hero-title {
+  position: relative;
+  z-index: 3;
+  margin: 0;
+  padding-top: 0.1rem;
+  font-family: 'Barlow Condensed', 'Oswald', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 700;
+  font-size: var(--hero-title-size);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.8;
+
+  /* Outline and fill (neutral) */
+  -webkit-text-fill-color: #f5f5f5;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.8);
+  text-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+
+/* Kill the glitch effect everywhere (even if class remains in HTML) */
+.glitch, .glitch span { animation: none !important; clip-path: none !important; }
+.glitch::before, .glitch::after {
+  content: none !important;
+  display: none !important;
+  animation: none !important;
+}
+
+/* Neutral outlined hero title */
+.hero-title {
+  /* keep your current sizing and font */
+  -webkit-text-fill-color: #f5f5f5;
+  -webkit-text-stroke: 1px #bdbdbd; /* softer neutral stroke */
+  text-shadow: 2px 2px rgba(255,255,255,0.85), 8px 10px rgba(0,0,0,0.14);
+}
+
+/* Optional: class to force neutral shadow (if you want to toggle) */
+.hero-title.shadow-neutral {
+  -webkit-text-stroke: 1px #bdbdbd;
+  text-shadow: 2px 2px rgba(255,255,255,0.85), 8px 10px rgba(0,0,0,0.14);
+}
+
+/* Subtle neutral dotted background pattern */
+.background {
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(#dcdcdc 10%, transparent 5%),
+    radial-gradient(#ececec 10%, transparent 5%);
+  background-size: 20px 20px;
+}
+
+/* ===== Reset ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; min-height: 100%; }
+body { line-height: 1.5; overflow-x: hidden; background: transparent; }
+
+/* ===== Dedicated animated background element ===== */
+.bg-anim {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: 300% 300%;
+  background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
+  filter: saturate(1.2) contrast(1.08);
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+/* ===== Split hero (two-column top blocks) ===== */
+.split-hero.container {
+  display: flex;
+  width: 100%;
+  height: 60vh;
+  margin-top: 0;
+}
+.split-hero.container > div {
+  position: relative;
+  flex: 1;
+  min-height: 100%;
+  transition: flex 0.5s ease-out;
+  color: #03588d;
+  font-family: sans-serif;
+  text-align: center;
+  margin: 0; /* reset offsets — layout is edge-to-edge */
+}
+.split-hero.container .left {
+  flex-shrink: 0;
+  width: 50%;
+  background-color: #ff4c5b; /* fallback */
+  /* CSS file is in css/effects/, so ../../img/ points to repo img/ folder */
+  background-image: url('../../img/hero-left.jpg'); /* replace with your uploaded image */
+  background-size: cover;
+  background-position: center;
+}
+.split-hero.container .left:hover { flex: 1.5; }
+.split-hero.container .left h2 {
+  position: absolute;
+  top: 30%;
+  left: 40%;
+  transform: translate(-50%,-50%);
+  font-family: 'Adamina', serif;
+  color: #fff;
+  background: rgba(0,0,0,0.25);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.split-hero.container .right {
+  background: #c7dffe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.split-hero.container .right .hero-text {
+  max-width: 540px;
+  text-align: left;
+}
+.split-hero.container .right h1 {
+  font-family: 'Adamina', serif;
+  margin: 0 0 0.5rem 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  color: #03588d;
+}
+.split-hero.container .right h5 {
+  font-family: 'Adamina', serif;
+  color: #34241f;
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+.split-hero.container .right .btn { margin-top: 0.75rem; }
+
+/* responsive tweak */
+@media (max-width: 800px) {
+  .hero-gif { width: 0.6em; max-width: 4.5rem; } 
+  /* hide the decorative GIF on mobile for a cleaner header */
+  .hero-gif { display: none !important; }
+  .hero-gif { max-height: 48px; width: auto; }
+  .split-hero.container .left h2 { left: 50%; top: 25%; }
+}
+
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(45, 26, 77, 0.12);
+  z-index: 5;
+}
+
+/* ===== HERO / Banner ===== */
+.hero-section {
+  position: relative;
+  width: 100vw;
+  min-height: 40vh;
+  height: 40vh;
+  margin-top: var(--header-height);
+  padding: clamp(1.8rem, 5vw, 3.6rem) 1.5rem clamp(2.2rem, 4vw, 3.8rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: var(--hero-image, url('https://images.unsplash.com/photo-1556463066-ecc2154f6852?ixlib=rb-4.1.0&q=80&fm=jpg&w=2000'));
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: var(--hero-focus, 50% 70%);
+  margin-bottom: 2.5rem;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+
+/* ===== Nav ===== */
+.hero-nav {
+  width: min(1100px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(1.5rem, 5vw, 3rem);
+}
+.nav-links {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 4vw, 2.25rem);
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+}
+.nav-links a {
+  text-decoration: none;
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.1rem, 2vw, 1.6rem);
+  color: #2d1a4d;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.nav-links a:hover,
+.nav-links a:focus {
+  opacity: 0.75;
+  transform: translateY(-2px);
+}
+
+.nav-controls { display: flex; align-items: center; gap: 1rem; flex: 0 0 auto; }
+
+/* ===== Hero title ===== */
+.hero-title {
+  position: relative;
+  z-index: 3;
+  margin: 0;
+  padding-top: 0.1rem;
+  font-family: 'Barlow Condensed', 'Oswald', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 700;
+  font-size: var(--hero-title-size);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.8;
+
+  /* Outline and fill (neutral) */
+  -webkit-text-fill-color: #f5f5f5;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.8);
+  text-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+
+/* Kill the glitch effect everywhere (even if class remains in HTML) */
+.glitch, .glitch span { animation: none !important; clip-path: none !important; }
+.glitch::before, .glitch::after {
+  content: none !important;
+  display: none !important;
+  animation: none !important;
+}
+
+/* Neutral outlined hero title */
+.hero-title {
+  /* keep your current sizing and font */
+  -webkit-text-fill-color: #f5f5f5;
+  -webkit-text-stroke: 1px #bdbdbd; /* softer neutral stroke */
+  text-shadow: 2px 2px rgba(255,255,255,0.85), 8px 10px rgba(0,0,0,0.14);
+}
+
+/* Optional: class to force neutral shadow (if you want to toggle) */
+.hero-title.shadow-neutral {
+  -webkit-text-stroke: 1px #bdbdbd;
+  text-shadow: 2px 2px rgba(255,255,255,0.85), 8px 10px rgba(0,0,0,0.14);
+}
+
+/* Subtle neutral dotted background pattern */
+.background {
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(#dcdcdc 10%, transparent 5%),
+    radial-gradient(#ececec 10%, transparent 5%);
+  background-size: 20px 20px;
+}
+
+/* ===== Reset ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; min-height: 100%; }
+body { line-height: 1.5; overflow-x: hidden; background: transparent; }
+
+/* ===== Dedicated animated background element ===== */
+.bg-anim {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: 300% 300%;
+  background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
+  filter: saturate(1.2) contrast(1.08);
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+/* ===== Split hero (two-column top blocks) ===== */
+.split-hero.container {
+  display: flex;
+  width: 100%;
+  height: 60vh;
+  margin-top: 0;
+}
+.split-hero.container > div {
+  position: relative;
+  flex: 1;
+  min-height: 100%;
+  transition: flex 0.5s ease-out;
+  color: #03588d;
+  font-family: sans-serif;
+  text-align: center;
+  margin: 0; /* reset offsets — layout is edge-to-edge */
+}
+.split-hero.container .left {
+  flex-shrink: 0;
+  width: 50%;
+  background-color: #ff4c5b; /* fallback */
+  /* CSS file is in css/effects/, so ../../img/ points to repo img/ folder */
+  background-image: url('../../img/hero-left.jpg'); /* replace with your uploaded image */
+  background-size: cover;
+  background-position: center;
+}
+.split-hero.container .left:hover { flex: 1.5; }
+.split-hero.container .left h2 {
+  position: absolute;
+  top: 30%;
+  left: 40%;
+  transform: translate(-50%,-50%);
+  font-family: 'Adamina', serif;
+  color: #fff;
+  background: rgba(0,0,0,0.25);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.split-hero.container .right {
+  background: #c7dffe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.split-hero.container .right .hero-text {
+  max-width: 540px;
+  text-align: left;
+}
+.split-hero.container .right h1 {
+  font-family: 'Adamina', serif;
+  margin: 0 0 0.5rem 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  color: #03588d;
+}
+.split-hero.container .right h5 {
+  font-family: 'Adamina', serif;
+  color: #34241f;
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+.split-hero.container .right .btn { margin-top: 0.75rem; }
+
+/* responsive tweak */
+@media (max-width: 800px) {
+  .hero-gif { width: 0.6em; max-width: 4.5rem; } 
+  /* hide the decorative GIF on mobile for a cleaner header */
+  .hero-gif { display: none !important; }
+  .hero-gif { max-height: 48px; width: auto; }
+  .split-hero.container .left h2 { left: 50%; top: 25%; }
+}
+
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(45, 26, 77, 0.12);
+  z-index: 5;
+}
+
+/* ===== HERO / Banner ===== */
+.hero-section {
+  position: relative;
+  width: 100vw;
+  min-height: 40vh;
+  height: 40vh;
+  margin-top: var(--header-height);
+  padding: clamp(1.8rem, 5vw, 3.6rem) 1.5rem clamp(2.2rem, 4vw, 3.8rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: var(--hero-image, url('https://images.unsplash.com/photo-1556463066-ecc2154f6852?ixlib=rb-4.1.0&q=80&fm=jpg&w=2000'));
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: var(--hero-focus, 50% 70%);
+  margin-bottom: 2.5rem;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+
+/* ===== Nav ===== */
+.hero-nav {
+  width: min(1100px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(1.5rem, 5vw, 3rem);
+}
+.nav-links {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 4vw, 2.25rem);
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+}

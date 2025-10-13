@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sticky Cards with Fade & Scale - Prototype</title>
+  <style>
+    /* Basic Reset */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f0f0;
+      color: #222;
+    }
+    /* Empty sections with grey background */
+    .empty-section {
+      height: 100vh;
+      background: #999;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #fff;
+    }
+    /* Container for stacking card wrappers vertically */
+    .cards-container { }
+    /* Each card wrapper has 15vh top padding */
+    .card-wrapper {
+      height: 70vh;
+      padding-top: 15vh;
+      position: relative;
+      width: 60vw;
+      margin: 0 auto;
+    }
+    /* Last card wrapper gets extra bottom padding and increased height */
+    .card-wrapper:last-of-type {
+      height: 85vh; /* 70vh + 15vh extra to account for bottom padding */
+      padding-bottom: 15vh;
+    }
+    /* The card fills the wrapper's width and remaining height in normal wrappers */
+    .card {
+      width: 100%;
+      height: calc(70vh - 15vh); /* 55vh */
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 10px;
+      padding: 50px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+    /* In the last wrapper, adjust card height to account for extra bottom padding */
+    .card-wrapper:last-of-type .card {
+      height: calc(85vh - 30vh); /* 85 - (15+15) = 55vh */
+    }
+    .card h2 { margin-bottom: 8px; }
+    .card p { color: #666; }
+    @media (max-width: 900px) {
+      .card-wrapper { width: 86vw; }
+      .card { padding: 32px; }
+    }
+    @media (max-width: 560px) {
+      .card-wrapper { width: 94vw; }
+      .card { padding: 20px; }
+    }
+  </style>
+  <!-- GSAP & ScrollTrigger -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.1/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.1/ScrollTrigger.min.js"></script>
+</head>
+<body>
+  <!-- Empty section before cards container -->
+  <section class="empty-section"><h1>Scroll down to experience</h1></section>
+  <div class="cards-container">
+    <div class="card-wrapper">
+      <div class="card">
+        <h2>Card 1</h2>
+        <p>Experience the ultimate in local logistics.</p>
+      </div>
+    </div>
+    <div class="card-wrapper">
+      <div class="card">
+        <h2>Card 2</h2>
+        <p>Fast, low-emission deliveries across the city.</p>
+      </div>
+    </div>
+    <div class="card-wrapper">
+      <div class="card">
+        <h2>Card 3</h2>
+        <p>Fleet & consulting for your business needs.</p>
+      </div>
+    </div>
+    <div class="card-wrapper">
+      <div class="card">
+        <h2>Card 4</h2>
+        <p>Reliable same-day service for urgent items.</p>
+      </div>
+    </div>
+    <div class="card-wrapper">
+      <div class="card">
+        <h2>Card 5</h2>
+        <p>We ride like locals and deliver like pros.</p>
+      </div>
+    </div>
+  </div>
+  <!-- Empty section after cards container -->
+  <section class="empty-section"><h1>Scroll up to experience</h1></section>
+  <script>
+    gsap.registerPlugin(ScrollTrigger);
+    const wrappers = document.querySelectorAll('.card-wrapper');
+    wrappers.forEach((wrapper, index) => {
+      const card = wrapper.querySelector('.card');
+      if (index === wrappers.length - 1) {
+        gsap.set(card, { opacity: 1, scale: 1 });
+      } else {
+        gsap.timeline({
+          scrollTrigger: {
+            trigger: wrapper,
+            start: "top top",
+            end: "bottom top",
+            scrub: true,
+            pin: true,
+            pinSpacing: false,
+          }
+        })
+        .set(card, { opacity: 1, scale: 1 })
+        .to(card, { opacity: 0, scale: 0.6, ease: "none" }, 0.01);
+      }
+    });
+  </script>
+</body>
+</html>
