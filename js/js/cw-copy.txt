@@ -1,0 +1,292 @@
+
+CARGOWORKS — WEBSITE MVP COPY (MULTILINGUAL, REFINED)
+====================================================
+
+This file is a reference for GitHub Copilot.
+Tone: friendly, professional, clear, and human.
+Audience: businesses looking for reliable urban delivery.
+Do not invent services or disclose operational methods.
+
+====================================================
+COPILOT — PAGE & LAYOUT INSTRUCTIONS
+====================================================
+
+Pages to create:
+- / (Home)
+- /about
+- /services
+- /industries
+- /faq
+- /contact
+
+General layout rules:
+- One H1 per page
+- Short paragraphs (2–3 lines max)
+- Clear section headings
+- Bullet lists where useful
+- Repeated CTA blocks (top and bottom)
+- Same structure across all languages
+- Language switcher maps pages 1:1
+
+Primary CTAs:
+- Get a quote / Book a delivery
+- Talk to us
+- Request recurring routes
+
+====================================================
+ENGLISH (EN)
+====================================================
+
+HOME
+
+H1
+Cargo bike courier service in Barcelona — same-day and recurring routes.
+
+Intro
+We provide fast, reliable urban deliveries for businesses across Barcelona. Same-day jobs when something is urgent, and recurring routes when delivery is part of your daily operation.
+
+CTAs
+Get a quote / Book a delivery  
+Talk to us (recurring routes or van-to-bike transition)
+
+---
+
+What we do
+
+Same-day deliveries  
+When something needs to move today. Documents, parcels, food, flowers, spare parts, or last‑minute orders.
+
+Recurring routes  
+Daily or weekly routes, multi-stop runs, and regular city logistics designed to be predictable and easy to manage.
+
+Van → cargo bike transition  
+If you’re using vans inside the city, we help you move the right part of your operation to cargo bikes and make deliveries smoother over time.
+
+---
+
+Why cargo bikes
+
+Barcelona is dense and busy. Vans get stuck. Cargo bikes keep moving.  
+For many city routes, bikes are faster, easier to park, and more reliable — especially when there are multiple stops.
+
+---
+
+How it works
+
+1. You send us the details (addresses, time window, load)
+2. We confirm availability and handle the rest
+3. You get clear communication and updates
+4. The delivery is completed properly, with proof if needed
+
+---
+
+Responsibility
+
+We take responsibility seriously:
+- People: professional riders and realistic workloads
+- City: fewer unnecessary vans on the street
+- Environment: lower emissions as a result of good logistics
+
+---
+
+Final CTA
+
+Need a delivery today?  
+Or looking for a long-term solution for your routes?  
+Talk to us.
+
+====================================================
+ABOUT
+
+Cargoworks is a Barcelona-based cargo bike courier service. We move things across the city every day, all year, in real conditions.
+
+At our core, we are couriers. What supports that work is solid experience in cargo bike logistics: routes, timing, loads, pricing, operations, and people. We don’t just ride bikes — we understand how urban delivery works and take responsibility for doing it properly.
+
+Cargo bike logistics isn’t a trend for us. It’s a professional tool.
+
+We work with businesses that deliver regularly, as well as clients who need occasional same-day jobs. Some are moving away from vans, others start directly with bikes. In both cases, our role is to make deliveries simple, reliable, and realistic.
+
+Every job is planned with care. Sometimes that means redesigning routes. Sometimes adjusting expectations. Often, it just means simplifying things.
+
+We take responsibility towards our clients, our riders, the city, and the environment. Sustainability isn’t a slogan — it’s what happens when logistics are done well.
+
+====================================================
+SERVICES
+
+Same-day deliveries  
+For urgent or time-sensitive deliveries across the city.
+
+Recurring routes  
+For businesses that deliver daily or weekly and need consistency.
+
+Van → cargo bike transition  
+Support for businesses looking to reduce van use and improve urban efficiency.
+
+====================================================
+INDUSTRIES
+
+We work with:
+- Food and hospitality
+- Retail and local shops
+- E‑commerce and local brands
+- Offices and professional services
+- Events and production
+
+If you’re not sure where you fit, just ask us.
+
+====================================================
+FAQ
+
+Do you cover all of Barcelona?  
+Yes. Coverage depends on the job, so send us the postcodes and we’ll confirm.
+
+Do you handle multi-stop deliveries?  
+Yes. Multi-stop routes are a big part of our work.
+
+What can you carry?  
+A wide range of city-friendly loads. Share approximate size and weight.
+
+Do you offer same-day service?  
+Yes, subject to availability and timing.
+
+Can you replace vans completely?  
+Sometimes. Often it’s a mix. We help find what makes sense.
+
+How does pricing work?  
+Pricing is clear and consistent, based on the delivery details.
+
+====================================================
+CONTACT
+
+Send us:
+- Pickup and delivery address(es)
+- Time window
+- What it is and approximate size/weight
+- Any special notes
+
+We’ll reply quickly with next steps.
+
+====================================================
+SPANISH (ES)
+====================================================
+
+HOME
+
+H1
+Servicio de mensajería en cargo bike en Barcelona — envíos en el día y rutas recurrentes.
+
+Intro
+Realizamos entregas urbanas rápidas y fiables para empresas en Barcelona. Envíos en el día cuando algo es urgente y rutas recurrentes cuando el reparto forma parte del día a día.
+
+CTAs
+Solicitar presupuesto / Reservar un envío  
+Hablar con nosotros (rutas recurrentes o transición desde furgonetas)
+
+---
+
+Qué hacemos
+
+Envíos en el mismo día  
+Para documentos, paquetes, comida, flores, recambios o pedidos de última hora.
+
+Rutas recurrentes  
+Rutas diarias o semanales, repartos multi‑parada y operaciones estables y fáciles de gestionar.
+
+Transición de furgonetas a cargo bikes  
+Ayudamos a mover la parte adecuada de tu operativa urbana de furgonetas a bicicletas de carga.
+
+---
+
+Por qué cargo bikes
+
+Barcelona es densa y con mucho tráfico. Las furgonetas se bloquean.  
+Las cargo bikes avanzan y permiten repartir de forma más ágil y predecible.
+
+---
+
+Cómo funciona
+
+1. Nos envías los detalles del servicio
+2. Confirmamos disponibilidad
+3. Comunicación clara durante el reparto
+4. Entrega realizada correctamente
+
+---
+
+Responsabilidad
+
+Nos responsabilizamos de:
+- Las personas: riders profesionales
+- La ciudad: menos tráfico innecesario
+- El medio ambiente: menos emisiones por diseño
+
+---
+
+CTA final
+
+¿Necesitas un envío hoy?  
+¿O una solución estable para tus rutas?  
+Hablemos.
+
+====================================================
+CATALÀ (CA)
+====================================================
+
+HOME
+
+H1
+Servei de missatgeria amb cargo bike a Barcelona — enviaments en el dia i rutes recurrents.
+
+Intro
+Fem repartiment urbà ràpid i fiable per a empreses de Barcelona. Enviaments en el dia quan és urgent i rutes recurrents per a operatives diàries.
+
+CTAs
+Sol·licitar pressupost / Reservar enviament  
+Parlar amb nosaltres
+
+---
+
+Per què cargo bikes
+
+Barcelona és densa i amb molt trànsit. Les furgonetes s’encallen.  
+Les bicicletes de càrrega continuen avançant.
+
+---
+
+ABOUT
+
+Cargoworks és un servei de missatgeria amb cargo bike amb base a Barcelona. Repartim per la ciutat cada dia.
+
+Som missatgers, recolzats per experiència real en logística urbana.  
+Assumim responsabilitat amb les persones, la ciutat i el medi ambient.
+
+====================================================
+PORTUGUÊS (BR)
+====================================================
+
+HOME
+
+H1
+Serviço de courier com cargo bike em Barcelona — entregas no mesmo dia e rotas recorrentes.
+
+Intro
+Fazemos entregas urbanas rápidas e confiáveis para empresas em Barcelona. Entregas no mesmo dia quando algo é urgente e rotas recorrentes para operações contínuas.
+
+CTAs
+Solicitar orçamento / Agendar entrega  
+Falar conosco
+
+---
+
+Por que cargo bikes
+
+Barcelona é uma cidade densa. Vans travam no trânsito.  
+As cargo bikes seguem em frente e tornam as entregas mais previsíveis.
+
+---
+
+ABOUT
+
+A Cargoworks é um serviço de courier com cargo bike baseado em Barcelona.
+Somos mensageiros com experiência real em logística urbana.
+Assumimos responsabilidade com pessoas, cidade e meio ambiente.

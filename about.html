@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/>
+  <title>CARGOWORKS.es – About</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css">
+  <link rel="stylesheet" href="css/effects/layout.css"/>
+  <style>
+    /* Hide empty paragraphs injected by i18n when a language has fewer blocks */
+    main p:empty { display: none; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <nav class="hero-nav">
+      <ul class="nav-links">
+        <li><a href="index.html#about" id="navAbout" data-i18n="navAbout">About</a></li>
+        <li><a href="index.html#services" id="navServices" data-i18n="navServices">Services</a></li>
+        <li><a href="index.html#zones" id="navZones" data-i18n="navZones">Zones</a></li>
+      </ul>
+      <div class="nav-controls">
+        <label for="langSelect" class="visually-hidden">🌐</label>
+        <select id="langSelect" class="lang-select">
+          <option value="ca">Català</option>
+          <option value="es" selected>Castellano</option>
+          <option value="pt">Português</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+    </nav>
+  </header>
+
+  <section class="hero-section" id="top">
+    <div class="hero-inner">
+      <h1 class="hero-title" data-i18n="aboutPageTitle">About</h1>
+    </div>
+  </section>
+
+  <main style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
+    <div class="cta-group" style="margin:0.5rem 0 1rem 0;">
+      <a class="btn" href="mailto:info@cargoworks.es?subject=Quote%20request" data-i18n="ctaQuote">Get a quote</a>
+      <a class="btn" href="mailto:info@cargoworks.es?subject=Book%20a%20delivery" data-i18n="ctaBook">Book a delivery</a>
+      <a class="btn" href="mailto:info@cargoworks.es?subject=Recurring%20routes" data-i18n="ctaRecurring">Request recurring routes</a>
+      <a class="btn btn--whatsapp" href="https://wa.me/34608081955?text=Hola%2C%20podemos%20hablar%20de%20rutas%20recurrentes%3F" target="_blank" rel="noopener" data-i18n="ctaTalk">Talk to us</a>
+    </div>
+
+    <h2 data-i18n="aboutTitle" style="margin-top:0;">About</h2>
+    <p data-i18n="aboutP1">Cargoworks is a Barcelona-based cargo bike courier service. We move things across the city every day, all year, in real conditions.</p>
+    <p data-i18n="aboutP2">At our core, we are couriers. What supports that work is solid experience in cargo bike logistics: routes, timing, loads, pricing, operations, and people. We don’t just ride bikes — we understand how urban delivery works and take responsibility for doing it properly.</p>
+    <p data-i18n="aboutP3">Cargo bike logistics isn’t a trend for us. It’s a professional tool.</p>
+    <p data-i18n="aboutP4">We work with businesses that deliver regularly, as well as clients who need occasional same-day jobs. Some are moving away from vans, others start directly with bikes. In both cases, our role is to make deliveries simple, reliable, and realistic.</p>
+    <p data-i18n="aboutP5">Every job is planned with care. Sometimes that means redesigning routes. Sometimes adjusting expectations. Often, it just means simplifying things.</p>
+    <p data-i18n="aboutP6">We take responsibility towards our clients, our riders, the city, and the environment. Sustainability isn’t a slogan — it’s what happens when logistics are done well.</p>
+
+    <div class="cta-group" style="margin:1.5rem 0 0.5rem 0;">
+      <a class="btn" href="mailto:info@cargoworks.es?subject=Quote%20request" data-i18n="ctaQuote">Get a quote</a>
+      <a class="btn" href="mailto:info@cargoworks.es?subject=Book%20a%20delivery" data-i18n="ctaBook">Book a delivery</a>
+      <a class="btn btn--whatsapp" href="https://wa.me/34608081955?text=Hola%2C%20podemos%20hablar%20de%20rutas%20recurrentes%3F" target="_blank" rel="noopener" data-i18n="ctaTalk">Talk to us</a>
+    </div>
+  </main>
+
+  <footer style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
+    <span data-i18n="footerCopy">© 2025 Cargoworks – Bike Logistics Barcelona</span>
+    <a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener" data-i18n="footerInstagram">Instagram</a>
+  </footer>
+
+  <script src="js/js/translations.js"></script>
+  <script src="js/js/main.js"></script>
+</body>
+</html>

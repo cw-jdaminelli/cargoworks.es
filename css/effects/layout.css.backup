@@ -136,43 +136,7 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   flex: 1;
   min-height: 100%;
   transition: flex 0.5s ease-out;
-  color: #6b2ca9; /* purple accent */
-  .quote-stop-item {
-    position: relative;
-    display: flex;
-    align-items: center;
-    flex: 1 1 280px;
-    padding-left: 28px;
-    border: 1px solid rgba(0,0,0,0.12);
-    border-radius: 8px;
-    background-color: #fff;
-    cursor: grab;
-  }
-  .quote-stop-item .drag-handle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    min-width: 26px;
-    height: 100%;
-    margin-right: 6px;
-    color: #5c5c6e;
-    background: #f3f4f8;
-    border-right: 1px solid rgba(0,0,0,0.08);
-    border-radius: 8px 0 0 8px;
-    cursor: grab;
-    user-select: none;
-  }
-  .quote-stop-item .drag-handle .fa { font-size: 16px; line-height: 1; }
-  .quote-stop-item:hover .drag-handle { color: #3a3a4a; background: #eceef6; }
-  .quote-stop-item.dragging .drag-handle { cursor: grabbing; }
-  .quote-stop-item.dragging { opacity: 0.85; cursor: grabbing; box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
-  .quote-stop-item .quote-stop {
-    border: none;
-    outline: none;
-    flex: 1 1 auto;
-    padding: 0.6rem 0.7rem;
-  }
+  color: #03588d;
   font-family: sans-serif;
   text-align: center;
   margin: 0; /* reset offsets — layout is edge-to-edge */
@@ -180,7 +144,7 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 .split-hero.container .left {
   flex-shrink: 0;
   width: 50%;
-  background-color: #ff6fa1; /* coral accent fallback */
+  background-color: #ff4c5b; /* fallback */
   /* CSS file is in css/effects/, so ../../img/ points to repo img/ folder */
   background-image: url('../../img/hero-left.jpg'); /* replace with your uploaded image */
   background-size: cover;
@@ -190,7 +154,6 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 .split-hero.container .left h2 {
   position: absolute;
   top: 30%;
-  .quote-stop-item.dragging { opacity: 0.85; cursor: grabbing; }
   left: 40%;
   transform: translate(-50%,-50%);
   font-family: 'Adamina', serif;
@@ -200,7 +163,7 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   border-radius: 6px;
 }
 .split-hero.container .right {
-  background: #efe8fb; /* soft purple-tinted background */
+  background: #c7dffe;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -214,7 +177,7 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   font-family: 'Adamina', serif;
   margin: 0 0 0.5rem 0;
   font-size: clamp(2rem, 6vw, 4rem);
-  color: #6b2ca9; /* purple accent */
+  color: #03588d;
 }
 .split-hero.container .right h5 {
   font-family: 'Adamina', serif;
@@ -302,138 +265,6 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   white-space: normal;
 }
 
-/* ===== Accent palette (purple + coral) and global overrides ===== */
-:root {
-  --accent-primary: #6b2ca9; /* purple */
-  --accent-secondary: #ff6fa1; /* coral */
-}
-
-/* Text accents */
-.split-hero.container > div { color: var(--accent-primary); }
-.split-hero.container .right h1 { color: var(--accent-primary); }
-
- /* CTA group */
- .cta-group { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.25rem; margin-bottom: clamp(1rem, 4vw, 2rem); }
- 
- /* Buttons */
- .btn {
-   display: inline-block;
-   background-color: var(--accent-secondary);
-   color: #ffffff;
-   border: none;
-   border-radius: 999px;
-   padding: 0.75rem 1.25rem;
-   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  text-decoration: none;
-  font-family: 'Oswald', 'Inter', system-ui, sans-serif;
-   box-shadow: 0 8px 20px rgba(255, 111, 161, 0.35);
-   transition: background-color 160ms ease, box-shadow 160ms ease, transform 120ms ease;
- }
- .btn:hover { background-color: #ff5f95; box-shadow: 0 10px 24px rgba(255, 111, 161, 0.42); transform: translateY(-1px); }
- .btn:focus { outline: none; box-shadow: 0 0 0 3px rgba(107, 44, 169, 0.18), 0 8px 20px rgba(255, 111, 161, 0.35); }
- .btn:active { transform: translateY(0); }
- 
- .btn.btn--whatsapp { background-color: #25D366; box-shadow: 0 8px 20px rgba(37, 211, 102, 0.28); }
- .btn.btn--whatsapp:hover { background-color: #1fb257; box-shadow: 0 10px 24px rgba(37, 211, 102, 0.34); }
- 
- /* Nav links coral hover */
- .hero-nav .nav-links a { color: var(--accent-primary); text-decoration: none; border-bottom: 2px solid transparent; padding-bottom: 2px; }
- .hero-nav .nav-links a:hover { color: var(--accent-secondary); border-bottom-color: var(--accent-secondary); }
- 
- /* Header subtle coral border */
- .site-header { border-bottom: 1px solid rgba(255, 111, 161, 0.25); }
- 
- /* Site-map headings: coral underline accent while keeping purple text */
- .site-map__column h3 { border-bottom: 3px solid var(--accent-secondary); display: inline-block; padding-bottom: 0.25rem; }
- 
- /* Links coral hover */
- a { color: var(--accent-primary); }
- a:hover { color: var(--accent-secondary); }
-
-/* Tighten spacing below hero caption so CTAs sit closer */
-.hero-caption { margin-bottom: clamp(1.2rem, 2.5vw, 1.8rem); }
-
-/* ===== Zones map section ===== */
-.zones-section { width: min(1200px, 94vw); margin: 0 auto clamp(2rem, 5vw, 3rem); padding: 0 clamp(1rem, 3vw, 2rem); }
-.zones-inner h2 { font-family: 'Oswald', 'Inter', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 0.5rem 0; color: var(--accent-primary); }
-.zones-controls { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
-.zones-controls input { flex: 1 1 320px; padding: 0.6rem 0.8rem; border: 1px solid rgba(0,0,0,0.12); border-radius: 8px; font-family: 'Inter', system-ui, sans-serif; }
-.zones-result { margin-left: 0.25rem; font-family: 'Inter', system-ui, sans-serif; color: var(--accent-primary); font-weight: 600; }
-.zones-map { width: 100%; height: clamp(360px, 58vh, 620px); border-radius: 16px; box-shadow: 0 12px 36px rgba(0,0,0,0.12); overflow: hidden; }
-.admin-only { display: none; }
-/* ===== Quote estimator (MVP UI polish) ===== */
-.quote-estimator {
-  width: 100%;
-  background: rgba(255,255,255,0.92);
-  border: 1px solid rgba(0,0,0,0.08);
-  border-radius: 14px;
-  box-shadow: 0 12px 28px rgba(35,35,60,0.12);
-  padding: clamp(0.75rem, 2.5vw, 1rem);
-  display: flex;
-  gap: 0.6rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.quote-estimator input {
-  flex: 1 1 280px;
-  padding: 0.7rem 0.9rem;
-  border: 1px solid rgba(0,0,0,0.12);
-  border-radius: 10px;
-  font-family: 'Inter', system-ui, sans-serif;
-  font-size: 0.95rem;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
-}
-.quote-estimator input:focus {
-  outline: none;
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(107, 44, 169, 0.15);
-}
-.quote-estimator .btn { margin-top: 0.1rem; }
-#quoteResult { font-family: 'Inter', system-ui, sans-serif; color: #2d1a4d; font-weight: 600; }
-
-/* ===== Quote stops: clear drag affordance ===== */
-.quote-stop-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 1 1 280px;
-  border: 1px solid rgba(0,0,0,0.12);
-  border-radius: 8px;
-  background: #fff;
-  cursor: grab;
-}
-.quote-stop-item .drag-handle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  min-width: 26px;
-  height: 100%;
-  margin-right: 6px;
-  color: #5c5c6e;
-  background: #f3f4f8;
-  border-right: 1px solid rgba(0,0,0,0.08);
-  border-radius: 8px 0 0 8px;
-  cursor: grab;
-  user-select: none;
-}
-.quote-stop-item .drag-handle .fa { font-size: 16px; line-height: 1; }
-.quote-stop-item:hover .drag-handle { color: #3a3a4a; background: #eceef6; }
-.quote-stop-item.dragging .drag-handle { cursor: grabbing; }
-.quote-stop-item.dragging { opacity: 0.85; cursor: grabbing; box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
-.quote-stop-item .quote-stop {
-  border: none;
-  outline: none;
-  flex: 1 1 auto;
-  padding: 0.6rem 0.7rem;
-}
-/* placeholder style removed to simplify drag visuals */
-
-/* Links */
-a { color: var(--accent-primary); }
-
 /* ===== Site map / contact ===== */
 .site-map {
   margin: 3rem auto 2.25rem;
@@ -453,7 +284,7 @@ a { color: var(--accent-primary); }
   letter-spacing: 0.08em;
   font-size: 1rem;
   margin-bottom: 0.75rem;
-  color: #5a2b84; /* deeper purple for headings */
+  color: #2d1a4d;
 }
 
 .site-map__list {
@@ -586,14 +417,23 @@ a { color: var(--accent-primary); }
 html, body { width: 100%; min-height: 100%; }
 body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 
-/* ===== Dedicated background element ===== */
+/* ===== Dedicated animated background element ===== */
 .bg-anim {
   position: fixed;
   inset: 0;
   z-index: -1;
+  background-size: 300% 300%;
   background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
   filter: saturate(1.2) contrast(1.08);
-  background-color: #f1f3f6;
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
 }
 
 /* ===== Split hero (two-column top blocks) ===== */
@@ -792,14 +632,23 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 html, body { width: 100%; min-height: 100%; }
 body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 
-/* ===== Dedicated background element ===== */
+/* ===== Dedicated animated background element ===== */
 .bg-anim {
   position: fixed;
   inset: 0;
   z-index: -1;
+  background-size: 300% 300%;
   background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
   filter: saturate(1.2) contrast(1.08);
-  background-color: #f1f3f6;
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
 }
 
 /* ===== Split hero (two-column top blocks) ===== */
@@ -998,14 +847,23 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 html, body { width: 100%; min-height: 100%; }
 body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 
-/* ===== Dedicated background element ===== */
+/* ===== Dedicated animated background element ===== */
 .bg-anim {
   position: fixed;
   inset: 0;
   z-index: -1;
+  background-size: 300% 300%;
   background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
   filter: saturate(1.2) contrast(1.08);
-  background-color: #f1f3f6;
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
 }
 
 /* ===== Split hero (two-column top blocks) ===== */
@@ -1204,14 +1062,23 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 html, body { width: 100%; min-height: 100%; }
 body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 
-/* ===== Dedicated background element ===== */
+/* ===== Dedicated animated background element ===== */
 .bg-anim {
   position: fixed;
   inset: 0;
   z-index: -1;
+  background-size: 300% 300%;
   background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
   filter: saturate(1.2) contrast(1.08);
-  background-color: #f1f3f6;
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
 }
 
 /* ===== Split hero (two-column top blocks) ===== */
@@ -1410,14 +1277,23 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 html, body { width: 100%; min-height: 100%; }
 body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 
-/* ===== Dedicated background element ===== */
+/* ===== Dedicated animated background element ===== */
 .bg-anim {
   position: fixed;
   inset: 0;
   z-index: -1;
+  background-size: 300% 300%;
   background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
   filter: saturate(1.2) contrast(1.08);
-  background-color: #f1f3f6;
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
 }
 
 /* ===== Split hero (two-column top blocks) ===== */
@@ -1616,14 +1492,23 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 html, body { width: 100%; min-height: 100%; }
 body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 
-/* ===== Dedicated background element ===== */
+/* ===== Dedicated animated background element ===== */
 .bg-anim {
   position: fixed;
   inset: 0;
   z-index: -1;
+  background-size: 300% 300%;
   background-repeat: no-repeat;
+  /* faster but still smooth, more noticeable rhythm */
+  animation: gradientFlow var(--bg-animation-duration, 18s) ease-in-out infinite;
+  will-change: background-position, filter;
   filter: saturate(1.2) contrast(1.08);
-  background-color: #f1f3f6;
+  background-image: linear-gradient(-20deg, #ffb55e 0%, #ff6fa1 32%, #7ad0ff 62%, #8bff9c 100%);
+}
+@keyframes gradientFlow {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
 }
 
 /* ===== Split hero (two-column top blocks) ===== */

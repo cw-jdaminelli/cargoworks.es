@@ -15,12 +15,12 @@
 	<link rel="stylesheet" href="css/effects/layout.css"/>
 
 	<!-- Preload hero images (Barcelona set) -->
-	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1468793195345-d9d67818016d?q=80&w=1600&auto=format&fit=crop">
-	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1734872083965-025e07ac5912?q=80&w=1600&auto=format&fit=crop">
-	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1698861560273-afb83a672ce6?q=80&w=1600&auto=format&fit=crop">
-	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1507619579562-f2e10da1ec86?q=80&w=1600&auto=format&fit=crop">
-	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1688199412486-b486eff757da?q=80&w=1600&auto=format&fit=crop">
-	<link rel="preload" as="image" crossorigin="anonymous" href="https://images.unsplash.com/photo-1564221710304-0b37c8b9d729?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" href="https://images.unsplash.com/photo-1468793195345-d9d67818016d?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" href="https://images.unsplash.com/photo-1734872083965-025e07ac5912?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" href="https://images.unsplash.com/photo-1698861560273-afb83a672ce6?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" href="https://images.unsplash.com/photo-1507619579562-f2e10da1ec86?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" href="https://images.unsplash.com/photo-1688199412486-b486eff757da?q=80&w=1600&auto=format&fit=crop">
+	<link rel="preload" as="image" href="https://images.unsplash.com/photo-1564221710304-0b37c8b9d729?q=80&w=1600&auto=format&fit=crop">
 </head>
 <body>
 	<!-- Animated background layer -->
@@ -38,9 +38,9 @@
 				<label for="langSelect" class="visually-hidden">🌐</label>
 				<select id="langSelect" class="lang-select">
 					<option value="ca">Català</option>
-					<option value="es">Castellano</option>
+					<option value="es" selected>Castellano</option>
 					<option value="pt">Português</option>
-					<option value="en" selected>English</option>
+					<option value="en">English</option>
 				</select>
 			</div>
 		</nav>
@@ -53,30 +53,156 @@
 		</div>
 	</section>
 
-	<!-- central hero caption -->
-	<p class="hero-caption hero-caption--match" id="heroCaption" data-i18n="heroCaption">We’re Cargoworks — a crew of riders who know the city by heart. We deliver urgent parcels, meals and supplies with the speed of a local and the care of a neighbor. No corporate fluff, just honest, human-powered logistics: reliable, low-impact, and tuned to the rhythms of our streets. We show up on time, treat every drop-off like a promise, and keep the city moving without choking it. For businesses that want speed, accountability and a community edge, we’re the practical, professional choice — run by people who care.</p>
+		<!-- central hero caption + CTAs -->
+		<p class="hero-caption hero-caption--match" id="heroCaption" data-i18n="heroCaption">Somos Cargoworks: reparto ágil y cercano en Barcelona, fiable y de bajo impacto — gestionado por gente local que se implica.</p>
+		<div class="cta-group" aria-label="Acciones principales">
+			<a class="btn" href="mailto:info@cargoworks.es" data-i18n="ctaQuote" aria-label="Pide presupuesto por email">Pide presupuesto</a>
+			<a class="btn btn--whatsapp" href="https://wa.me/34608081955?text=Hola%2C%20me%20gustar%C3%ADa%20solicitar%20una%20cotizaci%C3%B3n." target="_blank" rel="noopener" data-i18n="ctaWhatsApp" aria-label="Abrir WhatsApp para chatear">WhatsApp</a>
+		</div>
 
-	<!-- START sticky-cards preview (temporary) -->
+
+
+	<!-- Services sliding cards -->
 	<style>
-		.sc-empty { min-height: 34vh; padding: 3rem 1rem; background: rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; color:#fff; text-align:center; }
+		.sc-empty { height: 3px; padding: 0; background: var(--accent-secondary); display:block; width: min(92vw, 1100px); margin: clamp(1.2rem, 4vw, 2rem) auto; border-radius: 999px; }
 		.sc-empty--top { margin-top: clamp(1.8rem, 4.2vw, 2.8rem); }
 		.sc-wrapper { height: auto; padding: clamp(3rem, 8vh, 6rem) 0; width: min(94vw, 1100px); margin: 0 auto; position: relative; }
-		.sc-card { width: 100%; height: clamp(320px, 58vh, 520px); background:#ffffff; border-radius:16px; padding: clamp(2.5rem, 5vw, 4rem); box-shadow:0 16px 48px rgba(0,0,0,0.18); display:flex; flex-direction:column; justify-content:flex-end; gap: 1rem; }
-		.sc-card h2 { font-family: 'Oswald', 'Inter', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; font-size: clamp(1.6rem, 4vw, 2.4rem); margin: 0; }
-		.sc-card p { font-family: 'Inter', system-ui, sans-serif; font-size: clamp(1rem, 2vw, 1.2rem); line-height: 1.6; margin: 0; }
+		.sc-card { width: 100%; height: clamp(320px, 58vh, 520px); background:#ffffff; border-radius:16px; padding: 0; box-shadow:0 16px 48px rgba(0,0,0,0.18); display:flex; overflow:hidden; }
+		/* two-column layout inside the card */
+		.sc-card__grid { display: grid; grid-template-columns: 1fr 1fr; width: 100%; height: 100%; align-items: stretch; }
+		/* Left side: treat heading+text+button as a single block and center it vertically */
+		/* Left column: center the group vertically but bias spacing with more bottom padding */
+		/* Ensure generous, consistent inner padding for text + button */
+		.sc-card__left { padding: 1.25rem 2.25rem 2.5rem 2.25rem; display:grid; grid-auto-rows: max-content; align-content:center; justify-items:start; gap: 1.3rem; height: 100%; }
+		/* Ensure gap handles spacing, not ad-hoc margins */
+		.sc-card__left .btn { margin-top: 0; }
+		/* Photo side: controllable via CSS vars for consistency */
+		/* Support generic --photo-src/--photo-focus with fallbacks to existing vars */
+		.sc-card__right { background-color: #eee; background-image: var(--photo-src, var(--card-photo, url('img/suslog.jpg'))); background-repeat: no-repeat; background-size: cover; background-position: var(--photo-focus, var(--card-photo-focus, 45% 60%)); }
+		.sc-card h2 { font-family: 'Oswald', 'Inter', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; font-size: clamp(1.4rem, 3.6vw, 2rem); margin: 0; }
+		.sc-card p { font-family: 'Inter', system-ui, sans-serif; font-size: clamp(1rem, 2vw, 1.2rem); line-height: 1.6; margin: 0; display: -webkit-box;
+			-webkit-line-clamp: 2;
+			-webkit-box-orient: vertical;
+			overflow: hidden;
+		}
+		/* compact button variant for card link */
+		.sc-card .btn.btn--compact { padding: 0.35rem 0.7rem; font-size: 0.88rem; text-transform: none; border-radius: 10px; letter-spacing: 0.02em; }
+		/* ghost style to reduce visual weight */
+		.sc-card .btn.btn--ghost { background: transparent; color: var(--accent-primary); box-shadow: none; border: 1px solid rgba(107,44,169,0.18); }
+		.sc-card .btn.btn--ghost:hover { background: rgba(107,44,169,0.08); }
+		/* extra spacing below the Read more button */
+		.sc-card__left .btn { margin-top: 0.6rem; margin-bottom: 1.1rem; }
+		/* first block gets more breathing room under the button */
+		.sc-cards > .sc-wrapper:first-child .sc-card__left .btn { margin-bottom: 2.2rem; }
+		/* explicit flip utility: use on blocks 2 and 4 */
+		.sc-cards > .sc-wrapper.sc-wrapper--flip .sc-card__left { grid-column: 2 !important; }
+		.sc-cards > .sc-wrapper.sc-wrapper--flip .sc-card__right { grid-column: 1 !important; }
+
+		/* Stability for transforms */
+		.sc-card { will-change: transform, opacity; backface-visibility: hidden; transform-origin: 50% 50%; }
+
 		@media (max-width:900px){ .sc-card{padding: clamp(2rem, 7vw, 3rem);} }
-		@media (max-width:560px){ .sc-empty{min-height: 28vh;} .sc-empty--top{margin-top: clamp(1.2rem, 6vw, 2rem);} .sc-card{padding: 1.75rem;} }
+		@media (max-width:560px){
+			.sc-empty{height: 3px; margin: clamp(1rem, 6vw, 1.6rem) auto;}
+			.sc-empty--top{margin-top: clamp(1.2rem, 6vw, 2rem);} 
+			.sc-card__grid { grid-template-columns: 1fr; }
+			.sc-card__right { display:none; }
+			.sc-card__left { padding: 1.5rem; }
+		}
 	</style>
 
-	<section class="sc-empty sc-empty--top"><h1 data-i18n="scrollDown">Ride through our services deck</h1></section>
-	<div class="sc-cards">
-		<div class="sc-wrapper"><div class="sc-card"><h2 data-i18n="card1Title">Same-day Deliveries</h2><p data-i18n="card1Body">Rapid, reliable cargo-bike courier service across Barcelona's central zones.</p></div></div>
-		<div class="sc-wrapper"><div class="sc-card"><h2 data-i18n="card2Title">Sustainable Logistics</h2><p data-i18n="card2Body">Low-emission, human-powered deliveries tailored for local businesses.</p></div></div>
-		<div class="sc-wrapper"><div class="sc-card"><h2 data-i18n="card3Title">Fleet & Consulting</h2><p data-i18n="card3Body">Fleet support, consulting and cargo-bike solutions for urban logistics.</p></div></div>
-		<div class="sc-wrapper"><div class="sc-card"><h2 data-i18n="card4Title">More Services</h2><p data-i18n="card4Body">Fleet maintenance, training and local logistics expertise.</p></div></div>
-	</div>
-	<section class="sc-empty"><h1 data-i18n="scrollUp">Head back to the overview</h1></section>
-	<!-- END sticky-cards preview -->
+	<section class="sc-empty sc-empty--top" aria-hidden="true"></section>
+	<section id="services" aria-label="Services overview">
+		<div class="sc-cards">
+			<div class="sc-wrapper" id="about">
+				<div class="sc-card">
+					<div class="sc-card__grid">
+						<div class="sc-card__left">
+							<h2 data-i18n="aboutTitle">About</h2>
+							<p data-i18n="aboutTeaser">Logística en cargo bike desde Barcelona para operaciones recurrentes y trabajos en el mismo día. Diseñada para la ciudad real — eficiente, fiable y humana.</p>
+							<a class="btn btn--compact btn--ghost" href="about.html" data-i18n="aboutReadMore" aria-label="Leer más">Leer más</a>
+						</div>
+						<div class="sc-card__right" aria-hidden="true" style="--photo-src:url('img/suslog.jpg');"></div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Services: image left, text right -->
+			<div class="sc-wrapper sc-wrapper--flip" id="services-block">
+				<div class="sc-card">
+					<div class="sc-card__grid">
+						<div class="sc-card__right" aria-hidden="true" style="--photo-src:url('img/suslog.jpg');"></div>
+						<div class="sc-card__left">
+							<h2 data-i18n="card2Title">Services</h2>
+							<p data-i18n="card2Body">Operamos con cargo bikes para reducir emisiones y ruido, optimizando rutas urbanas sin comprometer tiempos ni fiabilidad.</p>
+							<a class="btn btn--compact btn--ghost" href="#top" data-i18n="servicesHowCTA" aria-label="Ver cómo trabajamos">Ver cómo trabajamos</a>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Zones & Prices: text left, image right -->
+			<div class="sc-wrapper" id="zones-block">
+				<div class="sc-card">
+					<div class="sc-card__grid">
+						<div class="sc-card__left">
+							<h2 data-i18n="card3Title">Zones & Prices</h2>
+							<p data-i18n="card3Body">Consulta nuestro mapa de servicio y el estimador rápido de precios por distancia.</p>
+							<a class="btn btn--compact btn--ghost" href="#zones" data-i18n="card3CTA" aria-label="See zones">See zones</a>
+						</div>
+						<div class="sc-card__right" aria-hidden="true" style="--photo-src:url('img/suslog.jpg');"></div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Let's Talk: image left, text right -->
+			<div class="sc-wrapper sc-wrapper--flip" id="cta-block">
+				<div class="sc-card">
+					<div class="sc-card__grid">
+						<div class="sc-card__right" aria-hidden="true" style="--photo-src:url('img/suslog.jpg');"></div>
+						<div class="sc-card__left">
+							<h2 data-i18n="card4Title">Let's Talk</h2>
+							<p data-i18n="card4Body">Mensajería, coordinación, rutas especiales y proyectos a medida para marcas y operadores.</p>
+							<a class="btn btn--compact btn--ghost" href="contact.html" data-i18n="card4CTA">Ver todos los servicios</a>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+	<section class="sc-empty" aria-hidden="true"></section>
+
+	<!-- ZONES MAP -->
+	<section id="zones" class="zones-section" aria-label="Zone map and prices">
+		<div class="zones-inner">
+			<h2 data-i18n="zonesTitle">Zone Map & Prices</h2>
+			<p data-i18n="zonesText">Use our estimator to check prices.</p>
+			<div class="zones-controls" role="search">
+				<span id="zonePrice" class="zones-result" aria-live="polite" style="margin-left:0.5rem"></span>
+			</div>
+			<div class="quote-estimator" aria-label="Quick quote estimator" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; margin-bottom:0.75rem;">
+								<input id="quotePickup" type="text" placeholder="Pickup address" aria-label="Pickup address" style="flex:1 1 280px;"/>
+								<input id="quoteDropoff" type="text" placeholder="Dropoff address" aria-label="Dropoff address" style="flex:1 1 280px;"/>
+				<div id="quoteStops" style="display:flex; gap:0.5rem; flex-wrap:wrap; width:100%;"></div>
+				<button id="quoteEstimate" class="btn" type="button" title="Estimate">Estimate</button>
+				<button id="quoteAddStop" class="btn" type="button" title="Add stop">Add stop</button>
+				<span id="quoteResult" class="zones-result" aria-live="polite" style="margin-left:0.5rem"></span>
+			</div>
+			<div id="zonesMap" class="zones-map" aria-label="Interactive zone map"></div>
+			<div class="pricing-notes" style="margin-top:1rem;">
+				<h3 data-i18n="pricingHeader" style="margin:0 0 0.5rem 0;">Services & Pricing</h3>
+				    <p data-i18n="pricingIntro" style="margin:0 0 0.5rem 0;">Our estimator prices by distance with a small pickup zone charge, or hourly for long routes. Here’s how we price common cases:</p>
+				<ul data-i18n="pricingList" style="margin:0; padding-left:1.25rem; line-height:1.55;">
+					    <li>Pickup charge: half of the pickup zone base.</li>
+					    <li>Distance: €1.50 per km (minimum €8).</li>
+					    <li>Long trips: hourly if total route time &gt; 1h (first hour €25; then €6 per 15 min).</li>
+					<li>Weekend/holiday, &gt;30 kg, after‑hours: adds 25% to the base.</li>
+					    <li>Multi‑drop: reorder stops; bulk discounts applied later.</li>
+					<li>Outside the service map: contact us for a custom quote.</li>
+				</ul>
+			</div>
+		</div>
+	</section>
 
 	<section class="site-map" aria-label="Site map and contacts">
 		<div class="site-map__column">
@@ -85,16 +211,6 @@
 				<li><a href="#about" data-i18n="siteAbout">About</a></li>
 				<li><a href="#services" data-i18n="siteServices">Services</a></li>
 				<li><a href="#zones" data-i18n="siteZones">Zones</a></li>
-				<li><a href="#faq" data-i18n="siteFaq">FAQ</a></li>
-			</ul>
-		</div>
-		<div class="site-map__column">
-			<h3 data-i18n="siteSolutions">Solutions</h3>
-			<ul class="site-map__list">
-				<li><a href="#services" data-i18n="siteMessenger">Messenger &amp; Courier</a></li>
-				<li><a href="#services" data-i18n="siteCargo">Cargo Bike Consulting</a></li>
-				<li><a href="#services" data-i18n="siteRoutes">Route Planning</a></li>
-				<li><a href="#services" data-i18n="siteMaintenance">Fleet Maintenance</a></li>
 			</ul>
 		</div>
 		<div class="site-map__column">
@@ -105,25 +221,38 @@
 		</div>
 	</section>
 
-	<!-- GSAP (from CDN) to drive the sticky behavior for preview -->
+	<!-- GSAP + init -->
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.1/gsap.min.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.1/ScrollTrigger.min.js"></script>
 	<script>
+		// Motion-safe, responsive pinning
 		gsap.registerPlugin(ScrollTrigger);
-		document.querySelectorAll('.sc-wrapper').forEach((wrapper, i, arr) => {
-			const card = wrapper.querySelector('.sc-card');
-			if (i === arr.length - 1) return;
-			gsap.timeline({
-				scrollTrigger: {
-					trigger: wrapper,
-					start: 'top top',
-					end: 'bottom top',
-					scrub: true,
-					pin: true,
-					pinSpacing: false
-				}
-			}).set(card, { opacity: 1, scale: 1 }).to(card, { opacity: 0, scale: 0.6, ease: 'none' }, 0.01);
-		});
+		(function(){
+			const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+			const isSmall = window.matchMedia('(max-width: 720px)').matches;
+			if (prefersReduced || isSmall) return;
+
+			document.querySelectorAll('.sc-wrapper').forEach((wrapper, i, arr) => {
+				if (i === arr.length - 1) return;
+				const card = wrapper.querySelector('.sc-card');
+				if (!card) return;
+
+				gsap.set(card, { opacity: 1, scale: 1 });
+				gsap.timeline({
+					scrollTrigger: {
+						trigger: wrapper,
+						start: 'top top',
+						end: 'bottom top',
+						scrub: 0.25,
+						pin: true,
+						pinSpacing: false,
+						anticipatePin: 1
+					}
+				}).to(card, { opacity: 0, scale: 0.86, ease: 'none' }, 0);
+			});
+
+			window.addEventListener('load', () => ScrollTrigger.refresh());
+		})();
 	</script>
 
 	<footer>
@@ -132,7 +261,18 @@
 	</footer>
 
 	<!-- JS -->
+	<script src="js/js/map.js?v=2026-01-25-2"></script>
+	<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB2-lL3jKtVa6ijgLs38NP2ag6fc4YoAE0&libraries=geometry,drawing,places&language=es&region=ES&loading=async&callback=initZonesMap"></script>
 	<script src="js/js/translations.js"></script>
 	<script src="js/js/main.js"></script>
+	<script>
+		// Show the "Open Editor" link only on dev/Codespaces hosts
+		(function(){
+			var host = location.hostname || '';
+			var dev = host === 'localhost' || host === '127.0.0.1' || location.protocol === 'file:' || host.endsWith('.app.github.dev') || host.endsWith('githubpreview.dev');
+			var link = document.getElementById('zonesOpenEditor');
+			if (link) link.style.display = dev ? 'inline-block' : 'none';
+		})();
+	</script>
 </body>
 </html>

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/>
+  <title>CARGOWORKS.es – FAQ</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css">
+  <link rel="stylesheet" href="css/effects/layout.css"/>
+</head>
+<body>
+  <header class="site-header">
+    <nav class="hero-nav">
+      <ul class="nav-links">
+        <li><a href="index.html#about" id="navAbout" data-i18n="navAbout">About</a></li>
+        <li><a href="index.html#services" id="navServices" data-i18n="navServices">Services</a></li>
+        <li><a href="index.html#zones" id="navZones" data-i18n="navZones">Zones</a></li>
+      </ul>
+      <div class="nav-controls">
+        <label for="langSelect" class="visually-hidden">🌐</label>
+        <select id="langSelect" class="lang-select">
+          <option value="ca">Català</option>
+          <option value="es">Castellano</option>
+          <option value="pt">Português</option>
+          <option value="en" selected>English</option>
+        </select>
+      </div>
+    </nav>
+  </header>
+
+  <section class="hero-section" id="top">
+    <div class="hero-inner">
+      <h1 class="hero-title" data-i18n="faqPageTitle">FAQ</h1>
+    </div>
+  </section>
+
+  <main style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
+    <p data-i18n="pageNote" style="opacity:0.8; margin-top:0;"></p>
+
+    <div class="faq" style="display:grid; gap:0.75rem;">
+      <details>
+        <summary data-i18n="faqQ1">Do you cover all of Barcelona?</summary>
+        <p data-i18n="faqA1">Yes. Coverage depends on the job, so send us the postcodes and we’ll confirm.</p>
+      </details>
+      <details>
+        <summary data-i18n="faqQ2">Do you handle multi-stop deliveries?</summary>
+        <p data-i18n="faqA2">Yes. Multi-stop routes are a big part of our work.</p>
+      </details>
+      <details>
+        <summary data-i18n="faqQ3">What can you carry?</summary>
+        <p data-i18n="faqA3">A wide range of city-friendly loads. Share approximate size and weight.</p>
+      </details>
+      <details>
+        <summary data-i18n="faqQ4">Do you offer same-day service?</summary>
+        <p data-i18n="faqA4">Yes, subject to availability and timing.</p>
+      </details>
+      <details>
+        <summary data-i18n="faqQ5">Can you replace vans completely?</summary>
+        <p data-i18n="faqA5">Sometimes. Often it’s a mix. We help find what makes sense.</p>
+      </details>
+      <details>
+        <summary data-i18n="faqQ6">How does pricing work?</summary>
+        <p data-i18n="faqA6">Pricing is clear and consistent, based on the delivery details.</p>
+      </details>
+    </div>
+
+    <div class="cta-group" style="margin:1.5rem 0 0.5rem 0;">
+      <a class="btn" href="mailto:info@cargoworks.es" data-i18n="ctaQuote">Get a quote</a>
+      <a class="btn btn--whatsapp" href="https://wa.me/34608081955?text=Hola%2C%20me%20gustar%C3%ADa%20solicitar%20una%20cotizaci%C3%B3n." target="_blank" rel="noopener" data-i18n="ctaWhatsApp">WhatsApp</a>
+    </div>
+  </main>
+
+  <footer style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
+    <span data-i18n="footerCopy">© 2025 Cargoworks – Bike Logistics Barcelona</span>
+    <a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener" data-i18n="footerInstagram">Instagram</a>
+  </footer>
+
+  <script src="js/js/translations.js"></script>
+  <script src="js/js/main.js"></script>
+  <script>try{var l=localStorage.getItem('lang'); if(l){document.getElementById('langSelect').value=l;}}catch(e){}</script>
+</body>
+</html>

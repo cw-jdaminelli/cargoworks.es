@@ -9,6 +9,13 @@ if (langSelect) {
     const nodes = document.querySelectorAll(`[data-i18n="${key}"]`);
     if (nodes.length) {
       nodes.forEach((node) => {
+        // Hide node if translation is an explicit empty string (used to suppress EN fallback)
+        if (value === '') {
+          node.style.display = 'none';
+          return;
+        } else {
+          node.style.display = '';
+        }
         if (typeof value === 'string' && value.includes('<li>')) {
           node.innerHTML = value;
         } else {
@@ -18,6 +25,12 @@ if (langSelect) {
     } else {
       const fallback = document.getElementById(key);
       if (!fallback) return;
+      if (value === '') {
+        fallback.style.display = 'none';
+        return;
+      } else {
+        fallback.style.display = '';
+      }
       if (typeof value === 'string' && value.includes('<li>')) {
         fallback.innerHTML = value;
       } else {
@@ -72,12 +85,94 @@ if (langSelect) {
     setText('siteHoursText', dict.siteHoursText);
     setText('footerInstagram', dict.footerInstagram);
     setText('footerCopy', dict.footerCopy);
+    // CTAs
+    setText('ctaQuote', dict.ctaQuote);
+    setText('ctaWhatsApp', dict.ctaWhatsApp);
+    // CTA
+    setText('ctaQuote', dict.ctaQuote);
+
+    // Pricing copy section
+    setText('pricingHeader', dict.pricingHeader);
+    setText('pricingIntro', dict.pricingIntro);
+    setText('pricingList', dict.pricingList);
+
+    // Zones controls (placeholder + button labels)
+    const addrInput = document.getElementById('addressInput');
+    if (addrInput && dict.zoneSearchPlaceholder) {
+      addrInput.placeholder = dict.zoneSearchPlaceholder;
+      addrInput.setAttribute('aria-label', dict.zoneSearchPlaceholder);
+    }
+    const addrBtn = document.getElementById('addressSearch');
+    if (addrBtn && dict.zoneSearchButton) {
+      addrBtn.textContent = dict.zoneSearchButton;
+      addrBtn.setAttribute('aria-label', dict.zoneSearchButton);
+      addrBtn.setAttribute('title', dict.zoneSearchButton);
+    }
+    const editBtn = document.getElementById('zonesEdit');
+    if (editBtn && dict.zonesEditButton) {
+      editBtn.textContent = dict.zonesEditButton;
+      editBtn.setAttribute('title', dict.zonesEditButton);
+    }
+    const exportBtn = document.getElementById('zonesExport');
+    if (exportBtn && dict.zonesExportButton) {
+      exportBtn.textContent = dict.zonesExportButton;
+      exportBtn.setAttribute('title', dict.zonesExportButton);
+    }
+    const openEditorLink = document.getElementById('zonesOpenEditor');
+    if (openEditorLink && dict.zonesOpenEditorLink) {
+      openEditorLink.textContent = dict.zonesOpenEditorLink;
+      openEditorLink.setAttribute('title', dict.zonesOpenEditorLink);
+    }
+
+    // Quote estimator: placeholders and button labels
+    const quotePickup = document.getElementById('quotePickup');
+    if (quotePickup && dict.quotePickupPlaceholder) {
+      quotePickup.placeholder = dict.quotePickupPlaceholder;
+      quotePickup.setAttribute('aria-label', dict.quotePickupPlaceholder);
+    }
+    const quoteDropoff = document.getElementById('quoteDropoff');
+    if (quoteDropoff && dict.quoteDropoffPlaceholder) {
+      quoteDropoff.placeholder = dict.quoteDropoffPlaceholder;
+      quoteDropoff.setAttribute('aria-label', dict.quoteDropoffPlaceholder);
+    }
+    const quoteEstimateBtn = document.getElementById('quoteEstimate');
+    if (quoteEstimateBtn && dict.quoteEstimate) {
+      quoteEstimateBtn.textContent = dict.quoteEstimate;
+      quoteEstimateBtn.setAttribute('title', dict.quoteEstimate);
+      quoteEstimateBtn.setAttribute('aria-label', dict.quoteEstimate);
+    }
+    const quoteAddStopBtn = document.getElementById('quoteAddStop');
+    if (quoteAddStopBtn && dict.quoteAddStop) {
+      quoteAddStopBtn.textContent = dict.quoteAddStop;
+      quoteAddStopBtn.setAttribute('title', dict.quoteAddStop);
+      quoteAddStopBtn.setAttribute('aria-label', dict.quoteAddStop);
+    }
+    const quoteSwapBtn = document.getElementById('quoteSwap');
+    if (quoteSwapBtn && dict.quoteSwapLabel) {
+      quoteSwapBtn.setAttribute('title', dict.quoteSwapLabel);
+      quoteSwapBtn.setAttribute('aria-label', dict.quoteSwapLabel);
+    }
+    // Update existing stop inputs placeholders
+    const stopInputs = document.querySelectorAll('.quote-stop');
+    if (stopInputs && stopInputs.length && dict.quoteStopPlaceholder) {
+      stopInputs.forEach((el) => {
+        el.placeholder = dict.quoteStopPlaceholder;
+        el.setAttribute('aria-label', dict.quoteStopPlaceholder);
+      });
+    }
 
     document.documentElement.lang = lang;
     try { localStorage.setItem('lang', lang); } catch (err) { /* storage optional */ }
 
     fitHeroCaption();
     matchCaptionToTitle();
+
+    // Generic pass: apply any additional keys present in the dictionary to matching elements
+    // This lets new pages (e.g., About) use translations without modifying this file again.
+    Object.keys(dict).forEach((key) => {
+      const hasNode = document.querySelector(`[data-i18n="${key}"]`) || document.getElementById(key);
+      if (hasNode) setText(key, dict[key]);
+    });
   };
 
   const initialLang = (typeof localStorage !== 'undefined' && localStorage.getItem('lang')) || langSelect.value || 'en';

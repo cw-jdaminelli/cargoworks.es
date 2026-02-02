@@ -11,31 +11,65 @@
 
       // --- Hero ---
       caption: "We’re Cargoworks — a crew of riders who know the city by heart. We deliver urgent parcels, meals and supplies with the speed of a local and the care of a neighbor.",
+        ctaQuote: "Get a quote",
+        ctaBook: "Book a delivery",
+        ctaRecurring: "Request recurring routes",
+        ctaTalk: "Talk to us",
+        ctaWhatsApp: "WhatsApp",
 
       // --- About / Services ---
       aboutTitle: "About Us",
       aboutText: "We are a reliable and socially conscious bike logistics service in Barcelona. Fast, clean, and human-powered.",
+      // --- About (full page + teaser) ---
+      aboutTeaser: "Barcelona cargo‑bike logistics for recurring and same‑day work — efficient, reliable, human.",
+      aboutReadMore: "Read more",
+      aboutLead1: "Cargoworks is a Barcelona-based urban logistics company focused on making city deliveries more efficient, practical, and sustainable.",
+      aboutLead2: "We specialize in cargo-bike delivery for businesses, with a strong focus on recurring operations. Our ideal partners are companies that deliver daily or several times a week and are either running van-based routes today or designing their delivery operation from scratch. In both cases, our role is the same: help build delivery systems that actually work in a dense city.",
+      aboutSectionRecurringTitle: "Built for recurring delivery operations",
+      aboutSectionRecurringBody1: "Cargo bikes are not a niche solution for us—they are the core of how we design urban logistics.",
+      aboutSectionRecurringBody2: "For many city routes, especially those with short distances, multiple stops, and tight time windows, cargo bikes outperform vans in speed, reliability, and cost efficiency. Less time stuck in traffic, fewer access issues, and more predictable delivery times.",
+      aboutSectionRecurringBody3: "That’s why most of our work is long-term and recurring. We work with businesses whose deliveries are a critical part of their day-to-day operations, not an occasional add-on.",
+      aboutSectionMethodTitle: "From vans to bikes — with method",
+      aboutSectionMethodIntro: "Switching from vans to cargo bikes isn’t just a vehicle swap. It’s an operational change.",
+      aboutSectionMethodList: "<li>Analyzing existing van routes and delivery patterns</li><li>Identifying which routes can move to cargo bikes</li><li>Redesigning routes around stop density, timing, and load profiles</li><li>Testing, measuring, and optimizing performance over time</li>",
+      aboutSectionMethodOutro: "The goal isn’t ideology—it’s efficiency. Fewer delays, simpler operations, and logistics that fit the reality of the city.",
+      aboutSectionSameDayTitle: "Same-day, when you need it",
+      aboutSectionSameDayBody1: "Alongside recurring routes, we also offer same-day and on-demand deliveries. These are ideal for urgent documents, last-minute orders, replacements, or time-sensitive goods.",
+      aboutSectionSameDayBody2: "Same-day jobs run on the same principles as our recurring work: clear pricing, realistic timing, and riders who know the city.",
+      aboutSectionMoreThanTitle: "More than a courier service",
+      aboutSectionMoreThanBody1: "Cargoworks is not just a pool of riders. Behind every delivery is an operations and pricing system built for clarity and consistency.",
+      aboutSectionMoreThanBody2: "We avoid vague zones, opaque pricing, and improvised routing. Instead, we focus on structured quotes, logical routes, and decisions based on real urban conditions. This allows our clients to plan, scale, and trust their delivery operations.",
+      aboutSectionRidersBody: "Our riders are experienced professionals who understand that care, communication, and reliability matter as much as speed.",
+      aboutSectionWhyTitle: "Why we do it",
+      aboutSectionWhyBody1: "Cities are changing, and urban logistics has to change with them. We believe the future of last-mile delivery is human-scaled, low-emission, and intelligently designed.",
+      aboutSectionWhyBody2: "Cargoworks exists to help businesses reduce friction, improve efficiency, and replace unnecessary van traffic with delivery systems that truly belong in the city.",
       servicesTitle: "Services",
       servicesList: "<li>Messenger & courier deliveries</li><li>Cargo bike consulting</li><li>Logistics solutions for businesses</li><li>Fleet maintenance & training</li>",
       zonesTitle: "Zone Map & Prices",
-      zonesText: "Contact us for details on weight, timing, and weekend deliveries.",
-
-      // --- Hero info blocks ---
-      block1Title: "Same-day Deliveries",
+      zonesText: "Use our estimator to check prices.",
+      servicesHowCTA: "How we work",
+      card3CTA: "See zones",
+      card4CTA: "Talk to Us",
+      // New sliding-block keys
+      letsTalkTitle: "Let's Talk",
       block1Body: "Rapid, reliable cargo-bike courier service across Barcelona's central zones.",
-      block2Title: "Sustainable Logistics",
-      block2Body: "Low-emission, human-powered deliveries tailored for local businesses. You have a need, we have the toolbox to solve it.",
+      block2Title: "Services",
+      block2Subtitle: "(what we do)",
+      block2Body: "",
+      block2List: "<li>Same-day deliveries</li><li>Recurring routes</li><li>Help ditching vans</li>",
+      block2ReadMore: "Read more",
+      block2ReadMoreHref: "services.html",
       block3Title: "Fleet & Consulting",
       block3Body: "Fleet support, consulting and cargo-bike solutions for urban logistics.",
 
       // --- Sticky cards ---
       card1Title: "Same-day Deliveries",
       card1Body: "Rapid, reliable cargo-bike courier service across Barcelona's central zones.",
-      card2Title: "Sustainable Logistics",
+      card2Title: "Services",
       card2Body: "Low-emission, human-powered deliveries tailored for local businesses.",
-      card3Title: "Fleet & Consulting",
-      card3Body: "Fleet support, consulting and cargo-bike solutions for urban logistics.",
-      card4Title: "More Services",
+      card3Title: "Zones & Pricing",
+      card3Body: "Check our service map and quick price estimator.",
+      card4Title: "Talk to Us",
       card4Body: "Fleet maintenance, training and local logistics expertise.",
       scrollDown: "Ride through our services deck",
       scrollUp: "Head back to the overview",
@@ -44,7 +78,7 @@
       siteExplore: "Explore",
       siteAbout: "About",
       siteServices: "Services",
-      siteZones: "Zones",
+      siteZones: "Zones & Prices",
       siteFaq: "FAQ",
       siteSolutions: "Solutions",
       siteMessenger: "Messenger & courier",
@@ -52,13 +86,120 @@
       siteRoutes: "Route planning",
       siteMaintenance: "Fleet maintenance",
       siteContact: "Contact",
-      siteContactBlurb: "Reach our coordinators for bookings, partnerships, or support 7 days a week.",
+      siteContactBlurb: "Reach us for bookings or help.",
       siteEmailLabel: "Email",
       sitePhoneLabel: "Phone",
       siteHoursLabel: "Hours",
-      siteHoursText: "7:00 - 17:00 Mon-Fri and 7:00 - 15:00 Saturday and Sunday, with the exception of booked jobs.",
+      siteHoursText: "Mon–Fri 7:00–17:00, Sat–Sun 7:00–15:00.",
       footerInstagram: "Instagram",
       footerCopy: "© 2025 Cargoworks – Bike Logistics Barcelona"
+      ,
+      // --- Generic page note (set empty in EN; used to show placeholder notes in other languages) ---
+      pageNote: "",
+
+      // --- Pages: Services (EN) ---
+      servicesPageTitle: "Services",
+        // --- Pages: About (EN) ---
+        aboutPageTitle: "About",
+        aboutP1: "Cargoworks is a Barcelona-based cargo bike courier service. We move things across the city every day, all year, in real conditions.",
+        aboutP2: "At our core, we are couriers. What supports that work is solid experience in cargo bike logistics: routes, timing, loads, pricing, operations, and people. We don’t just ride bikes — we understand how urban delivery works and take responsibility for doing it properly.",
+        aboutP3: "Cargo bike logistics isn’t a trend for us. It’s a professional tool.",
+        aboutP4: "We work with businesses that deliver regularly, as well as clients who need occasional same-day jobs. Some are moving away from vans, others start directly with bikes. In both cases, our role is to make deliveries simple, reliable, and realistic.",
+        aboutP5: "Every job is planned with care. Sometimes that means redesigning routes. Sometimes adjusting expectations. Often, it just means simplifying things.",
+        aboutP6: "We take responsibility towards our clients, our riders, the city, and the environment. Sustainability isn’t a slogan — it’s what happens when logistics are done well.",
+      servicesSameDayTitle: "Same-day deliveries",
+      servicesSameDayBody: "For urgent or time-sensitive deliveries across the city.",
+      servicesRecurringTitle: "Recurring routes",
+      servicesRecurringBody: "For businesses that deliver daily or weekly and need consistency.",
+      servicesTransitionTitle: "Van → cargo bike transition",
+      servicesTransitionBody: "Support for businesses looking to reduce van use and improve urban efficiency.",
+
+      // --- Pages: Industries (EN) ---
+      industriesPageTitle: "Industries",
+      industriesIntro: "We work with:",
+      industriesList: "<li>Food and hospitality</li><li>Retail and local shops</li><li>E‑commerce and local brands</li><li>Offices and professional services</li><li>Events and production</li>",
+      industriesOutro: "If you’re not sure where you fit, just ask us.",
+
+      // --- Pages: FAQ (EN) ---
+      faqPageTitle: "FAQ",
+      faqQ1: "Do you cover all of Barcelona?",
+      faqA1: "Yes. Coverage depends on the job, so send us the postcodes and we’ll confirm.",
+      faqQ2: "Do you handle multi-stop deliveries?",
+      faqA2: "Yes. Multi-stop routes are a big part of our work.",
+      faqQ3: "What can you carry?",
+      faqA3: "A wide range of city-friendly loads. Share approximate size and weight.",
+      faqQ4: "Do you offer same-day service?",
+      faqA4: "Yes, subject to availability and timing.",
+      faqQ5: "Can you replace vans completely?",
+      faqA5: "Sometimes. Often it’s a mix. We help find what makes sense.",
+      faqQ6: "How does pricing work?",
+      faqA6: "Pricing is clear and consistent, based on the delivery details.",
+
+      // --- Pages: Contact (EN) ---
+      contactPageTitle: "Contact",
+      contactIntro: "Send us:",
+      contactList: "<li>Pickup and delivery address(es)</li><li>Time window</li><li>What it is and approximate size/weight</li><li>Any special notes</li>",
+      contactOutro: "We’ll reply quickly with next steps.",
+      contactEmailCta: "Email us",
+      contactWhatsappCta: "WhatsApp",
+
+      // --- Pages: Legal (EN) ---
+      legalPageTitle: "Legal",
+      legalComingSoon: "Legal information coming soon."
+      ,
+      // --- Zones controls ---
+      zoneSearchPlaceholder: "Enter address to check zone",
+      zoneSearchButton: "Check address",
+      zonesEditButton: "Edit zones",
+      zonesExportButton: "Export zones",
+      zonesOpenEditorLink: "Open Editor"
+      ,
+      // --- Pricing copy ---
+      pricingHeader: "Services & Pricing",
+      pricingIntro: "Our estimator shows base‑zone pricing or hourly for long routes. Here’s how we price common cases:",
+      pricingList: "<li>Base delivery per zone: click the map to see it.</li><li>Long trips: hourly if total route time &gt; 1h (first hour €25; then €6 per 15 min).</li><li>Weekend/holiday, &gt;30 kg, after‑hours: adds 25% to the base.</li><li>Multi‑drop: −10% from 3+ drops in the same zone or 10+ across zones.</li><li>Outside the service map: contact us for a custom quote.</li>"
+      ,
+      // --- Quote estimator ---
+      quotePickupPlaceholder: "Pickup address",
+      quoteDropoffPlaceholder: "Dropoff address",
+      quoteStopPlaceholder: "Stop address",
+      quoteEstimate: "Estimate",
+      quoteAddStop: "Add stop",
+      quoteSwapLabel: "Swap pickup and dropoff",
+      quoteUseDropAsStop: "Use destination as first stop",
+      quoteByDistance: "Price by distance",
+      quoteEnterBoth: "Enter pickup and dropoff",
+      quoteAddressNotFound: "Address not found",
+      quoteOutsideService: "Outside service map — please contact us for a custom quote.",
+      quoteHourlyBreakdown: "Includes 1h + 15-min increments",
+      quoteEtasPrefix: "ETAs: {list}",
+      quoteHourly: "{currency}{price} hourly. Total {route} (approach {approach}, job {job}). {breakdown}.{etas}",
+      quoteBase: "{currency}{total}. Base Zone {zone} {currency}{base}{cross}"
+      ,
+      quoteCouldNotEstimate: "Could not estimate route — please check addresses and try again.",
+      quoteCrossings: "; crossed {count} zones (+5% each)",
+      quoteEtaLabelApproach: "Base → Pickup",
+      quoteEtaLabelStop: "Stop {n}",
+      quoteEtaLabelDropoff: "Dropoff",
+      quoteUnitHour: "h",
+      quoteUnitMinute: "min"
+      ,
+      // Per-stop breakdown
+      quotePerStopPrefix: "Breakdown: {list}",
+      quotePerStopItem: "Drop {n}: {currency}{total} (Zone {zone} base {currency}{base}{cross})",
+      quoteTotal: "Total {currency}{total}"
+      ,
+      // Distance pricing
+      quoteDistanceLeg: "Leg {n}: {km} km {currency}{price}",
+      quoteDistanceTotal: "Total {currency}{total} (distance {km} km)",
+      
+      dragHandleLabel: "Drag to reorder"
+      ,
+      // --- Map / API diagnostics ---
+      apiStatusNoPlaces: "Address suggestions unavailable — enable Places API and referrers for this key.",
+      mapFailedLoad: "Map failed to load. Check API key/referrer settings."
+      ,
+      mapAuthFailure: "Maps authentication failed — verify API key, enabled APIs (Maps JavaScript, Places), billing, and allowed website referrers."
     },
     es: {
       // --- Navegación ---
@@ -68,31 +209,68 @@
 
       // --- Hero ---
       caption: "Somos Cargoworks: reparto ágil y cercano en Barcelona, fiable y de bajo impacto — gestionado por gente local que se implica.",
+        ctaQuote: "Pide presupuesto",
+        ctaBook: "Reservar un envío",
+        ctaRecurring: "Solicitar rutas recurrentes",
+        ctaTalk: "Háblanos",
+        ctaWhatsApp: "WhatsApp",
+  // --- Páginas: Sobre (ES) ---
+  aboutPageTitle: "Sobre Nosotros",
 
       // --- Sobre / Servicios ---
       aboutTitle: "Sobre Nosotros",
       aboutText: "Somos un servicio de mensajería y logística en bicicleta, fiable y socialmente consciente en Barcelona.",
+      // --- Sobre (página completa + teaser) ---
+      aboutTeaser: "Logística en cargo bike en Barcelona para trabajo recurrente y mismo día — eficiente, fiable y humana.",
+      aboutReadMore: "Leer más",
+      aboutLead1: "Cargoworks es una empresa de logística urbana con sede en Barcelona, centrada en hacer las entregas en la ciudad más eficientes, prácticas y sostenibles.",
+      aboutLead2: "Nos especializamos en entregas en cargo bike para empresas, con fuerte foco en operaciones recurrentes. Nuestros socios ideales son compañías que entregan a diario o varias veces por semana y que hoy operan rutas en furgoneta o están diseñando su operación desde cero. En ambos casos, nuestro papel es el mismo: ayudar a construir sistemas de reparto que realmente funcionen en una ciudad densa.",
+      aboutSectionRecurringTitle: "Pensado para operaciones recurrentes",
+      aboutSectionRecurringBody1: "Para nosotros las cargo bikes no son una solución de nicho: son el núcleo de cómo diseñemos la logística urbana.",
+      aboutSectionRecurringBody2: "En muchas rutas urbanas —distancias cortas, múltiples paradas y ventanas de tiempo ajustadas— las cargo bikes superan a las furgonetas en velocidad, fiabilidad y coste. Menos tiempo en tráfico, menos problemas de acceso y tiempos más previsibles.",
+      aboutSectionRecurringBody3: "Por eso la mayor parte de nuestro trabajo es a largo plazo y recurrente. Trabajamos con empresas cuyas entregas son críticas en su día a día, no un añadido ocasional.",
+      aboutSectionMethodTitle: "De furgonetas a bicis — con método",
+      aboutSectionMethodIntro: "Pasar de furgonetas a cargo bikes no es solo cambiar de vehículo. Es un cambio operativo.",
+      aboutSectionMethodList: "<li>Analizar rutas y patrones de reparto actuales</li><li>Identificar qué rutas pueden pasar a cargo bike</li><li>Rediseñar rutas por densidad de paradas, tiempos y perfiles de carga</li><li>Probar, medir y optimizar el rendimiento en el tiempo</li>",
+      aboutSectionMethodOutro: "El objetivo no es la ideología, es la eficiencia: menos retrasos, operaciones más simples y logística que encaja con la realidad de la ciudad.",
+      aboutSectionSameDayTitle: "Mismo día, cuando hace falta",
+      aboutSectionSameDayBody1: "Además de rutas recurrentes, ofrecemos entregas en el mismo día y bajo demanda. Ideales para documentos urgentes, pedidos de última hora, reposiciones o mercancía sensible al tiempo.",
+      aboutSectionSameDayBody2: "El mismo día se gestiona con los mismos principios que nuestro trabajo recurrente: precios claros, tiempos realistas y riders que conocen la ciudad.",
+      aboutSectionMoreThanTitle: "Más que una mensajería",
+      aboutSectionMoreThanBody1: "Cargoworks no es solo una bolsa de riders. Detrás de cada entrega hay un sistema operativo y de precios pensado para la claridad y la consistencia.",
+      aboutSectionMoreThanBody2: "Evitamos zonas difusas, precios opacos y rutas improvisadas. Apostamos por presupuestos estructurados, rutas lógicas y decisiones basadas en condiciones urbanas reales. Así nuestros clientes pueden planificar, escalar y confiar en su operación de reparto.",
+      aboutSectionRidersBody: "Nuestros riders son profesionales que entienden que el cuidado, la comunicación y la fiabilidad importan tanto como la velocidad.",
+      aboutSectionWhyTitle: "Por qué lo hacemos",
+      aboutSectionWhyBody1: "Las ciudades están cambiando y la logística urbana debe cambiar con ellas. Creemos que el futuro del ‘último kilómetro’ es a escala humana, de bajas emisiones y bien diseñado.",
+      aboutSectionWhyBody2: "Cargoworks existe para ayudar a las empresas a reducir fricciones, mejorar la eficiencia y sustituir tráfico innecesario de furgonetas por sistemas de reparto que de verdad pertenecen a la ciudad.",
       servicesTitle: "Servicios",
       servicesList: "<li>Mensajería y repartos</li><li>Consultoría de bicis de carga</li><li>Soluciones logísticas para empresas</li><li>Mantenimiento y formación de flotas</li>",
       zonesTitle: "Mapa de Zonas y Precios",
-      zonesText: "Contáctanos para detalles sobre peso, horarios y entregas en fin de semana.",
-
-      // --- Bloques hero ---
+      zonesText: "Usa el estimador para consultar precios.",
+      servicesHowCTA: "Ver cómo trabajamos",
+      card3CTA: "Ver zonas",
+      card4CTA: "Falar conosco",
+      card4CTA: "Háblanos",
+      // --- Hero info blocks ---
       block1Title: "Entregas en el mismo día",
       block1Body: "Servicio rápido y fiable de mensajería en cargo bike por las zonas centrales de Barcelona.",
-      block2Title: "Logística sostenible",
-      block2Body: "Entregas de bajo impacto, humanas y adaptadas a los negocios locales. Tú pides, nosotros tenemos las herramientas.",
+      block2Title: "Servicios",
+      block2Subtitle: "(qué hacemos)",
+      block2Body: "",
+      block2List: "<li>Entregas en el mismo día</li><li>Rutas recurrentes</li><li>Ayuda para dejar las furgonetes</li>",
+      block2ReadMore: "Leer más",
+      block2ReadMoreHref: "services.html",
       block3Title: "Flota y consultoría",
       block3Body: "Soporte de flotas, consultoría y soluciones de bicicletas de carga para la logística urbana.",
 
       // --- Tarjetas sticky ---
       card1Title: "Entregas en el mismo día",
       card1Body: "Servicio rápido y fiable de mensajería en cargo bike por las zonas centrales de Barcelona.",
-      card2Title: "Logística sostenible",
+      card2Title: "Servicios",
       card2Body: "Entregas de bajo impacto, humanas y adaptadas a los negocios locales.",
-      card3Title: "Flota y consultoría",
-      card3Body: "Soporte de flotas, consultoría y soluciones de bicicletas de carga para la logística urbana.",
-      card4Title: "Más servicios",
+      card3Title: "Zonas y Precios",
+      card3Body: "Consulta nuestro mapa de servicio y el estimador rápido de precios.",
+      card4Title: "Háblanos",
       card4Body: "Mantenimiento de flotas, formación y experiencia logística local.",
       scrollDown: "Recorre nuestro bloque de servicios",
       scrollUp: "Vuelve al resumen",
@@ -101,7 +279,7 @@
       siteExplore: "Descubre",
       siteAbout: "Nosotros",
       siteServices: "Servicios",
-      siteZones: "Zonas",
+      siteZones: "Zonas y Precios",
       siteFaq: "Preguntas frecuentes",
       siteSolutions: "Soluciones",
       siteMessenger: "Mensajería y courier",
@@ -109,13 +287,86 @@
       siteRoutes: "Planificación de rutas",
       siteMaintenance: "Mantenimiento de flotas",
       siteContact: "Contacto",
-      siteContactBlurb: "Habla con nuestro equipo para reservas, colaboraciones o soporte los 7 días de la semana.",
+      siteContactBlurb: "Contáctanos para reservas o ayuda.",
       siteEmailLabel: "Correo",
       sitePhoneLabel: "Teléfono",
       siteHoursLabel: "Horario",
-      siteHoursText: "7:00 - 17:00 de lunes a viernes y 7:00 - 15:00 sábados y domingos, salvo trabajos reservados.",
+      siteHoursText: "Lun–Vie 7:00–17:00, Sáb–Dom 7:00–15:00.",
       footerInstagram: "Instagram",
-      footerCopy: "© 2025 Cargoworks – Logística en bicicleta Barcelona"
+      footerCopy: "© 2025 Cargoworks – Logística en bicicleta a Barcelona",
+      // --- Notas de página / placeholders ---
+      pageNote: "Contenido en español próximamente.",
+      // --- Páginas: Sobre (ES) ---
+      aboutPageTitle: "Sobre Nosotros",
+      aboutP1: "Cargoworks es un servicio de mensajería en cargo bike con base en Barcelona. Movemos cosas por la ciudad cada día, todo el año, en condiciones reales.",
+      aboutP2: "En esencia, somos mensajeros. Lo que sostiene ese trabajo es experiencia sólida en logística con cargo bikes: rutas, tiempos, cargas, precios, operativa y personas. No solo montamos en bici — entendemos cómo funciona el reparto urbano y asumimos la responsabilidad de hacerlo bien.",
+      aboutP3: "La logística con cargo bikes no es una tendencia para nosotros. Es una herramienta profesional.",
+      aboutP4: "Trabajamos con empresas que reparten de forma regular y con clientes que necesitan envíos puntuales en el mismo día. Algunos están dejando atrás las furgonetas; otros empiezan directamente con bicicletas. En ambos casos, nuestro papel es hacer que los repartos sean simples, fiables y realistas.",
+      aboutP5: "Cada servicio se planifica con cuidado. A veces implica rediseñar rutas. A veces ajustar expectativas. A menudo, simplemente simplificar.",
+      aboutP6: "Asumimos responsabilidad hacia nuestros clientes, nuestros riders, la ciudad y el medio ambiente. La sostenibilidad no es un eslogan — es lo que ocurre cuando la logística está bien diseñada.",
+      // --- Páginas (títulos mínimos) ---
+      servicesPageTitle: "Servicios",
+      industriesPageTitle: "Industrias",
+      faqPageTitle: "Preguntas frecuentes",
+      contactPageTitle: "Contacto",
+      legalPageTitle: "Legal",
+      contactEmailCta: "Escríbenos",
+      contactWhatsappCta: "WhatsApp",
+      industriesIntro: "Trabajamos con:",
+      industriesOutro: "Si no encajas en una categoría, consúltanos.",
+      // --- Controles de zonas ---
+      zoneSearchPlaceholder: "Introduce una dirección para ver la zona",
+      zoneSearchButton: "Comprobar dirección",
+      zonesEditButton: "Editar zonas",
+      zonesExportButton: "Exportar zonas",
+      zonesOpenEditorLink: "Abrir editor"
+      ,
+      // --- Copia de precios ---
+      pricingHeader: "Servicios y precios",
+      pricingIntro: "El estimador muestra precio por zona o por horas en rutas largas. Así calculamos los casos comunes:",
+      pricingList: "<li>Entrega base por zona: haz clic en el mapa para verla.</li><li>Rutas largas: por horas si el tiempo total supera 1h (primera hora 25 €; luego 6 € cada 15 min).</li><li>Fin de semana/festius, &gt;30 kg, fora d’horari: afegeix 25% al base.</li><li>Múltiples parades: −10% des de 3+ parades a la mateixa zona o 10+ en zones diferents.</li><li>Fuera del mapa de servei: contacta’ns per un pressupost a mida.</li>"
+      ,
+      // --- Estimador ---
+      quotePickupPlaceholder: "Dirección de recogida",
+      quoteDropoffPlaceholder: "Dirección de entrega",
+      quoteStopPlaceholder: "Dirección de parada",
+      quoteEstimate: "Calcular",
+      quoteAddStop: "Añadir parada",
+      quoteSwapLabel: "Intercambiar recogida y entrega",
+      quoteUseDropAsStop: "Usar destino com a primera parada",
+      quoteByDistance: "Precio por distancia",
+      quoteEnterBoth: "Introduce recogida i entrega",
+      quoteAddressNotFound: "Dirección no encontrada",
+      quoteOutsideService: "Fuera del mapa de servei — contacta’ns per un pressupost a mida.",
+      quoteHourlyBreakdown: "Inclou 1h + trams de 15 min",
+      quoteEtasPrefix: "ETAs: {list}",
+      quoteHourly: "{currency}{price} per hora. Total {route} (aproximació {approach}, feina {job}). {breakdown}.{etas}",
+      quoteBase: "{currency}{total}. Zona base {zone} {currency}{base}{cross}"
+      ,
+      quoteCouldNotEstimate: "No s'ha pogut estimar la ruta — comprova les adreces i torna-ho a provar.",
+      quoteCrossings: "; travessades {count} zones (+5% cadascuna)",
+      quoteEtaLabelApproach: "Base → Recollida",
+      quoteEtaLabelStop: "Parada {n}",
+      quoteEtaLabelDropoff: "Entrega",
+      quoteUnitHour: "h",
+      quoteUnitMinute: "min"
+      ,
+      // Desglose por parada
+      quotePerStopPrefix: "Desglossament: {list}",
+      quotePerStopItem: "Entrega {n}: {currency}{total} (Zona {zone} base {currency}{base}{cross})",
+      quoteTotal: "Total {currency}{total}"
+      ,
+      // Preu per distància
+      quoteDistanceLeg: "Tram {n}: {km} km {currency}{price}",
+      quoteDistanceTotal: "Total {currency}{total} (distància {km} km)",
+      
+      dragHandleLabel: "Arrossega per reordenar"
+      ,
+      // --- Mapa / API ---
+      apiStatusNoPlaces: "Suggeriments d'adreces no disponibles — activa la Places API i els referents per a aquesta clau.",
+      mapFailedLoad: "No s'ha pogut carregar el mapa. Comprova la clau i els referents permesos."
+      ,
+      mapAuthFailure: "Ha fallat l'autenticació de Maps — verifica la clau, les APIs habilitades (Maps JavaScript, Places), la facturació i els referents permesos."
     },
     ca: {
       // --- Navegació ---
@@ -125,31 +376,69 @@
 
       // --- Hero ---
       caption: "Som Cargoworks: repartiment ràpid i proper a Barcelona, fiable i de baix impacte — fet per gent local que s'hi deixa la pell.",
+        ctaQuote: "Demana pressupost",
+        ctaBook: "Reservar enviament",
+        ctaRecurring: "Sol·licitar rutes recurrents",
+        ctaTalk: "Parla amb nosaltres",
+        ctaWhatsApp: "WhatsApp",
+  // --- Pàgines: Sobre (CA) ---
+  aboutPageTitle: "Sobre Nosaltres",
+  aboutP1: "Cargoworks és un servei de missatgeria amb cargo bike amb base a Barcelona. Repartim per la ciutat cada dia.",
+  aboutP2: "Som missatgers, recolzats per experiència real en logística urbana. Assumim responsabilitat amb les persones, la ciutat i el medi ambient.",
 
       // --- Sobre / Serveis ---
       aboutTitle: "Sobre Nosaltres",
       aboutText: "Som un servei de missatgeria i logística en bicicleta, fiable i amb consciència social a Barcelona.",
+      // --- Sobre (pàgina completa + teaser) ---
+      aboutTeaser: "Logística amb cargo bike des de Barcelona per a operacions recurrents i treballs en el mateix dia. Dissenyada per a la ciutat real — eficient, fiable i humana.",
+      aboutReadMore: "Llegeix més",
+      aboutLead1: "Cargoworks és una empresa de logística urbana amb seu a Barcelona, centrada a fer les entregues a la ciutat més eficients, pràctiques i sostenibles.",
+      aboutLead2: "Ens especialitzem en entregues amb bicicletes de càrrega per a empreses, amb fort enfocament en operacions recurrents. Els nostres socis ideals són companyies que lliuren cada dia o diverses vegades per setmana i que avui operen rutes amb furgoneta o estan dissenyant l’operació des de zero. En tots dos casos, el nostre rol és el mateix: ajudar a construir sistemes de repartiment que realment funcionin en una ciutat densa.",
+      aboutSectionRecurringTitle: "Pensat per a operacions recurrents",
+      aboutSectionRecurringBody1: "Per a nosaltres les cargo bikes no són una solució de nínxol: són el cor de com dissenyem la logística urbana.",
+      aboutSectionRecurringBody2: "En moltes rutes urbanes —distàncies curtes, múltiples parades i franges horàries ajustades— les cargo bikes superen les furgonetes en velocitat, fiabilitat i cost. Menys temps en trànsit, menys problemes d’accés i terminis més previsibles.",
+      aboutSectionRecurringBody3: "Per això la major part de la nostra feina és a llarg termini i recurrent. Treballem amb negocis on les entregues són una part crítica del dia a dia, no un servei ocasional.",
+      aboutSectionMethodTitle: "De furgonetes a bicis — amb mètode",
+      aboutSectionMethodIntro: "Passar de furgonetes a cargo bikes no és només canviar de vehicle. És un canvi operatiu.",
+      aboutSectionMethodList: "<li>Analitzar rutes i patrons d’entrega actuals</li><li>Identificar quines rutes poden passar a cargo bike</li><li>Redissenyar rutes per densitat de parades, tempos i perfils de càrrega</li><li>Provar, mesurar i optimitzar el rendiment al llarg del temps</li>",
+      aboutSectionMethodOutro: "L’objectiu no és la ideologia, és l’eficiència: menys retards, operacions més simples i logística que encaixa amb la realitat de la ciutat.",
+      aboutSectionSameDayTitle: "El mateix dia, quan cal",
+      aboutSectionSameDayBody1: "A més de rutes recurrents, oferim entregues en el mateix dia i a demanda. Ideals per a documents urgentes, comandes d’última hora, reposicions o mercaderies sensibles al temps.",
+      aboutSectionSameDayBody2: "El servei del mateix dia segueix els mateixos principis que la feina recurrent: preus clars, tempos realistes i riders que coneixen la ciutat.",
+      aboutSectionMoreThanTitle: "Més que una missatgeria",
+      aboutSectionMoreThanBody1: "Cargoworks no és només una bossa de riders. Darrere de cada entrega hi ha un sistema operatiu i de preus pensat per la claredat i la consistència.",
+      aboutSectionMoreThanBody2: "Evitem zones difuses, preus opacs i rutes improvisades. Apostem per pressupostos estructurats, rutes lògiques i decisions basades en condicions urbanes reals. Això permet als clients planificar, escalar i confiar en la seva operació de repartiment.",
+      aboutSectionRidersBody: "Els nostres riders són professionals que entenen que la cura, la comunicació i la fiabilitat importen tant com la velocitat.",
+      aboutSectionWhyTitle: "Per què ho fem",
+      aboutSectionWhyBody1: "Les ciutats estan canviant i la logística urbana ha de canviar amb elles. Creiem que el futur del darrer tram és a escala humana, de baixes emissions i ben dissenyat.",
+      aboutSectionWhyBody2: "Cargoworks existeix per ajudar les empreses a reduir friccions, millorar l’eficiència i substituir trànsit innecessari de furgonetes per sistemes d’entrega que realment pertanyen a la ciutat.",
       servicesTitle: "Serveis",
       servicesList: "<li>Missatgeria i repartiments</li><li>Consultoria de bicis de càrrega</li><li>Solucions logístiques per a empreses</li><li>Manteniment i formació de flotes</li>",
       zonesTitle: "Mapa de Zones i Preus",
-      zonesText: "Contacta amb nosaltres per a detalls de pes, horaris i entregues en cap de setmana.",
-
+      zonesText: "Fes servir l’estimador per consultar preus.",
+      servicesHowCTA: "Com treballem",
+      card3CTA: "Veure zones",
+      card4CTA: "Parla amb nosaltres",
       // --- Blocs hero ---
       block1Title: "Entregues en el mateix dia",
       block1Body: "Servei ràpid i fiable de missatgeria amb bicicletes de càrrega pels barris centrals de Barcelona.",
-      block2Title: "Logística sostenible",
-      block2Body: "Entregues de baix impacte, impulsades per persones, pensades per als negocis locals. Tu tens la necessitat, nosaltres les eines.",
+      block2Title: "Servicios",
+      block2Subtitle: "(què fem)",
+      block2Body: "",
+      block2List: "<li>Entregues en el mateix dia</li><li>Rutes recurrents</li><li>Ajuda per deixar les furgonetes</li>",
+      block2ReadMore: "Leer més",
+      block2ReadMoreHref: "services.html",
       block3Title: "Flota i consultoria",
-      block3Body: "Suport de flota, consultoria i solucions de bicicletes de càrrega per a la logística urbana.",
+      block3Body: "Suport de flota, consultoria i soluções de bicicletes de càrrega per a la logística urbana.",
 
       // --- Targetes sticky ---
       card1Title: "Entregues en el mateix dia",
       card1Body: "Servei ràpid i fiable de missatgeria amb bicicletes de càrrega pels barris centrals de Barcelona.",
-      card2Title: "Logística sostenible",
+      card2Title: "Serveis",
       card2Body: "Entregues de baix impacte, pensades per als negocis locals.",
-      card3Title: "Flota i consultoria",
-      card3Body: "Suport de flota, consultoria i solucions de bicicletes de càrrega per a la logística urbana.",
-      card4Title: "Més serveis",
+      card3Title: "Zones i Preus",
+      card3Body: "Consulta el nostre mapa de servei i l’estimador ràpid de preus.",
+      card4Title: "Parla amb nosaltres",
       card4Body: "Manteniment de flotes, formació i experiència logística local.",
       scrollDown: "Recorre el nostre bloc de serveis",
       scrollUp: "Torna al resum",
@@ -158,7 +447,7 @@
       siteExplore: "Explora",
       siteAbout: "Nosaltres",
       siteServices: "Serveis",
-      siteZones: "Zones",
+      siteZones: "Zones i Preus",
       siteFaq: "Preguntes freqüents",
       siteSolutions: "Solucions",
       siteMessenger: "Missatgeria i courier",
@@ -166,13 +455,86 @@
       siteRoutes: "Planificació de rutes",
       siteMaintenance: "Manteniment de flotes",
       siteContact: "Contacte",
-      siteContactBlurb: "Parla amb el nostre equip per reserves, aliances o suport cada dia de la setmana.",
+      siteContactBlurb: "Contacta'ns per a reserves o ajuda.",
       siteEmailLabel: "Correu",
       sitePhoneLabel: "Telèfon",
       siteHoursLabel: "Horari",
-      siteHoursText: "7:00 - 17:00 de dilluns a divendres i 7:00 - 15:00 dissabtes i diumenges, excepte serveis reservats.",
+      siteHoursText: "Dl–Dv 7:00–17:00, Ds–Dg 7:00–15:00.",
       footerInstagram: "Instagram",
-      footerCopy: "© 2025 Cargoworks – Logística amb bicicleta a Barcelona"
+      footerCopy: "© 2025 Cargoworks – Logística amb bicicleta a Barcelona",
+      // --- Notes de pàgina / placeholders ---
+      pageNote: "Contingut en català properament.",
+      // --- Pàgines: Sobre (CA) ---
+      aboutPageTitle: "Sobre Nosaltres",
+      aboutP1: "Cargoworks és un servei de missatgeria amb cargo bike amb base a Barcelona. Repartim per la ciutat cada dia.",
+      aboutP2: "Som missatgers, recolzats per experiència real en logística urbana. Assumim responsabilitat amb les persones, la ciutat i el medi ambient.",
+      aboutP3: "",
+      aboutP4: "",
+      aboutP5: "",
+      aboutP6: "Assumim responsabilitat amb els clients, els riders, la ciutat i el medi ambient. La sostenibilitat no és un eslògan — és el que passa quan la logística es fa bé.",
+      // --- Pàgines (títols mínims) ---
+      servicesPageTitle: "Serveis",
+      industriesPageTitle: "Sectors",
+      faqPageTitle: "Preguntes freqüents",
+      contactPageTitle: "Contacte",
+      legalPageTitle: "Legal",
+      contactEmailCta: "Enviar e-mail",
+      contactWhatsappCta: "WhatsApp",
+      industriesIntro: "Treballem amb:",
+      industriesOutro: "Si no t'hi veus, pregunta'ns.",
+      // --- Controls de zones ---
+      zoneSearchPlaceholder: "Introdueix una adreça per veure la zona",
+      zoneSearchButton: "Comprovar adreça",
+      zonesEditButton: "Editar zones",
+      zonesExportButton: "Exportar zones",
+      zonesOpenEditorLink: "Obrir editor"
+      ,
+      // --- Còpia de preus ---
+      pricingHeader: "Serveis i preus",
+      pricingIntro: "L’estimador mostra preu per zona o per hores en rutes llargues. Així calculem els casos més habituals:",
+      pricingList: "<li>Entrega base per zona: fes clic al mapa per veure-la.</li><li>Rutes llargues: per hores si el temps total supera 1h (primera hora 25 €; després 6 € cada 15 min).</li><li>Cap de setmana/festius, &gt;30 kg, fora d’horari: afegeix 25% al base.</li><li>Múltiples parades: −10% des de 3+ parades a la mateixa zona o 10+ en zones diferents.</li><li>Fora del mapa de servei: contacta’ns per un pressupost a mida.</li>"
+      ,
+      // --- Estimador ---
+      quotePickupPlaceholder: "Adreça de recollida",
+      quoteDropoffPlaceholder: "Adreça de lliurament",
+      quoteStopPlaceholder: "Adreça de parada",
+      quoteEstimate: "Calcular",
+      quoteAddStop: "Afegir parada",
+      quoteSwapLabel: "Intercanviar recollida i lliurament",
+      quoteUseDropAsStop: "Usar destinació com a primera parada",
+      quoteByDistance: "Preu per distància",
+      quoteEnterBoth: "Introdueix recollida i lliurament",
+      quoteAddressNotFound: "Adreça no trobada",
+      quoteOutsideService: "Fora del mapa de servei — contacta’ns per un pressupost a mida.",
+      quoteHourlyBreakdown: "Inclou 1h + trams de 15 min",
+      quoteEtasPrefix: "ETAs: {list}",
+      quoteHourly: "{currency}{price} per hora. Total {route} (aproximació {approach}, feina {job}). {breakdown}.{etas}",
+      quoteBase: "{currency}{total}. Zona base {zone} {currency}{base}{cross}"
+      ,
+      quoteCouldNotEstimate: "No s'ha pogut estimar la ruta — comprova les adreces i torna-ho a provar.",
+      quoteCrossings: "; travessades {count} zones (+5% cadascuna)",
+      quoteEtaLabelApproach: "Base → Recollida",
+      quoteEtaLabelStop: "Parada {n}",
+      quoteEtaLabelDropoff: "Lliurament",
+      quoteUnitHour: "h",
+      quoteUnitMinute: "min"
+      ,
+      // Desglossament per parada
+      quotePerStopPrefix: "Desglossament: {list}",
+      quotePerStopItem: "Lliurament {n}: {currency}{total} (Zona {zone} base {currency}{base}{cross})",
+      quoteTotal: "Total {currency}{total}"
+      ,
+      // Preu per distància
+      quoteDistanceLeg: "Tram {n}: {km} km {currency}{price}",
+      quoteDistanceTotal: "Total {currency}{total} (distància {km} km)",
+      
+      dragHandleLabel: "Arrossega per reordenar"
+      ,
+      // --- Mapa / API ---
+      apiStatusNoPlaces: "Suggeriments d'adreces no disponibles — activa la Places API i els referents per a aquesta clau.",
+      mapFailedLoad: "No s'ha pogut carregar el mapa. Comprova la clau i els referents permesos."
+      ,
+      mapAuthFailure: "Ha fallat l'autenticació de Maps — verifica la clau, les APIs habilitades (Maps JavaScript, Places), la facturació i els referents permesos."
     },
     pt: {
       // --- Navegação ---
@@ -181,57 +543,168 @@
       navZones: "Zonas",
 
       // --- Hero ---
-      caption: "Somos CARGOWORKS: entregas rápidas e próximas em Barcelona, confiáveis e de baixo impacto — feitas por gente local que se importa.",
+      caption: "Somos a CARGOWORKS: entregas rápidas e próximas em Barcelona, de confiança e com baixo impacte — feitas por gente local que realmente se importa.",
+        ctaQuote: "Peça um orçamento",
+        ctaBook: "Agendar entrega",
+        ctaRecurring: "Solicitar rotas recorrentes",
+        ctaTalk: "Fale conosco",
+        ctaWhatsApp: "WhatsApp",
+  // --- Páginas: Sobre (PT-BR) ---
+  aboutPageTitle: "Sobre",
+  aboutP1: "A Cargoworks é um serviço de courier com cargo bike baseado em Barcelona.",
+  aboutP2: "Somos mensageiros com experiência real em logística urbana. Assumimos responsabilidade com pessoas, cidade e meio ambiente.",
 
       // --- Sobre / Serviços ---
-      aboutTitle: "Sobre Nós",
-      aboutText: "Somos um serviço de logística em bicicleta confiável e consciente em Barcelona. Rápido, limpo e humano.",
+      aboutTitle: "Sobre a gente",
+      aboutText: "Somos um serviço de logística de bike confiável e consciente em Barcelona. Rápido, limpo e humano.",
+      // --- Sobre (página completa + teaser) ---
+      aboutTeaser: "Logística com cargo bike em Barcelona para serviços recorrentes e no mesmo dia — eficiente, fiável e humana.",
+      aboutReadMore: "Saiba mais",
+      aboutLead1: "A Cargoworks é uma empresa de logística urbana sediada em Barcelona, focada em tornar as entregas na cidade mais eficientes, práticas e sustentáveis.",
+      aboutLead2: "Somos especializados em entregas com cargo bike para empresas, com forte foco em operações recorrentes. Nossos parceiros ideais entregam todos os dias ou várias vezes por semana e operam rotas com van hoje, ou estão desenhando a operação do zero. Em ambos os casos, nosso papel é o mesmo: ajudar a construir sistemas de entrega que realmente funcionem em uma cidade densa.",
+      aboutSectionRecurringTitle: "Feito para operações recorrentes",
+      aboutSectionRecurringBody1: "Para nós, as cargo bikes não são uma solução de nicho — são o centro de como desenhamos logística urbana.",
+      aboutSectionRecurringBody2: "Em muitas rotas urbanas — distâncias curtas, várias paradas e janelas de tempo apertadas — as cargo bikes superam as vans em velocidade, confiabilidade e custo. Menos tempo no trânsito, menos restrições de acesso e prazos mais previsíveis.",
+      aboutSectionRecurringBody3: "Por isso, a maior parte do nosso trabalho é de longo prazo e recorrente. Trabalhamos com empresas em que as entregas são críticas no dia a dia, não um extra ocasional.",
+      aboutSectionMethodTitle: "De vans para bikes — com método",
+      aboutSectionMethodIntro: "Migrar de vans para cargo bikes não é apenas trocar de veículo. É uma mudança operacional.",
+      aboutSectionMethodList: "<li>Analisar rotas e padrões atuais</li><li>Identificar quais rotas podem ir para cargo bike</li><li>Redesenhar rotas por densidade de paradas, tempos e perfis de carga</li><li>Testar, medir e otimizar o desempenho ao longo do tempo</li>",
+      aboutSectionMethodOutro: "O objetivo não é ideologia — é eficiência. Menos atrasos, operações mais simples e logística que combina com a realidade da cidade.",
+      aboutSectionSameDayTitle: "Mesmo dia, quando precisar",
+      aboutSectionSameDayBody1: "Além de rotas recorrentes, oferecemos entregas no mesmo dia e sob demanda. Ideais para documentos urgentes, pedidos de última hora, reposições ou itens sensíveis ao tempo.",
+      aboutSectionSameDayBody2: "Os trabalhos de mesmo dia seguem os mesmos princípios do recorrente: preço claro, tempos realistas e riders que conhecem a cidade.",
+      aboutSectionMoreThanTitle: "Mais que um courier",
+      aboutSectionMoreThanBody1: "A Cargoworks não é apenas um grupo de riders. Por trás de cada entrega há um sistema de operações e preços feito para clareza e consistência.",
+      aboutSectionMoreThanBody2: "Evitamos zonas vagas, preços opacos e rotas improvisadas. Priorizamos orçamentos estruturados, rutas lógicas e decisões baseadas em condições urbanas reais. Assim os clientes podem planejar, escalar e confiar na operação.",
+      aboutSectionRidersBody: "Nossos riders são profissionais experientes: cuidado, comunicação e confiabilidade importam tanto quanto velocidade.",
+      aboutSectionWhyTitle: "Por que fazemos",
+      aboutSectionWhyBody1: "As cidades estão mudando e a logística urbana precisa acompanhar. Acreditamos que o futuro da última milha é humano, de baixa emissão e inteligentemente desenhado.",
+      aboutSectionWhyBody2: "A Cargoworks existe para ajudar empresas a reduzir atrito, melhorar eficiência e substituir tráfego desnecessário de vans por sistemas de entrega que realmente pertencem à cidade.",
       servicesTitle: "Serviços",
-      servicesList: "<li>Mensageiro e entregas urgentes</li><li>Consultoria de bicicletas de carga</li><li>Soluções logísticas para empresas</li><li>Manutenção e formação de frotas</li>",
-      zonesTitle: "Mapa de Zonas e Preços",
-      zonesText: "Fale connosco para detalhes sobre peso, horários e entregas ao fim de semana.",
-
-      // --- Blocos hero ---
+      servicesList: "<li>Mensageiro e entregas urgentes</li><li>Consultoria de cargo bike</li><li>Soluções logísticas para empresas</li><li>Manutenção e treinamento de frotas</li>",
+      zonesTitle: "Mapa de zonas e preços",
+      zonesText: "Use o estimador para consultar preços.",
+      servicesHowCTA: "Como trabalhamos",
+      card3CTA: "Ver zonas",
+      // --- Hero info blocks ---
       block1Title: "Entregas no mesmo dia",
-      block1Body: "Serviço rápido e confiável de couriers com cargo-bike pelos bairros centrais de Barcelona.",
-      block2Title: "Logística sustentável",
-      block2Body: "Entregas de baixo impacto, feitas por pessoas, sob medida para negócios locais. Você precisa, nós temos as ferramentas.",
+      block1Body: "Serviço rápido e confiável de courier com cargo bike pelos bairros centrais de Barcelona.",
+      block2Title: "Servicios",
+      block2Subtitle: "(o que fazemos)",
+      block2Body: "",
+      block2List: "<li>Entregas no mesmo dia</li><li>Rutas recorrentes</li><li>Ajuda para deixar as vans</li>",
+      block2ReadMore: "Saiba mais",
+      block2ReadMoreHref: "services.html",
       block3Title: "Frota e consultoria",
       block3Body: "Suporte de frota, consultoria e soluções de bicicletas de carga para logística urbana.",
 
       // --- Cartas sticky ---
       card1Title: "Entregas no mesmo dia",
-      card1Body: "Serviço rápido e confiável de couriers com cargo-bike pelos bairros centrais de Barcelona.",
-      card2Title: "Logística sustentável",
-      card2Body: "Entregas de baixo impacto feitas por gente local.",
-      card3Title: "Frota e consultoria",
-      card3Body: "Suporte de frota, consultoria e soluções de bicicletas de carga para logística urbana.",
-      card4Title: "Mais serviços",
-      card4Body: "Manutenção de frotas, formação e experiência logística local.",
-      scrollDown: "Percorra o nosso deck de serviços",
-      scrollUp: "Volte ao panorama geral",
+      card1Body: "Serviço rápido e confiável de courier com cargo bike pelos bairros centrais de Barcelona.",
+      card2Title: "Serviços",
+      card2Body: "Entregas de baixo impacto, feitas por pessoas, sob medida para negócios locais. Você precisa, nós temos as ferramentas.",
+      card3Title: "Zonas e Preços",
+      card3Body: "Veja nosso mapa de serviço e o estimador rápido de preços.",
+      card4Title: "Fale conosco",
+      card4Body: "Manutenção de frotas, treinamento e experiência logística local.",
+      scrollDown: "Veja nossos serviços",
+      scrollUp: "Voltar ao início",
 
       // --- Rodapé / Contato ---
       siteExplore: "Explorar",
       siteAbout: "Sobre",
       siteServices: "Serviços",
-      siteZones: "Zonas",
+      siteZones: "Zonas e Preços",
       siteFaq: "FAQ",
       siteSolutions: "Soluções",
       siteMessenger: "Mensageiro e courier",
-      siteCargo: "Consultoria cargo bike",
+      siteCargo: "Consultoria de cargo bike",
       siteRoutes: "Planejamento de rotas",
       siteMaintenance: "Manutenção de frotas",
       siteContact: "Contato",
-      siteContactBlurb: "Fale com nossa coordenação para reservas, parcerias ou suporte todos os dias.",
-      siteEmailLabel: "Email",
+      siteContactBlurb: "Fala com a gente pra reservar ou pedir ajuda.",
+      siteEmailLabel: "E-mail",
       sitePhoneLabel: "Telefone",
       siteHoursLabel: "Horário",
-      siteHoursText: "7:00 - 17:00 de segunda a sexta e 7:00 - 15:00 sábado e domingo, salvo trabalhos agendados.",
+      siteHoursText: "Seg–Sex 7:00–17:00, Sáb–Dom 7:00–15:00.",
       footerInstagram: "Instagram",
-      footerCopy: "© 2025 Cargoworks – Logística de bicicletas em Barcelona"
+      footerCopy: "© 2025 Cargoworks – Logística de bicicletas em Barcelona",
+      // --- Nota de página / placeholders ---
+      pageNote: "Conteúdo em português em breve.",
+      // --- Páginas: Sobre (PT-BR) ---
+      aboutPageTitle: "Sobre",
+      aboutP1: "A Cargoworks é um serviço de courier com cargo bike baseado em Barcelona.",
+      aboutP2: "Somos mensageiros com experiência real em logística urbana. Assumimos responsabilidade com pessoas, cidade e meio ambiente.",
+      aboutP3: "",
+      aboutP4: "",
+      aboutP5: "",
+      aboutP6: "Assumimos responsabilidade com clientes, riders, cidade e meio ambiente. Sustentabilidade não é slogan — é o que acontece quando a logística é bem feita.",
+      // --- Páginas (títulos mínimos) ---
+      servicesPageTitle: "Serviços",
+      industriesPageTitle: "Setores",
+      faqPageTitle: "Perguntas frequentes",
+      contactPageTitle: "Contato",
+      legalPageTitle: "Legal",
+      contactEmailCta: "Enviar e-mail",
+      contactWhatsappCta: "WhatsApp",
+      industriesIntro: "Trabalhamos com:",
+      industriesOutro: "Se não tiver certeza, fale com a gente.",
+      // --- Controles de zonas ---
+      zoneSearchPlaceholder: "Digite o endereço para ver a zona",
+      zoneSearchButton: "Verificar endereço",
+      zonesEditButton: "Editar zonas",
+      zonesExportButton: "Exportar zonas",
+      zonesOpenEditorLink: "Abrir editor"
+      ,
+      // --- Texto de preços ---
+      pricingHeader: "Serviços e preços",
+      pricingIntro: "O estimador mostra preço por zona ou por hora em rotas longas. Veja como calculamos os casos comuns:",
+      pricingList: "<li>Entrega base por zona: aparece ao clicar na zona no mapa.</li><li>Rotas longas: por hora se o tempo total passar de 1h (primeira hora €25; depois €6 a cada 15 min).</li><li>Fim de semana/feriado, &gt;30 kg, fora de horário: adiciona 25% ao preço base.</li><li>Múltiplas paradas: −10% a partir de 3+ paradas na mesma zona ou 10+ em zonas diferentes.</li><li>Fora do mapa de serviço: fale com a gente para um orçamento sob medida.</li>"
+      ,
+      // --- Estimador ---
+      quotePickupPlaceholder: "Endereço de coleta",
+      quoteDropoffPlaceholder: "Endereço de entrega",
+      quoteStopPlaceholder: "Endereço de parada",
+      quoteEstimate: "Calcular",
+      quoteAddStop: "Adicionar parada",
+      quoteSwapLabel: "Inverter coleta e entrega",
+      quoteUseDropAsStop: "Usar destino como primeira parada",
+      quoteByDistance: "Preço por distância",
+      quoteEnterBoth: "Digite coleta e entrega",
+      quoteAddressNotFound: "Endereço não encontrado",
+      quoteOutsideService: "Fora do mapa de serviço — fale com a gente para um orçamento sob medida.",
+      quoteHourlyBreakdown: "Inclui 1h + intervalos de 15 min",
+      quoteEtasPrefix: "ETAs: {list}",
+      quoteHourly: "{currency}{price} por hora. Total {route} (aproximação {approach}, trabalho {job}). {breakdown}.{etas}",
+      quoteBase: "{currency}{total}. Zona base {zone} {currency}{base}{cross}"
+      ,
+      quoteCouldNotEstimate: "Não foi possível estimar a rota — verifique os endereços e tente novamente.",
+      quoteCrossings: "; cruzou {count} zonas (+5% cada)",
+      quoteEtaLabelApproach: "Base → Coleta",
+      quoteEtaLabelStop: "Parada {n}",
+      quoteEtaLabelDropoff: "Entrega",
+      quoteUnitHour: "h",
+      quoteUnitMinute: "min"
+      ,
+      // Detalhamento por parada
+      quotePerStopPrefix: "Detalhamento: {list}",
+      quotePerStopItem: "Entrega {n}: {currency}{total} (Zona {zone} base {currency}{base}{cross})",
+      quoteTotal: "Total {currency}{total}"
+      ,
+      // Preço por distância
+      quoteDistanceLeg: "Trecho {n}: {km} km {currency}{price}",
+      quoteDistanceTotal: "Total {currency}{total} (distância {km} km)",
+      
+      dragHandleLabel: "Arraste para reordenar"
+      ,
+      // --- Mapa / API ---
+      apiStatusNoPlaces: "Sugestões de endereço indisponíveis — ative a Places API e os referents per a aquesta clau.",
+      mapFailedLoad: "Não foi possível carregar o mapa. Verifique a chave e os referents permitidos."
+      ,
+      mapAuthFailure: "Falha na autenticação do Maps — verifique a chave, as APIs habilitadas (Maps JavaScript, Places), a cobrança e os referents permitidos."
     }
   };
 
   global.CARGOWORKS_TRANSLATIONS = translations;
+  global.translations = Object.assign(global.translations || {}, translations);
 })(window);
