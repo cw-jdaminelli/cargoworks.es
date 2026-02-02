@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://cargoworks.es/sitemap.xml
