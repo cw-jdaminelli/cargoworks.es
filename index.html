@@ -3,13 +3,9 @@
 <head>
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/>
-	<meta name="description" content="Cargoworks: smart, human-powered logistics in Barcelona. Same-day courier, sustainable deliveries, and fleet consulting."/>
-	<link rel="canonical" href="https://cargoworks.es/"/>
 	<title>CARGOWORKS.es – Smart Logistics</title>
 
 	<!-- Fonts -->
-	<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
 	<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
 	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -32,7 +28,7 @@
 
 	<!-- Fixed nav strip -->
 	<header class="site-header">
-			<nav class="hero-nav" aria-label="Primary">
+			<nav class="hero-nav">
 				<ul class="nav-links">
 				<li><a href="#about" id="navAbout" data-i18n="navAbout">About</a></li>
 				<li><a href="#services" id="navServices" data-i18n="navServices">Services</a></li>
@@ -49,6 +45,44 @@
 			</div>
 		</nav>
 	</header>
+
+	<!-- SHIPPALIZER 1000 (primary viewport) -->
+	<section id="zones" class="zones-section" aria-label="Shippalizer 1000">
+		<div class="zones-inner">
+			<h2>Shippalizer 1000</h2>
+			<p data-i18n="zonesText">Use our estimator to check prices.</p>
+			<div class="zones-controls" role="search">
+				<span id="zonePrice" class="zones-result" aria-live="polite" style="margin-left:0.5rem"></span>
+			</div>
+			<div class="quote-estimator" aria-label="Quick quote estimator" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; margin-bottom:0.75rem;">
+				<input id="quotePickup" type="text" placeholder="Pickup address" aria-label="Pickup address" style="flex:1 1 280px;"/>
+				<input id="quoteDropoff" type="text" placeholder="Dropoff address" aria-label="Dropoff address" style="flex:1 1 280px;"/>
+				<div id="quoteStops" style="display:flex; gap:0.5rem; flex-wrap:wrap; width:100%;"></div>
+				<button id="quoteAddStop" class="btn" type="button" title="Add stop">Add stop</button>
+				<button id="quoteAddRandomStop" class="btn" type="button" title="Add random stop">Add random stop</button>
+				<button id="quoteRefresh" class="btn" type="button" title="Refresh calculator">Refresh</button>
+				<h2 id="quoteRate" class="quote-rate" style="margin:0.25rem 0; font-weight:700;"></h2>
+				<span id="quoteResult" class="zones-result" aria-live="polite" style="margin-left:0.5rem"></span>
+				<!-- Testing controls (hidden unless debug/dev) -->
+				<div id="quoteTesting" class="quote-testing" style="display:none; gap:0.5rem; width:100%; margin-top:0.5rem;">
+					<button id="quoteLoadRandom" class="btn" type="button" title="Load Random Route">Load Random Route</button>
+				</div>
+			</div>
+			<div id="zonesMap" class="zones-map" aria-label="Interactive zone map"></div>
+			<div class="pricing-notes" style="margin-top:1rem;">
+				<h3 data-i18n="pricingHeader" style="margin:0 0 0.5rem 0;">Services & Pricing</h3>
+				<p data-i18n="pricingIntro" style="margin:0 0 0.5rem 0;">Our estimator prices by distance with a small pickup zone charge, or hourly for long routes. Here’s how we price common cases:</p>
+				<ul data-i18n="pricingList" style="margin:0; padding-left:1.25rem; line-height:1.55;">
+					<li>Pickup charge: half of the pickup zone base.</li>
+					<li>Distance: €1.50 per km (minimum €8).</li>
+					<li>Long trips: hourly if total route time &gt; 1h (first hour €25; then €6 per 15 min).</li>
+					<li>Weekend/holiday, &gt;30 kg, after‑hours: adds 25% to the base.</li>
+					<li>Multi‑drop: reorder stops; bulk discounts applied later.</li>
+					<li>Outside the service map: contact us for a custom quote.</li>
+				</ul>
+			</div>
+		</div>
+	</section>
 
 	<!-- HERO (banner) -->
 	<section class="hero-section" id="top">
@@ -167,7 +201,7 @@
 						<div class="sc-card__left">
 							<h2 data-i18n="card4Title">Let's Talk</h2>
 							<p data-i18n="card4Body">Mensajería, coordinación, rutas especiales y proyectos a medida para marcas y operadores.</p>
-							<a class="btn btn--compact btn--ghost" href="contact.html" data-i18n="card4CTA">Ver todos los servicios</a>
+							<a class="btn btn--compact btn--ghost" href="#services" data-i18n="card4CTA" aria-label="Ver todos los servicios">Ver todos los servicios</a>
 						</div>
 					</div>
 				</div>
@@ -176,37 +210,7 @@
 	</section>
 	<section class="sc-empty" aria-hidden="true"></section>
 
-	<!-- ZONES MAP -->
-	<section id="zones" class="zones-section" aria-label="Zone map and prices">
-		<div class="zones-inner">
-			<h2 data-i18n="zonesTitle">Zone Map & Prices</h2>
-			<p data-i18n="zonesText">Use our estimator to check prices.</p>
-			<div class="zones-controls" role="search">
-				<span id="zonePrice" class="zones-result" aria-live="polite" style="margin-left:0.5rem"></span>
-			</div>
-			<div class="quote-estimator" aria-label="Quick quote estimator" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; margin-bottom:0.75rem;">
-								<input id="quotePickup" type="text" placeholder="Pickup address" aria-label="Pickup address" style="flex:1 1 280px;"/>
-								<input id="quoteDropoff" type="text" placeholder="Dropoff address" aria-label="Dropoff address" style="flex:1 1 280px;"/>
-				<div id="quoteStops" style="display:flex; gap:0.5rem; flex-wrap:wrap; width:100%;"></div>
-				<button id="quoteEstimate" class="btn" type="button" title="Estimate">Estimate</button>
-				<button id="quoteAddStop" class="btn" type="button" title="Add stop">Add stop</button>
-				<span id="quoteResult" class="zones-result" aria-live="polite" style="margin-left:0.5rem"></span>
-			</div>
-			<div id="zonesMap" class="zones-map" aria-label="Interactive zone map"></div>
-			<div class="pricing-notes" style="margin-top:1rem;">
-				<h3 data-i18n="pricingHeader" style="margin:0 0 0.5rem 0;">Services & Pricing</h3>
-				    <p data-i18n="pricingIntro" style="margin:0 0 0.5rem 0;">Our estimator prices by distance with a small pickup zone charge, or hourly for long routes. Here’s how we price common cases:</p>
-				<ul data-i18n="pricingList" style="margin:0; padding-left:1.25rem; line-height:1.55;">
-					    <li>Pickup charge: half of the pickup zone base.</li>
-					    <li>Distance: €1.50 per km (minimum €8).</li>
-					    <li>Long trips: hourly if total route time &gt; 1h (first hour €25; then €6 per 15 min).</li>
-					<li>Weekend/holiday, &gt;30 kg, after‑hours: adds 25% to the base.</li>
-					    <li>Multi‑drop: reorder stops; bulk discounts applied later.</li>
-					<li>Outside the service map: contact us for a custom quote.</li>
-				</ul>
-			</div>
-		</div>
-	</section>
+	<!-- ZONES MAP (moved to top) -->
 
 	<section class="site-map" aria-label="Site map and contacts">
 		<div class="site-map__column">
@@ -265,10 +269,10 @@
 	</footer>
 
 	<!-- JS -->
-	<script src="js/js/map.js?v=2026-01-25-2"></script>
+	<script src="js/js/map.js?v=2026-02-03-3"></script>
 	<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB2-lL3jKtVa6ijgLs38NP2ag6fc4YoAE0&libraries=geometry,drawing,places&language=es&region=ES&loading=async&callback=initZonesMap"></script>
-	<script src="js/js/translations.js" defer></script>
-	<script src="js/js/main.js" defer></script>
+	<script src="js/js/translations.js"></script>
+	<script src="js/js/main.js"></script>
 	<script>
 		// Show the "Open Editor" link only on dev/Codespaces hosts
 		(function(){

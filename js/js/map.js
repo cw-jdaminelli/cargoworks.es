@@ -1,5 +1,6 @@
 // Zones map with Google Maps, Snazzy style, geocoding, and optional zone editing
 window.initZonesMap = function initZonesMap(){
+  if (window._zonesMapInitialized) { try { console.log('[Maps] initZonesMap: already initialized'); } catch(_) {} return; }
   try { console.log('[Maps] initZonesMap start'); } catch(e) {}
   const STYLE_VERSION = '2026-01-24-1';
   const ZONES_VERSION = '2026-01-24-1';
@@ -22,6 +23,7 @@ window.initZonesMap = function initZonesMap(){
 
   // Create the map before any operations that reference it
   const mapEl = document.getElementById('zonesMap');
+  if (!mapEl) { try { console.warn('[Maps] zonesMap element not found'); } catch(_) {} return; }
   const center = { lat: 41.3874, lng: 2.1686 }; // Barcelona
   const map = new google.maps.Map(mapEl, {
     center,
@@ -30,6 +32,7 @@ window.initZonesMap = function initZonesMap(){
     streetViewControl: false,
     fullscreenControl: false
   });
+  try { window._zonesMapInitialized = true; } catch(_) {}
 
   // Apply map style (Snazzy style), fallback to navy water if unavailable
   const fallbackStyle = [
@@ -53,6 +56,34 @@ window.initZonesMap = function initZonesMap(){
   // Route overlays
   let routeMarkers = [];
   let routePolyline = null;
+  // Address markers (used when fewer than 2 points are set)
+  let addressMarkers = new Map();
+
+  function clearAddressMarker(inputEl){
+    try {
+      const marker = addressMarkers.get(inputEl);
+      if (marker) { marker.setMap(null); addressMarkers.delete(inputEl); }
+    } catch(_) {}
+  }
+  function clearAllAddressMarkers(){
+    try {
+      addressMarkers.forEach(m => { try { m.setMap(null); } catch(__){} });
+      addressMarkers.clear();
+    } catch(_) {}
+  }
+  function setAddressMarker(inputEl, latLng){
+    try {
+      if (!inputEl || !latLng || !google.maps || !google.maps.Marker) return;
+      let marker = addressMarkers.get(inputEl);
+      if (!marker) {
+        marker = new google.maps.Marker({ position: latLng, map });
+        addressMarkers.set(inputEl, marker);
+      } else {
+        marker.setPosition(latLng);
+        if (!marker.getMap()) marker.setMap(map);
+      }
+    } catch(_) {}
+  }
 
   // Pricing: show base price per zone when clicked; no surcharges computed here
 
@@ -158,6 +189,7 @@ window.initZonesMap = function initZonesMap(){
       const p = num && window._zonePrices && window._zonePrices[num] && window._zonePrices[num].base;
       priceEl.textContent = p ? ('€' + p) : '';
     }
+    try { if (!editMode) handleMapClick(e && e.latLng); } catch(_) {}
     });
 
   // Load zones from GeoJSON
@@ -259,6 +291,7 @@ window.initZonesMap = function initZonesMap(){
   }
   function renderRoute(pickupLoc, stopLocs, dropLoc, routeDetails){
     try {
+      clearAllAddressMarkers();
       clearRouteOverlays();
       const pts = [];
       if (pickupLoc) pts.push(pickupLoc);
@@ -508,6 +541,47 @@ window.initZonesMap = function initZonesMap(){
 
   const qPickup = document.getElementById('quotePickup');
   const qDrop = document.getElementById('quoteDropoff');
+  let lastAddressInput = null;
+  function isAddressInput(el){
+    return !!(el && el.tagName === 'INPUT' && (el.id === 'quotePickup' || el.id === 'quoteDropoff' || el.classList.contains('quote-stop')));
+  }
+  document.addEventListener('focusin', function(e){
+    const el = e && e.target;
+    if (isAddressInput(el)) lastAddressInput = el;
+  });
+  function collectAddressInputs(){
+    const inputs = [];
+    if (qPickup) inputs.push(qPickup);
+    if (qDrop) inputs.push(qDrop);
+    if (qStopsWrap) {
+      Array.from(qStopsWrap.querySelectorAll('.quote-stop')).forEach(function(el){ inputs.push(el); });
+    }
+    return inputs;
+  }
+  function clearStoredLocation(inputEl){
+    try {
+      if (!inputEl || !inputEl.dataset) return;
+      delete inputEl.dataset.lat;
+      delete inputEl.dataset.lng;
+      delete inputEl.dataset.address;
+      clearAddressMarker(inputEl);
+    } catch(_) {}
+  }
+  function attachAddressInputHandlers(inputEl){
+    try {
+      if (!inputEl) return;
+      inputEl.addEventListener('input', function(){
+        const val = String(inputEl.value || '').trim();
+        const stored = String((inputEl.dataset && inputEl.dataset.address) || '').trim();
+        if (!stored) { clearAddressMarker(inputEl); return; }
+        if (val !== stored) {
+          clearStoredLocation(inputEl);
+          clearRouteOverlays();
+          updateAddressMarkers();
+        }
+      });
+    } catch(_) {}
+  }
     // Simple i18n helper for estimator messages
     function i18n(key, params){
       try {
@@ -523,7 +597,12 @@ window.initZonesMap = function initZonesMap(){
     }
   // Note: Removed helper that converted destination into the first stop.
   const qEstimate = document.getElementById('quoteEstimate');
+  const qOptimize = document.getElementById('quoteOptimize');
   const qOut = document.getElementById('quoteResult');
+  const qRate = document.getElementById('quoteRate');
+  const qAddRandomStop = document.getElementById('quoteAddRandomStop');
+  const qLoadRandom = document.getElementById('quoteLoadRandom');
+  const qRefresh = document.getElementById('quoteRefresh');
   // const qByDistance = document.getElementById('quoteByDistance'); // removed toggle
   // Show simple API status near estimator
   (function showApiStatus(){
@@ -547,9 +626,110 @@ window.initZonesMap = function initZonesMap(){
       }
     } catch(_) {}
   })();
+  // Structured output helpers
+  function setQuoteResultWithDebug(visibleText, debugText, headlineText){
+    if (!qOut) return;
+    try {
+      qOut.innerHTML = '';
+      if (headlineText) {
+        const headline = document.createElement('h2');
+        headline.className = 'quote-headline';
+        headline.textContent = headlineText;
+        qOut.appendChild(headline);
+      }
+      if (visibleText) {
+        const summary = document.createElement('span');
+        summary.className = 'quote-summary';
+        summary.style.display = 'block';
+        summary.textContent = visibleText;
+        qOut.appendChild(summary);
+      }
+      if (debugText) {
+        const hidden = document.createElement('span');
+        hidden.className = 'quote-debug';
+        hidden.style.display = 'none';
+        hidden.textContent = 'DEBUG: ' + debugText;
+        qOut.appendChild(hidden);
+      }
+    } catch(_) {
+      try { qOut.textContent = visibleText || ''; } catch(__) {}
+    }
+  }
+  function setBreakdownLines(lines){
+    try {
+      if (!qOut || !Array.isArray(lines)) return;
+      const existing = qOut.querySelector('.quote-breakdown');
+      if (existing) existing.remove();
+      const box = document.createElement('div');
+      box.className = 'quote-breakdown';
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2,'0');
+      const mm = String(now.getMinutes()).padStart(2,'0');
+      const ss = String(now.getSeconds()).padStart(2,'0');
+      const blocks = [];
+      let current = null;
+      (lines || []).forEach(function(line){
+        const text = String(line || '');
+        const isHeader = /:$/.test(text);
+        if (isHeader) {
+          current = { title: text.replace(/:$/, ''), lines: [] };
+          blocks.push(current);
+        } else {
+          if (!current) {
+            current = { title: '', lines: [] };
+            blocks.push(current);
+          }
+          current.lines.push(text);
+        }
+      });
+      blocks.forEach(function(block){
+        const el = document.createElement('div');
+        el.className = 'quote-block';
+        if (block.title) {
+          const t = document.createElement('div');
+          t.className = 'quote-block-title';
+          t.textContent = block.title;
+          el.appendChild(t);
+        }
+        const linesArr = block.lines || [];
+        for (let i = 0; i < linesArr.length; i++) {
+          const text = String(linesArr[i] || '');
+          const next = (i + 1 < linesArr.length) ? String(linesArr[i + 1] || '') : '';
+          const isExpr = /[×=]/.test(text);
+          const isLabel = !!text && !/:$/.test(text) && !!next;
+          if (isLabel && next && !/:$/.test(next)) {
+            const row = document.createElement('div');
+            row.className = 'quote-block-row';
+            const label = document.createElement('div');
+            label.className = 'quote-block-label';
+            label.textContent = text;
+            const value = document.createElement('div');
+            value.className = 'quote-block-value' + (/[×=]/.test(next) ? ' quote-block-line--expr' : '');
+            value.textContent = next;
+            row.appendChild(label);
+            row.appendChild(value);
+            el.appendChild(row);
+            i++;
+            continue;
+          }
+          const l = document.createElement('div');
+          l.className = 'quote-block-line' + (isExpr ? ' quote-block-line--expr' : '');
+          l.textContent = text;
+          el.appendChild(l);
+        }
+        box.appendChild(el);
+      });
+      const meta = document.createElement('div');
+      meta.className = 'quote-breakdown-meta';
+      meta.textContent = 'Recalculated at ' + hh + ':' + mm + ':' + ss;
+      box.appendChild(meta);
+      qOut.appendChild(box);
+    } catch(_) {}
+  }
   function attachAutocomplete(inputEl){
     try {
       if (!inputEl || !google.maps.places) return;
+      // Use classic Places Autocomplete only; avoid experimental PlaceAutocompleteElement
       if (google.maps.places.Autocomplete) {
         const ac = new google.maps.places.Autocomplete(inputEl);
         ac.addListener('place_changed', function(){
@@ -560,29 +740,13 @@ window.initZonesMap = function initZonesMap(){
               inputEl.dataset.lat = String(loc.lat());
               inputEl.dataset.lng = String(loc.lng());
               inputEl.dataset.address = (place.formatted_address || inputEl.value);
+              setAddressMarker(inputEl, loc);
+              updateAddressMarkers();
+              autoEstimateIfReady();
             }
           } catch(_) {}
         });
         return;
-      }
-      if (google.maps.places.PlaceAutocompleteElement) {
-        const pae = new google.maps.places.PlaceAutocompleteElement();
-        try {
-          pae.inputElement = inputEl;
-          if ('placeFields' in pae) pae.placeFields = ['formatted_address', 'geometry.location'];
-          pae.addEventListener('place_changed', function(){
-            try {
-              const place = (typeof pae.getPlace === 'function') ? pae.getPlace() : (pae.place || null);
-              const loc = place && place.geometry && place.geometry.location;
-              if (loc) {
-                inputEl.dataset.lat = String(loc.lat());
-                inputEl.dataset.lng = String(loc.lng());
-                inputEl.dataset.address = (place.formatted_address || inputEl.value);
-              }
-            } catch(_) {}
-          });
-          // Do NOT append the element to DOM to avoid extra black boxes
-        } catch(_) {}
       }
     } catch(_) {}
   }
@@ -604,7 +768,7 @@ window.initZonesMap = function initZonesMap(){
           if (tmpLat != null) b.dataset.lat = tmpLat; else delete b.dataset.lat;
           if (tmpLng != null) b.dataset.lng = tmpLng; else delete b.dataset.lng;
           if (tmpAddr != null) b.dataset.address = tmpAddr; else delete b.dataset.address;
-        } catch(_){}
+        } catch(_) {}
       }
       // Allow dropping directly on an item to swap positions
       el.addEventListener('dragover', function(e){ try { e.preventDefault(); } catch(_){} });
@@ -633,25 +797,25 @@ window.initZonesMap = function initZonesMap(){
             parent.replaceChild(el, phA);
           }
           // Recompute after swap
-          try { if (typeof runEstimate === 'function') runEstimate(); } catch(_){}
-        } catch(_){}
+          try { if (typeof runEstimate === 'function') runEstimate(); } catch(_){ }
+        } catch(_){ }
       });
       el.addEventListener('dragstart', function(){
-        try { window._draggedStop = el; el.classList.add('dragging'); } catch(_){}
+        try { window._draggedStop = el; el.classList.add('dragging'); } catch(_) {}
       });
       el.addEventListener('dragend', function(){
-        try { el.classList.remove('dragging'); window._draggedStop = null; } catch(_){}
+        try { el.classList.remove('dragging'); window._draggedStop = null; } catch(_){ }
       });
       // Make inner input draggable too, so all stops (pre-existing or added) can be dragged by grabbing the input
       const input = el.querySelector && el.querySelector('.quote-stop');
       if (input) {
         input.draggable = true;
         input.addEventListener('dragstart', function(){
-          try { window._draggedStop = el; el.classList.add('dragging'); } catch(_){}}
-        );
+          try { window._draggedStop = el; el.classList.add('dragging'); } catch(_) {}
+        });
         input.addEventListener('dragend', function(){
-          try { el.classList.remove('dragging'); window._draggedStop = null; } catch(_){}}
-        );
+          try { el.classList.remove('dragging'); window._draggedStop = null; } catch(_){ }
+        });
         // Support swapping when dropping directly onto the input element
         input.addEventListener('dragover', function(e){ try { e.preventDefault(); } catch(_){} });
         input.addEventListener('drop', function(e){
@@ -676,12 +840,370 @@ window.initZonesMap = function initZonesMap(){
               parent.replaceChild(dragged, phB);
               parent.replaceChild(el, phA);
             }
-            try { if (typeof runEstimate === 'function') runEstimate(); } catch(_){}
-          } catch(_){}
+            try { if (typeof runEstimate === 'function') runEstimate(); } catch(_){ }
+          } catch(_){ }
         });
       }
+    } catch(_){ }
+  }
+  // Create a stop item and return its input element
+  function createStopItem(){
+    if (!qStopsWrap) return null;
+    const w = document.createElement('div');
+    w.className = 'quote-stop-item';
+    w.draggable = true;
+    const h = document.createElement('span');
+    h.className = 'drag-handle';
+    h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
+    h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
+    const i = document.createElement('input');
+    i.type = 'text';
+    const ph = i18n('quoteStopPlaceholder') || 'Stop address';
+    i.placeholder = ph;
+    i.setAttribute('aria-label', ph);
+    i.className = 'quote-stop';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'stop-delete';
+    del.setAttribute('title', i18n('quoteDeleteStop') || 'Delete stop');
+    del.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
+    del.textContent = '×';
+    del.addEventListener('click', function(){
+      try { clearAddressMarker(i); w.remove(); if (typeof runEstimate === 'function') runEstimate(); } catch(_) {}
+    });
+    w.appendChild(h);
+    w.appendChild(i);
+    w.appendChild(del);
+    qStopsWrap.appendChild(w);
+    attachAutocomplete(i);
+    attachStopDragHandlers(w);
+    attachAddressInputHandlers(i);
+    return i;
+  }
+  function pickTargetInputForMapClick(){
+    const pickupEl = document.getElementById('quotePickup');
+    const dropEl = document.getElementById('quoteDropoff');
+    const stopInputs = qStopsWrap
+      ? Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).filter(function(w){
+          return ((w && w.dataset && w.dataset.role) || 'stop') === 'stop';
+        }).map(function(w){ return w.querySelector && w.querySelector('.quote-stop'); }).filter(Boolean)
+      : [];
+    const ordered = [pickupEl, dropEl].concat(stopInputs).filter(Boolean);
+    const empty = ordered.find(function(inp){ return !(inp && (inp.value || '').trim()); }) || null;
+    return empty || createStopItem();
+  }
+  function setKnownLocation(inputEl, item){
+    try {
+      if (!inputEl || !item) return;
+      inputEl.value = item.name;
+      inputEl.dataset.lat = String(item.lat);
+      inputEl.dataset.lng = String(item.lng);
+      inputEl.dataset.address = item.name;
+      const ll = (google.maps && google.maps.LatLng) ? new google.maps.LatLng(item.lat, item.lng) : { lat: item.lat, lng: item.lng };
+      setAddressMarker(inputEl, ll);
+      updateAddressMarkers();
+      autoEstimateIfReady();
+    } catch(_) {}
+  }
+  // True random Barcelona addresses: random point + reverse geocode
+  const RANDOM_BCN_BOUNDS = {
+    south: 41.320,
+    west: 2.060,
+    north: 41.470,
+    east: 2.240
+  };
+  function latLngKey(lat, lng){
+    return lat.toFixed(5) + ',' + lng.toFixed(5);
+  }
+  function randomLatLngInBarcelona(){
+    const lat = RANDOM_BCN_BOUNDS.south + (Math.random() * (RANDOM_BCN_BOUNDS.north - RANDOM_BCN_BOUNDS.south));
+    const lng = RANDOM_BCN_BOUNDS.west + (Math.random() * (RANDOM_BCN_BOUNDS.east - RANDOM_BCN_BOUNDS.west));
+    return (google.maps && google.maps.LatLng) ? new google.maps.LatLng(lat, lng) : { lat, lng };
+  }
+  function isInServiceLatLng(ll){
+    try {
+      const z = zoneNumberForLatLng(ll);
+      return !!z;
+    } catch(_) { return false; }
+  }
+  async function reverseGeocodeAddress(ll){
+    try {
+      const resp = await geocoder.geocode({ location: ll });
+      if (resp && resp.results && resp.results[0]) return resp.results[0].formatted_address || '';
+    } catch(_) {}
+    return '';
+  }
+  async function handleMapClick(ll){
+    try {
+      if (!ll) return;
+      const targetInput = pickTargetInputForMapClick();
+      if (!targetInput) return;
+      const addr = await reverseGeocodeAddress(ll);
+      const lat = (typeof ll.lat === 'function') ? ll.lat() : ll.lat;
+      const lng = (typeof ll.lng === 'function') ? ll.lng() : ll.lng;
+      const label = addr || ('Dropped pin ' + lat.toFixed(5) + ', ' + lng.toFixed(5));
+      targetInput.value = label;
+      targetInput.dataset.lat = String(lat);
+      targetInput.dataset.lng = String(lng);
+      targetInput.dataset.address = label;
+      setAddressMarker(targetInput, ll);
+      updateAddressMarkers();
+      autoEstimateIfReady();
+    } catch(_) {}
+  }
+  async function pickRandomServiceAddress(excludeKeys){
+    for (let i = 0; i < 25; i++){
+      const ll = randomLatLngInBarcelona();
+      if (!isInServiceLatLng(ll)) continue;
+      const lat = ll.lat ? ll.lat() : ll.lat;
+      const lng = ll.lng ? ll.lng() : ll.lng;
+      const key = latLngKey(lat, lng);
+      if (excludeKeys && excludeKeys.has(key)) continue;
+      const addr = await reverseGeocodeAddress(ll);
+      if (!addr) continue;
+      return { name: addr, lat, lng };
+    }
+    return null;
+  }
+  function collectUsedLocationKeys(){
+    const used = new Set();
+    const pickupEl = document.getElementById('quotePickup');
+    const dropEl = document.getElementById('quoteDropoff');
+    [pickupEl, dropEl].forEach(inp => {
+      if (!inp || !inp.dataset) return;
+      const lat = Number(inp.dataset.lat);
+      const lng = Number(inp.dataset.lng);
+      if (!Number.isNaN(lat) && !Number.isNaN(lng)) used.add(latLngKey(lat, lng));
+    });
+    if (qStopsWrap) {
+      Array.from(qStopsWrap.querySelectorAll('.quote-stop')).forEach(inp => {
+        if (!inp || !inp.dataset) return;
+        const lat = Number(inp.dataset.lat);
+        const lng = Number(inp.dataset.lng);
+        if (!Number.isNaN(lat) && !Number.isNaN(lng)) used.add(latLngKey(lat, lng));
+      });
+    }
+    return used;
+  }
+  async function addRandomStopAndEstimate(){
+    try {
+      if (window._addingRandomStop) return; window._addingRandomStop = true;
+      const pickupEl = document.getElementById('quotePickup');
+      const dropEl = document.getElementById('quoteDropoff');
+      const used = collectUsedLocationKeys();
+      const stopItems = qStopsWrap
+        ? Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).filter(function(w){
+            return ((w && w.dataset && w.dataset.role) || 'stop') === 'stop';
+          })
+        : [];
+      const stopInputs = stopItems.map(function(w){
+        return w.querySelector && w.querySelector('.quote-stop');
+      }).filter(Boolean);
+      const randomItem = await pickRandomServiceAddress(used);
+      if (!randomItem) { try { setQuoteResultWithDebug(i18n('quoteOutsideService') || 'Outside service map — please contact us for a custom quote.', 'Random address generation failed within service area'); } catch(_) {} return; }
+      const orderedInputs = [pickupEl, dropEl].concat(stopInputs).filter(Boolean);
+      const focusedInput = (lastAddressInput && document.contains(lastAddressInput) && isAddressInput(lastAddressInput))
+        ? lastAddressInput
+        : null;
+      const emptyInput = orderedInputs.find(function(inp){
+        return inp && !(inp.value || '').trim();
+      }) || null;
+      const targetInput = focusedInput || emptyInput || createStopItem();
+      if (targetInput) setKnownLocation(targetInput, randomItem);
+      if (focusedInput) lastAddressInput = null;
+      try { if (typeof runEstimate === 'function') runEstimate(); } catch(_){ }
+    } catch(_){
+    } finally { try { window._addingRandomStop = false; } catch(__){} }
+  }
+  async function loadRandomScenario(){
+    try {
+      const pickupEl = document.getElementById('quotePickup');
+      const dropEl = document.getElementById('quoteDropoff');
+      if (!pickupEl || !dropEl) return;
+      // Clear existing stops
+      if (qStopsWrap) {
+        Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).forEach(function(w){
+          const role = (w && w.dataset && w.dataset.role) || 'stop';
+          if (role === 'stop') w.remove();
+        });
+      }
+      const used = collectUsedLocationKeys();
+      const recent = Array.isArray(window._recentRandomStops) ? window._recentRandomStops : [];
+      recent.forEach(i => used.add(i));
+      const pickupItem = await pickRandomServiceAddress(used);
+      if (!pickupItem) {
+        setQuoteResultWithDebug(i18n('quoteOutsideService') || 'Outside service map — please contact us for a custom quote.', 'Random scenario selection failed to find in-service pickup');
+        return;
+      }
+      used.add(latLngKey(pickupItem.lat, pickupItem.lng));
+      const dropItem = await pickRandomServiceAddress(used);
+      if (!dropItem) {
+        setQuoteResultWithDebug(i18n('quoteOutsideService') || 'Outside service map — please contact us for a custom quote.', 'Random scenario selection failed to find in-service drop');
+        return;
+      }
+      used.add(latLngKey(dropItem.lat, dropItem.lng));
+      setKnownLocation(pickupEl, pickupItem);
+      setKnownLocation(dropEl, dropItem);
+      const stopCount = Math.floor(Math.random() * 4);
+      for (let s = 0; s < stopCount; s++){
+        const stopItem = await pickRandomServiceAddress(used);
+        if (!stopItem) break;
+        used.add(latLngKey(stopItem.lat, stopItem.lng));
+        const stopInput = createStopItem();
+        if (stopInput) setKnownLocation(stopInput, stopItem);
+      }
+      const nextRecent = recent.concat(Array.from(used));
+      while (nextRecent.length > 8) nextRecent.shift();
+      window._recentRandomStops = nextRecent;
+      try { if (typeof runEstimate === 'function') await runEstimate(); } catch(_){ }
+    } catch(_){ }
+  }
+  function resetEstimator(){
+    try {
+      const pickupEl = document.getElementById('quotePickup');
+      const dropEl = document.getElementById('quoteDropoff');
+      if (pickupEl) { pickupEl.value = ''; delete pickupEl.dataset.lat; delete pickupEl.dataset.lng; delete pickupEl.dataset.address; }
+      if (dropEl) { dropEl.value = ''; delete dropEl.dataset.lat; delete dropEl.dataset.lng; delete dropEl.dataset.address; }
+      if (qStopsWrap) {
+        Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).forEach(function(w){
+          const role = (w && w.dataset && w.dataset.role) || 'stop';
+          if (role === 'stop') w.remove();
+        });
+      }
+      // Clear any other estimator inputs (weight, description, toggles)
+      const container = document.querySelector('.quote-estimator');
+      if (container) {
+        Array.from(container.querySelectorAll('input, textarea')).forEach(function(el){
+          try {
+            if (el.id === 'quotePickup' || el.id === 'quoteDropoff') return;
+            if (el.type === 'checkbox' || el.type === 'radio') { el.checked = false; } else { el.value = ''; }
+            if (el.dataset) { delete el.dataset.lat; delete el.dataset.lng; delete el.dataset.address; }
+          } catch(_) {}
+        });
+      }
+      // Clear outputs and overlays
+      if (qOut) qOut.textContent = '';
+      clearRouteOverlays();
     } catch(_){}
   }
+  if (qAddRandomStop) qAddRandomStop.addEventListener('click', addRandomStopAndEstimate);
+  if (qLoadRandom) qLoadRandom.addEventListener('click', () => { loadRandomScenario(); });
+  if (qRefresh) qRefresh.addEventListener('click', () => { resetEstimator(); });
+  // Distance helper (km)
+  function haversineKm(a, b){
+    try {
+      function toCoords(p){
+        if (!p) return null;
+        if (typeof p.lat === 'function' && typeof p.lng === 'function') return { lat: p.lat(), lng: p.lng() };
+        if (typeof p.lat === 'number' && typeof p.lng === 'number') return { lat: p.lat, lng: p.lng };
+        if (p.lat != null && p.lng != null) return { lat: Number(p.lat), lng: Number(p.lng) };
+        return null;
+      }
+      const p1 = toCoords(a); const p2 = toCoords(b);
+      if (!p1 || !p2) return 0;
+      const R = 6371; // km
+      const dLat = (p2.lat - p1.lat) * Math.PI/180;
+      const dLng = (p2.lng - p1.lng) * Math.PI/180;
+      const s1 = Math.sin(dLat/2), s2 = Math.sin(dLng/2);
+      const aa = s1*s1 + Math.cos(p1.lat*Math.PI/180) * Math.cos(p2.lat*Math.PI/180) * s2*s2;
+      const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
+      return R * c;
+    } catch(_) { return 0; }
+  }
+  // Optimize stops order for cheapest route (distance-based)
+  async function optimizeStopsOrder(){
+    try {
+      const pickupEl = document.getElementById('quotePickup');
+      const dropEl = document.getElementById('quoteDropoff');
+      const pickupQ = (pickupEl && pickupEl.value || '').trim();
+      const dropQ = (dropEl && dropEl.value || '').trim();
+      const pickupLoc = pickupEl ? (getLocationForInput(pickupEl) || await geocodeOne(pickupQ)) : null;
+      const dropLoc = dropEl ? (getLocationForInput(dropEl) || await geocodeOne(dropQ)) : null;
+      if (!pickupLoc || !dropLoc) return;
+      const stopItems = qStopsWrap ? Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).filter(w => ((w && w.dataset && w.dataset.role) || 'stop') === 'stop') : [];
+      const stops = [];
+      for (let i = 0; i < stopItems.length; i++){
+        const el = stopItems[i].querySelector && stopItems[i].querySelector('.quote-stop');
+        const val = (el && el.value || '').trim();
+        if (!val) continue;
+        const loc = getLocationForInput(el) || await geocodeOne(val);
+        if (loc) stops.push({ w: stopItems[i], el, loc });
+      }
+      if (stops.length <= 1) return;
+      function metrics(order){
+        const detour = 1.25;
+        let prev = pickupLoc; let meters = 0;
+        for (let i = 0; i < order.length; i++){
+          const km = haversineKm(prev, order[i].loc) * detour;
+          meters += km * 1000;
+          prev = order[i].loc;
+        }
+        const kmLast = haversineKm(prev, dropLoc) * detour;
+        meters += kmLast * 1000;
+        return meters;
+      }
+      function permute(arr){
+        const res = [];
+        function backtrack(path, used){
+          if (path.length === arr.length) { res.push(path.slice()); return; }
+          for (let i = 0; i < arr.length; i++){
+            if (used[i]) continue;
+            used[i] = true; path.push(arr[i]);
+            backtrack(path, used);
+            path.pop(); used[i] = false;
+          }
+        }
+        backtrack([], Array(arr.length).fill(false));
+        return res;
+      }
+      let best = null; let bestScore = Number.POSITIVE_INFINITY;
+      const MAX_BRUTE = 7;
+      if (stops.length <= MAX_BRUTE) {
+        const perms = permute(stops);
+        for (let p = 0; p < perms.length; p++){
+          const s = metrics(perms[p]);
+          if (s < bestScore) { bestScore = s; best = perms[p]; }
+        }
+      } else {
+        // Heuristic: nearest-neighbor then 2-opt
+        const remaining = stops.slice();
+        const route = [];
+        let current = pickupLoc;
+        while (remaining.length) {
+          let bestIdx = 0; let bestDist = Number.POSITIVE_INFINITY;
+          for (let i = 0; i < remaining.length; i++){
+            const d = haversineKm(current, remaining[i].loc);
+            if (d < bestDist) { bestDist = d; bestIdx = i; }
+          }
+          const next = remaining.splice(bestIdx, 1)[0];
+          route.push(next);
+          current = next.loc;
+        }
+        // 2-opt improvement
+        let improved = true; let rBest = route; let sBest = metrics(rBest);
+        while (improved){
+          improved = false;
+          for (let i = 0; i < rBest.length - 1; i++){
+            for (let j = i+1; j < rBest.length; j++){
+              const cand = rBest.slice(0, i).concat(rBest.slice(i, j+1).reverse()).concat(rBest.slice(j+1));
+              const s = metrics(cand);
+              if (s < sBest) { rBest = cand; sBest = s; improved = true; }
+            }
+          }
+        }
+        best = rBest;
+      }
+      if (!best || !best.length) return;
+      // Reorder DOM: insert each best stop before drop wrapper
+      const dropWrap = qStopsWrap.querySelector('[data-role="drop"]') || null;
+      for (let k = 0; k < best.length; k++){
+        const src = best[k].w;
+        if (src && dropWrap) qStopsWrap.insertBefore(src, dropWrap);
+      }
+      try { if (typeof runEstimate === 'function') await runEstimate(); } catch(_){ }
+    } catch(_){ }
+  }
+  if (qOptimize) { qOptimize.addEventListener('click', optimizeStopsOrder); }
   function getStopAfter(container, y){
     try {
       const stops = Array.from(container.querySelectorAll('.quote-stop-item:not(.dragging)'));
@@ -721,9 +1243,51 @@ window.initZonesMap = function initZonesMap(){
       return null;
     } catch(_) { return null; }
   }
+  function countReadyLocations(){
+    try {
+      const inputs = collectAddressInputs();
+      let count = 0;
+      inputs.forEach(function(el){ if (getLocationForInput(el)) count++; });
+      return count;
+    } catch(_) { return 0; }
+  }
+  function updateAddressMarkers(){
+    try {
+      const inputs = collectAddressInputs();
+      const ready = inputs.filter(function(el){ return !!getLocationForInput(el); });
+      const keep = new Set(ready);
+      addressMarkers.forEach(function(marker, el){
+        if (!keep.has(el)) { try { marker.setMap(null); } catch(_){} addressMarkers.delete(el); }
+      });
+      ready.forEach(function(el){
+        const loc = getLocationForInput(el);
+        if (loc) setAddressMarker(el, loc);
+      });
+      if (ready.length === 1) {
+        try { map.panTo(getLocationForInput(ready[0])); } catch(_){}
+      }
+    } catch(_) {}
+  }
+  function hasReadyPickupDrop(){
+    return !!(qPickup && qDrop && getLocationForInput(qPickup) && getLocationForInput(qDrop));
+  }
+  function autoEstimateIfReady(){
+    try {
+      updateAddressMarkers();
+      const readyCount = countReadyLocations();
+      if (readyCount >= 2 && hasReadyPickupDrop()) {
+        if (window._quoteAutoTimer) clearTimeout(window._quoteAutoTimer);
+        window._quoteAutoTimer = setTimeout(function(){
+          try { runEstimate(); } catch(_){}
+        }, 80);
+      }
+    } catch(_) {}
+  }
   // attach autocomplete to primary inputs
   attachAutocomplete(qPickup);
   attachAutocomplete(qDrop);
+  attachAddressInputHandlers(qPickup);
+  attachAddressInputHandlers(qDrop);
   // Include pickup and drop as draggable items within the stops list
   (function ensurePrimaryInStops(){
     try {
@@ -732,7 +1296,27 @@ window.initZonesMap = function initZonesMap(){
         if (!inputEl) return;
         var parent = inputEl.parentElement;
         var alreadyWrapped = parent && parent.classList && parent.classList.contains('quote-stop-item');
-        if (alreadyWrapped) { parent.dataset.role = role; attachStopDragHandlers(parent); return; }
+        if (alreadyWrapped) {
+          parent.dataset.role = role;
+          attachStopDragHandlers(parent);
+          if (!parent.querySelector('.stop-delete')) {
+            const delExisting = document.createElement('button');
+            delExisting.type = 'button';
+            delExisting.className = 'stop-delete';
+            delExisting.setAttribute('title', i18n('quoteDeleteStop') || 'Delete stop');
+            delExisting.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
+            delExisting.textContent = '×';
+            delExisting.addEventListener('click', function(){
+              try {
+                inputEl.value = '';
+                clearStoredLocation(inputEl);
+                if (typeof runEstimate === 'function') runEstimate();
+              } catch(_) {}
+            });
+            parent.appendChild(delExisting);
+          }
+          return;
+        }
         var w = document.createElement('div');
         w.className = 'quote-stop-item';
         w.draggable = true;
@@ -744,6 +1328,20 @@ window.initZonesMap = function initZonesMap(){
         if (inputEl.parentElement) inputEl.parentElement.insertBefore(w, inputEl);
         w.appendChild(h);
         w.appendChild(inputEl);
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'stop-delete';
+        del.setAttribute('title', i18n('quoteDeleteStop') || 'Delete stop');
+        del.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
+        del.textContent = '×';
+        del.addEventListener('click', function(){
+          try {
+            inputEl.value = '';
+            clearStoredLocation(inputEl);
+            if (typeof runEstimate === 'function') runEstimate();
+          } catch(_) {}
+        });
+        w.appendChild(del);
         if (role === 'pickup') {
           qStopsWrap.insertBefore(w, qStopsWrap.firstChild);
         } else {
@@ -755,6 +1353,17 @@ window.initZonesMap = function initZonesMap(){
       wrapIfNeeded(qDrop, 'drop');
     } catch(_) {}
   })();
+  // Allow clicking the map to add a pinpoint and fill the next field
+  try {
+    map.addListener('click', function(e){
+      try {
+        if (editMode) return;
+        const ll = e && e.latLng;
+        if (!ll) return;
+        handleMapClick(ll);
+      } catch(_) {}
+    });
+  } catch(_) {}
   if (qAddStop && qStopsWrap) {
     qAddStop.addEventListener('click', function(){
       const w = document.createElement('div');
@@ -770,11 +1379,21 @@ window.initZonesMap = function initZonesMap(){
       i.placeholder = ph;
       i.setAttribute('aria-label', ph);
       i.className = 'quote-stop';
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'stop-delete';
+      del.setAttribute('title', i18n('quoteDeleteStop') || 'Delete stop');
+      del.innerHTML = '<i class="fa fa-trash" aria-hidden="true"></i>';
+      del.addEventListener('click', function(){
+        try { clearAddressMarker(i); w.remove(); if (typeof runEstimate === 'function') runEstimate(); } catch(_) {}
+      });
       w.appendChild(h);
       w.appendChild(i);
+      w.appendChild(del);
       qStopsWrap.appendChild(w);
       attachAutocomplete(i);
       attachStopDragHandlers(w);
+      attachAddressInputHandlers(i);
     });
   }
   // Wrap and attach drag handlers to any pre-existing stop inputs
@@ -789,7 +1408,21 @@ window.initZonesMap = function initZonesMap(){
             h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
             i.parentElement.insertBefore(h, i);
           }
+          if (!i.parentElement.querySelector('.stop-delete')) {
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'stop-delete';
+            del.setAttribute('title', i18n('quoteDeleteStop') || 'Delete stop');
+            del.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
+            del.textContent = '×';
+            del.addEventListener('click', function(){
+              try { clearAddressMarker(i); i.parentElement.remove(); if (typeof runEstimate === 'function') runEstimate(); } catch(_) {}
+            });
+            i.parentElement.appendChild(del);
+          }
+          if (!i.parentElement.dataset.role) i.parentElement.dataset.role = 'stop';
           attachStopDragHandlers(i.parentElement);
+          attachAddressInputHandlers(i);
         } else {
           const w = document.createElement('div');
           w.className = 'quote-stop-item';
@@ -801,7 +1434,19 @@ window.initZonesMap = function initZonesMap(){
           i.parentElement ? i.parentElement.insertBefore(w, i) : qStopsWrap.appendChild(w);
           w.appendChild(h);
           w.appendChild(i);
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'stop-delete';
+          del.setAttribute('title', i18n('quoteDeleteStop') || 'Delete stop');
+          del.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
+          del.textContent = '×';
+          del.addEventListener('click', function(){
+            try { clearAddressMarker(i); w.remove(); if (typeof runEstimate === 'function') runEstimate(); } catch(_) {}
+          });
+          w.appendChild(del);
+          w.dataset.role = 'stop';
           attachStopDragHandlers(w);
+          attachAddressInputHandlers(i);
         }
       } catch(_){}
     });
@@ -819,67 +1464,45 @@ window.initZonesMap = function initZonesMap(){
       const pickupLoc = getLocationForInput(pickupEl) || await geocodeOne(pickupQ);
       const dropLoc = getLocationForInput(dropEl) || await geocodeOne(dropQ);
       const stopLocs = [];
+      const stopAddrs = [];
       for (let idx = 0; idx < stopInputs.length; idx++){
         const el = stopInputs[idx];
         const val = (el && el.value || '').trim();
         if (!val) continue;
         const loc = getLocationForInput(el) || await geocodeOne(val);
-        if (loc) stopLocs.push(loc);
+        if (loc) { stopLocs.push(loc); stopAddrs.push((el && el.dataset && el.dataset.address) || val); }
       }
       if (!pickupLoc || !dropLoc) { if (qOut) qOut.textContent = i18n('quoteAddressNotFound') || 'Address not found'; return; }
+      // Out-of-service validation: any point without a zone should block estimation
+      const pickupZoneNum = zoneNumberForLatLng(pickupLoc);
+      const dropZoneNum = zoneNumberForLatLng(dropLoc);
+      const stopZoneNums = stopLocs.map(z => zoneNumberForLatLng(z));
+      const outsidePoints = [];
+      if (!pickupZoneNum) outsidePoints.push((pickupEl && pickupEl.dataset && pickupEl.dataset.address) || pickupQ || 'Pickup');
+      for (let i = 0; i < stopZoneNums.length; i++) { if (!stopZoneNums[i]) outsidePoints.push(stopAddrs[i] || ('Stop ' + (i+1))); }
+      if (!dropZoneNum) outsidePoints.push((dropEl && dropEl.dataset && dropEl.dataset.address) || dropQ || 'Dropoff');
+      if (outsidePoints.length) {
+        clearRouteOverlays();
+        const msg = i18n('quoteOutsideService') || 'Outside service map — please contact us for a custom quote.';
+        const dbg = 'Out of service: ' + outsidePoints.join(', ');
+        setQuoteResultWithDebug(msg, dbg);
+        setBreakdownLines(['Stops outside service area: ' + outsidePoints.join(' · ')]);
+        return;
+      }
       const routeDetails = await computeRouteDetails(origin, [pickupLoc].concat(stopLocs), dropLoc);
       // Render route overlays on map
       renderRoute(pickupLoc, stopLocs, dropLoc, routeDetails);
-      const durationSec = routeDetails.totalSec || 0;
-      const isHourly = durationSec > 7200;
-      if (isHourly) {
-        const routeMins = Math.round(durationSec / 60);
-        const over = Math.max(0, routeMins - 60);
-        const quarters = Math.ceil(over / 15);
-        const firstHour = 25;
-        const quarterRate = 6;
-        const price = firstHour + quarters * quarterRate;
-        const breakdown = i18n('quoteHourlyBreakdown') || 'Includes 1h + 15-min increments';
-        const legSecs = (routeDetails.legs||[]).map(l => (l && l.sec) || 0);
-        let legMins = legSecs.map(s => Math.round(s/60));
-        const sumLegMins = legMins.reduce((a,b) => a+b, 0);
-        const diff = routeMins - sumLegMins;
-        if (legMins.length && diff !== 0) { legMins[legMins.length - 1] += diff; }
-        function fmtLegMins(m){
-          const h = Math.floor(m/60);
-          const mm = m % 60;
-          const uh = i18n('quoteUnitHour') || 'h';
-          const um = i18n('quoteUnitMinute') || 'min';
-          return (h? (h + uh + ' ') : '') + (mm? (mm + ' ' + um) : '');
-        }
-        const labels = [];
-        labels.push(i18n('quoteEtaLabelApproach') || 'Base → Pickup');
-        for (let i = 0; i < stopLocs.length; i++) labels.push((i18n('quoteEtaLabelStop', { n: (i+1) }) || ('Stop ' + (i+1))));
-        labels.push(i18n('quoteEtaLabelDropoff') || 'Dropoff');
-        const etaParts = [];
-        for (let i = 0; i < legMins.length; i++){
-          const name = labels[i] || ('Leg '+(i+1));
-          etaParts.push(name+': '+fmtLegMins(legMins[i]));
-        }
-        const etaStr = etaParts.length ? (i18n('quoteEtasPrefix', { list: etaParts.join(' · ') }) || ('ETAs: '+etaParts.join(' · '))) : '';
-        if (qOut) {
-          const h = Math.floor(routeMins/60);
-          const mm = routeMins % 60;
-          const routeStr = (h? (h+'h '):'') + (mm? (mm+' min'):'');
-          const approachMins = legMins[0] || 0;
-          const jobMins = legMins.slice(1).reduce((a,b)=>a+b,0);
-          const approachStr = fmtLegMins(approachMins);
-          const jobStr = fmtLegMins(jobMins);
-          const cur = window._currencySymbol || '€';
-          const text = i18n('quoteHourly', { currency: cur, price, route: routeStr, approach: approachStr, job: jobStr, breakdown, etas: (etaStr? (' ' + etaStr) : '') });
-          qOut.textContent = text || (cur + price + ' hourly. Total ' + routeStr + ' (approach ' + approachStr + ', job ' + jobStr + '). ' + breakdown + '.' + (etaStr? (' ' + etaStr) : ''));
-        }
-        return;
-      }
-      // Combined pricing: distance dominates + half-zone pickup charge
+      // Combined pricing: distance dominates + pickup zone base charge
       const cur = window._currencySymbol || '€';
       const dp = window._distancePricing || {};
-      let perKm = Number(dp && dp.perKm);
+      const pickupZone = String(pickupZoneNum || '');
+      const perKmMap = dp && dp.perKm;
+      let perKm = 0;
+      if (perKmMap && typeof perKmMap === 'object') {
+        perKm = Number(perKmMap[pickupZone]) || 0;
+      } else {
+        perKm = Number(perKmMap) || 0;
+      }
       const minimum = Number(dp && dp.minimum) || 0;
       if (!perKm || perKm <= 0) perKm = 1.5;
       // Exclude approach leg (Base → Pickup) from distance pricing
@@ -903,24 +1526,98 @@ window.initZonesMap = function initZonesMap(){
         const price = Math.round((km * perKm) * 100) / 100;
         const fromLabel = pointLabels[i] || ('Leg ' + (i+1));
         const toLabel = pointLabels[i+1] || '';
-        const line = (fromLabel + ' → ' + toLabel + ': ' + km.toFixed(2) + ' km ' + cur + price.toFixed(2));
+        const legEtaMin = Math.round((Number(legs[i].sec||0)||0) / 60);
+        const line = {
+          from: fromLabel,
+          to: toLabel,
+          km: km,
+          price: price,
+          etaMin: legEtaMin
+        };
         parts.push(line);
       }
       const totalKm = Math.round((totalMeters/1000) * 100) / 100;
       let distanceTotal = Math.round((totalKm * perKm) * 100) / 100;
-      // Pickup zone half-charge
-      const pickupZone = zoneNumberForLatLng(pickupLoc);
-      const pickupBase = basePriceForZone(pickupZone);
-      const pickupCharge = Math.round((pickupBase * 0.5) * 100) / 100;
+      // Pickup zone full base charge
+      const base = basePriceForZone(pickupZone);
+      const pickupCharge = Math.round((base) * 100) / 100;
       let total = Math.round((distanceTotal + pickupCharge) * 100) / 100;
       if (minimum && total < minimum) total = minimum;
-      const totalLine = 'Total ' + cur + total.toFixed(2) + ' (distance ' + totalKm.toFixed(2) + ' km)';
-      const pickupLine = pickupZone ? ('Pickup zone ' + pickupZone + ': ' + cur + pickupCharge.toFixed(2)) : '';
-      const breakdown = [pickupLine].concat(parts).filter(Boolean).join(' · ');
-      qOut.textContent = totalLine + (breakdown ? (' ' + (i18n('quotePerStopPrefix', { list: breakdown }) || ('Breakdown: ' + breakdown))) : '');
+      const travelSecsAfterPickup = legs.reduce((a, l) => a + (Number(l.sec||0)||0), 0);
+      const travelMins = Math.round(travelSecsAfterPickup / 60);
+      const serviceMins = 5 + (3 * (stopInputs.length + 1));
+      const etaTotalMins = travelMins + serviceMins;
+      const info = 'Mode=distance · perKm=' + perKm.toFixed(2) + ' (pickup zone ' + pickupZone + ')';
+      const summary = 'Order totals: ' + cur + total.toFixed(2) + ' / ' + totalKm.toFixed(2) + ' km / ' + etaTotalMins + ' min';
+      // Build structured rundown per requested format (Address, Zone, Distances)
+      const pickupAddr = (pickupEl && pickupEl.dataset && pickupEl.dataset.address) || pickupQ;
+      const dropAddr = (dropEl && dropEl.dataset && dropEl.dataset.address) || dropQ;
+      const z1Center = origin; // center of zone 1
+      function km(a,b){ return Math.round(haversineKm(a,b) * 100) / 100; }
+      const breakdownLines = [];
+      const eurPerKm = totalKm > 0 ? (total / totalKm) : 0;
+      const eurPerMin = etaTotalMins > 0 ? (total / etaTotalMins) : 0;
+      const eurPerHour = etaTotalMins > 0 ? (total / (etaTotalMins / 60)) : 0;
+      const eurPerHourHeadline = 'EUR/h: ' + cur + eurPerHour.toFixed(2);
+      setQuoteResultWithDebug(summary, info, eurPerHourHeadline);
+      breakdownLines.push('Order totals:');
+      breakdownLines.push('EUR/km');
+      breakdownLines.push(cur + eurPerKm.toFixed(2));
+      breakdownLines.push('EUR/min');
+      breakdownLines.push(cur + eurPerMin.toFixed(2));
+      breakdownLines.push('EUR/h');
+      breakdownLines.push(cur + eurPerHour.toFixed(2));
+      // Pickup block
+      breakdownLines.push('Pickup:');
+      breakdownLines.push('Address');
+      breakdownLines.push(String(pickupAddr||''));
+      breakdownLines.push('Zone');
+      breakdownLines.push(String(pickupZone||''));
+      breakdownLines.push('Pickup price (EUR)');
+      breakdownLines.push(cur + pickupCharge.toFixed(2));
+      breakdownLines.push('Distance from center of zone 1');
+      breakdownLines.push(km(z1Center, pickupLoc) + ' km');
+      // Each Stop
+      for (let i = 0; i < stopLocs.length; i++){
+        breakdownLines.push('Stop ' + (i+1) + ':');
+        breakdownLines.push('Address');
+        breakdownLines.push(String(stopAddrs[i]||''));
+        breakdownLines.push('Zone');
+        breakdownLines.push(String(stopZoneNums[i]||''));
+        breakdownLines.push('Distance from previous stop');
+        const legMeters = Number(legs[i] && legs[i].meters || 0) || 0; // legs[0] = pickup->stop1
+        const legKm = Math.round((legMeters/1000)*100)/100;
+        const legPrice = Math.round((legKm * perKm)*100)/100;
+        breakdownLines.push(legKm + ' km');
+        breakdownLines.push('Price for leg (EUR)');
+        breakdownLines.push(cur + legPrice.toFixed(2));
+        breakdownLines.push('Raw calculation');
+        breakdownLines.push(legKm.toFixed(2) + ' km × ' + cur + perKm.toFixed(2) + '/km = ' + cur + legPrice.toFixed(2));
+      }
+      // Dropoff block
+      breakdownLines.push('Dropoff:');
+      breakdownLines.push('Address');
+      breakdownLines.push(String(dropAddr||''));
+      breakdownLines.push('Zone');
+      breakdownLines.push(String(dropZoneNum||''));
+      breakdownLines.push('Distance from previous stop');
+      const lastLegMeters = Number(legs[legs.length-1] && legs[legs.length-1].meters || 0) || 0;
+      const lastKm = Math.round((lastLegMeters/1000)*100)/100;
+      const lastPrice = Math.round((lastKm * perKm)*100)/100;
+      breakdownLines.push(lastKm + ' km');
+      breakdownLines.push('Price for leg (EUR)');
+      breakdownLines.push(cur + lastPrice.toFixed(2));
+      breakdownLines.push('Raw calculation');
+      breakdownLines.push(lastKm.toFixed(2) + ' km × ' + cur + perKm.toFixed(2) + '/km = ' + cur + lastPrice.toFixed(2));
+      breakdownLines.push('Distance from center of zone 1');
+      breakdownLines.push(km(z1Center, dropLoc) + ' km');
+      // Total ETA
+      breakdownLines.push('Total ETA: (travel time + service time)');
+      breakdownLines.push(travelMins + ' min + ' + serviceMins + ' min');
+      setBreakdownLines(breakdownLines.filter(Boolean));
       return;
     } catch(e){
-      if (qOut) qOut.textContent = i18n('quoteCouldNotEstimate') || 'Could not estimate route — please check addresses and try again.';
+      if (qOut) setQuoteResultWithDebug(i18n('quoteCouldNotEstimate') || 'Could not estimate route — please check addresses and try again.', 'Error');
     }
   }
   // Trigger computation
@@ -928,6 +1625,9 @@ window.initZonesMap = function initZonesMap(){
   
 
   if (editMode && google.maps.drawing) {
+    // Storage for locally drawn polygons in the editor
+    let drawnPolygons = [];
+
     // Reveal admin buttons
     if (editBtn) editBtn.style.display = 'inline-block';
     if (exportBtn) exportBtn.style.display = 'inline-block';
@@ -971,6 +1671,39 @@ window.initZonesMap = function initZonesMap(){
     });
 
     // Editor API: allow importing GeoJSON and re-exporting
+    function exportZones(){
+      try {
+        const features = [];
+        for (let i = 0; i < drawnPolygons.length; i++){
+          const item = drawnPolygons[i] || {};
+          const polygon = item.polygon;
+          if (!polygon || typeof polygon.getPaths !== 'function') continue;
+          const rings = polygon.getPaths().getArray().map(function(path){
+            return path.getArray().map(function(ll){ return [ll.lng(), ll.lat()]; });
+          });
+          if (!rings.length) continue;
+          features.push({
+            type: 'Feature',
+            properties: { name: item.name || 'Zone', color: item.color || undefined },
+            geometry: { type: 'Polygon', coordinates: rings }
+          });
+        }
+        const fc = { type: 'FeatureCollection', features };
+        const json = JSON.stringify(fc);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'zones.geojson';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 100);
+        const resEl = document.getElementById('zoneResult');
+        if (resEl) resEl.textContent = 'Exported ' + features.length + ' zone(s).';
+      } catch(e) {
+        const resEl = document.getElementById('zoneResult');
+        if (resEl) resEl.textContent = 'Failed to export zones';
+      }
+    }
     function importGeoJSON(geojson){
       try {
         const features = Array.isArray(geojson.features) ? geojson.features : [];
@@ -1005,54 +1738,4 @@ window.initZonesMap = function initZonesMap(){
   }
 };
 
-// Fallback diagnostic if Maps API fails to load and callback never fires
-(function setupMapsLoadFallback(){
-  try {
-    window.addEventListener('load', function(){
-      setTimeout(function(){
-        var mapEl = document.getElementById('zonesMap');
-        if (!mapEl) return;
-        if (!window.google || !google.maps) {
-          var diag = document.getElementById('zoneResult') || document.createElement('div');
-          diag.id = diag.id || 'zoneResult';
-          diag.className = 'zones-result';
-          try {
-            const translations = window.CARGOWORKS_TRANSLATIONS || {};
-            const lang = document.documentElement.lang || 'en';
-            const dict = Object.assign({}, translations.en||{}, translations[lang]||{});
-            diag.textContent = dict.mapFailedLoad || 'Map failed to load. Check API key/referrer settings.';
-          } catch(_) {
-            diag.textContent = 'Map failed to load. Check API key/referrer settings.';
-          }
-          if (!document.getElementById('zoneResult')) {
-            var controls = document.querySelector('.zones-controls');
-            if (controls) controls.appendChild(diag);
-          }
-          try { console.error('[Maps] google.maps not available. Verify API key, enabled APIs, billing, and allowed referrers.'); } catch(e) {}
-        }
-      }, 3000);
-    });
-  } catch(e) {}
-})();
-
-// Global auth failure handler: shows a translated diagnostic if the API key/referrer blocks Maps
-window.gm_authFailure = function(){
-  try {
-    const el = document.getElementById('zoneResult') || document.createElement('div');
-    el.id = el.id || 'zoneResult';
-    el.className = 'zones-result';
-    const translations = window.CARGOWORKS_TRANSLATIONS || {};
-    const lang = document.documentElement.lang || 'en';
-    const dict = Object.assign({}, translations.en||{}, translations[lang]||{});
-    el.textContent = dict.mapAuthFailure || 'Maps authentication failed — verify API key, enabled APIs (Maps JavaScript, Places), billing, and allowed website referrers.';
-    if (!document.getElementById('zoneResult')) {
-      const controls = document.querySelector('.zones-controls');
-      if (controls) controls.appendChild(el);
-    }
-    console.error('[Maps] gm_authFailure fired: Authentication failed.');
-  } catch(_) {
-    try { console.error('[Maps] gm_authFailure fired.'); } catch(__) {}
-  }
-};
-
-// Leaflet fallback disabled to verify Google Maps behavior
+// Diagnostics removed for simplicity during testing

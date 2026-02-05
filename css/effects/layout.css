@@ -148,6 +148,74 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
     background-color: #fff;
     cursor: grab;
   }
+      .quote-breakdown__line {
+        display: inline;
+      }
+    
+      .quote-breakdown {
+        margin-top: 0.35rem;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.4rem;
+        width: 100%;
+        max-width: 100%;
+      }
+    
+      .quote-block {
+        border: 1px solid rgba(255,255,255,0.14);
+        border-radius: 8px;
+        padding: 0.5rem 0.65rem;
+        margin: 0;
+        background: rgba(0,0,0,0.12);
+        min-width: 0;
+        overflow: hidden;
+      }
+    
+      .quote-block-title {
+        font-weight: 600;
+        font-size: 0.78rem;
+        margin-bottom: 0.25rem;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+    
+      .quote-block-line {
+        font-size: 0.76rem;
+        line-height: 1.15;
+        overflow-wrap: anywhere;
+      }
+
+      .quote-block-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 0.35rem;
+        align-items: baseline;
+        font-size: 0.76rem;
+        line-height: 1.15;
+      }
+
+      .quote-block-label {
+        opacity: 0.75;
+        font-weight: 600;
+      }
+
+      .quote-block-value {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+      }
+
+      .quote-block-line--expr {
+        font-size: 0.72rem;
+        opacity: 0.8;
+      }
+    
+      .quote-breakdown-meta {
+        font-size: 0.75rem;
+        opacity: 0.7;
+        margin-top: 0.1rem;
+        grid-column: 1 / -1;
+      }
   .quote-stop-item .drag-handle {
     display: inline-flex;
     align-items: center;
@@ -356,12 +424,12 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 .hero-caption { margin-bottom: clamp(1.2rem, 2.5vw, 1.8rem); }
 
 /* ===== Zones map section ===== */
-.zones-section { width: min(1200px, 94vw); margin: 0 auto clamp(2rem, 5vw, 3rem); padding: 0 clamp(1rem, 3vw, 2rem); }
+.zones-section { width: 100vw; margin: 0; padding: 0 clamp(1rem, 3vw, 2rem); }
 .zones-inner h2 { font-family: 'Oswald', 'Inter', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 0.5rem 0; color: var(--accent-primary); }
 .zones-controls { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .zones-controls input { flex: 1 1 320px; padding: 0.6rem 0.8rem; border: 1px solid rgba(0,0,0,0.12); border-radius: 8px; font-family: 'Inter', system-ui, sans-serif; }
 .zones-result { margin-left: 0.25rem; font-family: 'Inter', system-ui, sans-serif; color: var(--accent-primary); font-weight: 600; }
-.zones-map { width: 100%; height: clamp(360px, 58vh, 620px); border-radius: 16px; box-shadow: 0 12px 36px rgba(0,0,0,0.12); overflow: hidden; }
+.zones-map { width: 100%; height: 100vh; border-radius: 0; box-shadow: none; overflow: hidden; }
 .admin-only { display: none; }
 /* ===== Quote estimator (MVP UI polish) ===== */
 .quote-estimator {
@@ -391,7 +459,29 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   box-shadow: 0 0 0 3px rgba(107, 44, 169, 0.15);
 }
 .quote-estimator .btn { margin-top: 0.1rem; }
-#quoteResult { font-family: 'Inter', system-ui, sans-serif; color: #2d1a4d; font-weight: 600; }
+
+/* Stop delete button (small ×) */
+.quote-stop-item .stop-delete {
+  margin-left: 6px;
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  line-height: 22px;
+  font-size: 18px;
+  color: #333;
+  cursor: pointer;
+}
+.quote-stop-item .stop-delete:hover { background: #f3f4f8; }
+#quoteResult {
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #2d1a4d;
+  font-weight: 600;
+  flex: 1 1 100%;
+  width: 100%;
+  order: 99;
+}
 
 /* ===== Quote stops: clear drag affordance ===== */
 .quote-stop-item {

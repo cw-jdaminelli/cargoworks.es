@@ -9,13 +9,6 @@ if (langSelect) {
     const nodes = document.querySelectorAll(`[data-i18n="${key}"]`);
     if (nodes.length) {
       nodes.forEach((node) => {
-        // Hide node if translation is an explicit empty string (used to suppress EN fallback)
-        if (value === '') {
-          node.style.display = 'none';
-          return;
-        } else {
-          node.style.display = '';
-        }
         if (typeof value === 'string' && value.includes('<li>')) {
           node.innerHTML = value;
         } else {
@@ -25,12 +18,6 @@ if (langSelect) {
     } else {
       const fallback = document.getElementById(key);
       if (!fallback) return;
-      if (value === '') {
-        fallback.style.display = 'none';
-        return;
-      } else {
-        fallback.style.display = '';
-      }
       if (typeof value === 'string' && value.includes('<li>')) {
         fallback.innerHTML = value;
       } else {
