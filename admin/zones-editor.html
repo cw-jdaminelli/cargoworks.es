@@ -22,15 +22,21 @@
   <section id="zones" class="zones-section" aria-label="Zone editor">
     <div class="zones-inner">
       <h2>Zones Editor</h2>
-      <p class="admin-note">Local-only editor. Draw polygons and export to GeoJSON, then replace <code>data/zones.geojson</code> on the site.</p>
-      <div class="zones-controls" role="toolbar">
-        <button id="zonesEdit" class="btn admin-only" type="button" title="Edit zones">Edit zones</button>
-        <button id="zonesExport" class="btn admin-only" type="button" title="Export zones">Export zones</button>
-        <button id="zonesImport" class="btn admin-only" type="button" title="Import zones">Import zones</button>
-        <input id="zonesImportFile" type="file" accept="application/json,.json" style="display:none" />
-        <span id="zoneResult" class="zones-result" aria-live="polite"></span>
+      <div class="zones-editor-card">
+        <div class="zones-editor-panel">
+          <p class="admin-note">Local-only editor. Draw polygons and export to GeoJSON, then replace <code>data/zones.geojson</code> on the site.</p>
+          <div class="zones-controls" role="toolbar">
+            <button id="zonesEdit" class="btn admin-only" type="button" title="Edit zones">Edit zones</button>
+            <button id="zonesExport" class="btn admin-only" type="button" title="Export zones">Export zones</button>
+            <button id="zonesImport" class="btn admin-only" type="button" title="Import zones">Import zones</button>
+            <input id="zonesImportFile" type="file" accept="application/json,.json" style="display:none" />
+            <span id="zoneResult" class="zones-result" aria-live="polite"></span>
+          </div>
+        </div>
+        <div class="zones-editor-map">
+          <div id="zonesMap" class="zones-map" aria-label="Interactive zone map"></div>
+        </div>
       </div>
-      <div id="zonesMap" class="zones-map" aria-label="Interactive zone map"></div>
     </div>
   </section>
 

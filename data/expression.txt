@@ -1,0 +1,35 @@
+You’re working in a website route-quote app. In `map.js` there is a verbose breakdown output inside `runEstimate()` (it prints addresses, repeated totals, etc.). I need to replace that with a single compact “logic trace” string that still proves the entire pricing logic was applied.
+
+Requirements:
+- Do NOT recompute pricing. Only format values already computed in runEstimate (or values already returned by helpers).
+- Remove addresses entirely. Keep only zones/rings, km/min, rates, and amounts.
+- The trace must include every logic component used:
+  1) pickupZone used to fetch perKm (and the perKm value)
+  2) distance basis rule: distanceBasisKm = max(totalKmAfterPickup, dropCenterKm)
+  3) distanceTotal = distanceBasisKm * perKm
+  4) pickupCharge (pickup base)
+  5) minimum rule: if subtotal before min < minimum, show “min→€X”
+  6) cargo modifier: rate (±%) and cargoAmount
+  7) time modifiers: weekend/holiday and after-hours flags, combined surcharge rate and surchargeAmount
+  8) discount: code, type (percent/fixed), discountAmount; if no discount show “disc:-”
+  9) subtotal, surcharge total, discount total, final total
+  10) leg summaries: each leg as “Zx→Zy s{steps} m{mult} b{base}=€{leg} (km/min if available)”
+- Output is ONE LINE by default, stable ordering:
+  TOTAL equation | legs[...] | date time [flags] | km/eta
+- Format:
+  - Money: € with 2 decimals
+  - Multiplier: 2 decimals
+  - Steps: integer
+  - Flags: [Wknd/Hol AH Heavy] only include active else [-]
+
+Implementation tasks:
+1) Add a helper `buildQuoteTrace(ctx)` near the breakdown helpers. It returns the one-line string.
+2) In `runEstimate()`, after all pricing values are computed (distanceBasisKm, distanceTotal, pickupCharge, minimum, cargoInfo/cargoAmount, surchargeInfo/surchargeAmount, discountInfo/discountAmount, subtotal, total, parts/legs, totalKm/dropCenterKm, eta), create a ctx object and call `buildQuoteTrace(ctx)`.
+3) Replace the current big `breakdownLines.push(...)` section with `setBreakdownLines(['Trace:', trace])` (or equivalent).
+
+Please:
+- Locate the existing breakdown section and show the exact diff / edits.
+- If some values aren’t currently available for legs (steps/mult/base), don’t invent them—output “?” for missing fields and keep going.
+- Keep it dependency-free plain JS.
+
+Return: the final code for `buildQuoteTrace(ctx)` and the exact changes to `runEstimate()` to use it.

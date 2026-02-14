@@ -1,0 +1,38 @@
+{
+  "version": "2026-02-08",
+  "codes": [
+    {
+      "code": "WELCOME10",
+      "type": "percent",
+      "amount": 10,
+      "minOrder": 0,
+      "start": "2026-01-01",
+      "end": "2026-12-31",
+      "maxUses": 0,
+      "active": true,
+      "notes": "Intro offer"
+    },
+    {
+      "code": "SELF5",
+      "type": "percent",
+      "amount": 5,
+      "minOrder": 0,
+      "start": "2026-01-01",
+      "end": "2026-12-31",
+      "maxUses": 0,
+      "active": true,
+      "notes": "self filled order discount"
+    },
+    {
+      "code": "f&f30",
+      "type": "percent",
+      "amount": 30,
+      "minOrder": 0,
+      "start": "2026-01-01",
+      "end": "2026-12-31",
+      "maxUses": 2,
+      "active": true,
+      "notes": "family and friends 30 percent"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CARGOWORKS – Discounts Admin (Local)</title>
+  <link rel="stylesheet" href="../css/effects/layout.css"/>
+</head>
+<body>
+  <div class="admin-gate" id="discountsGate">
+    <div class="admin-gate-card">
+      <h1>Discounts Admin</h1>
+      <p>Enter the password to continue.</p>
+      <div class="admin-gate-row">
+        <input id="discountsGateInput" type="password" placeholder="Password" aria-label="Admin password" />
+        <button id="discountsGateButton" class="btn" type="button">Unlock</button>
+      </div>
+      <p id="discountsGateStatus" class="admin-gate-status" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <nav class="hero-nav">
+      <ul class="nav-links">
+        <li><a href="../index.html#zones">Back to site</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <section class="discounts-section" aria-label="Discounts admin">
+    <div class="discounts-inner">
+      <h2>Discount Codes</h2>
+      <p class="admin-note">Local-only editor. Manage discount codes and export the JSON to replace <code>data/discounts.json</code>.</p>
+
+      <div class="discounts-actions">
+        <button id="discountsAddRow" class="btn" type="button">Add row</button>
+        <button id="discountsExport" class="btn" type="button">Export JSON</button>
+        <button id="discountsImport" class="btn" type="button">Import JSON</button>
+        <input id="discountsImportFile" type="file" accept="application/json,.json" style="display:none" />
+        <span id="discountsStatus" class="zones-result" aria-live="polite"></span>
+      </div>
+
+      <div class="discounts-table-wrap">
+        <table id="discountsTable" class="discounts-table" aria-label="Discount code table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Min order</th>
+              <th>Start</th>
+              <th>End</th>
+              <th>Max uses</th>
+              <th>Active</th>
+              <th>Notes</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>© 2026 Cargoworks – Discounts Admin</span>
+  </footer>
+
+  <script src="../js/js/discounts-admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+  window.CARGOWORKS_BOOKING_API = "https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec";
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CARGOWORKS - Order Tracking</title>
+  <link rel="stylesheet" href="css/effects/layout.css"/>
+  <style>
+    :root {
+      --track-ink: #111c2b;
+      --track-accent: #2b8a3e;
+      --track-bg: #eef2ec;
+      --track-card: #ffffff;
+      --track-border: rgba(17, 28, 43, 0.12);
+    }
+    body { background: var(--track-bg); color: var(--track-ink); }
+    .tracking-shell { max-width: 900px; margin: 6rem auto 4rem; padding: 0 1.5rem; }
+    .tracking-card { background: var(--track-card); border-radius: 18px; padding: 1.5rem; border: 1px solid var(--track-border); box-shadow: 0 16px 40px rgba(17, 28, 43, 0.1); }
+    .tracking-card h1 { font-family: 'Barlow Condensed', 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; font-size: clamp(2rem, 4vw, 3rem); margin-bottom: 1rem; }
+    .tracking-form { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.4rem; }
+    .tracking-form input { flex: 1 1 240px; padding: 0.55rem 0.7rem; border-radius: 10px; border: 1px solid var(--track-border); }
+    .tracking-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.6rem 1rem; margin-bottom: 1rem; }
+    .tracking-summary span { display: block; font-size: 0.95rem; }
+    .tracking-links a { color: var(--track-accent); text-decoration: none; font-weight: 600; }
+    .tracking-links a:hover { text-decoration: underline; }
+    .tracking-timeline { margin-top: 1rem; padding-left: 1.2rem; font-size: 0.92rem; color: #2f3f52; }
+    .tracking-timeline li { margin-bottom: 0.35rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <nav class="hero-nav">
+      <ul class="nav-links">
+        <li><a href="index.html#zones">Back to site</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main class="tracking-shell">
+    <div class="tracking-card">
+      <h1>Order Tracking</h1>
+      <p>Enter your reference to see status, updates, and POD.</p>
+      <div class="tracking-form">
+        <input id="trackingRef" type="text" placeholder="Reference (CW-YYYYMMDD-XXXX)" aria-label="Reference" />
+        <button id="trackingLoad" class="btn" type="button">Track</button>
+        <span id="trackingStatus" class="zones-result" aria-live="polite"></span>
+      </div>
+      <div id="trackingDetails"></div>
+    </div>
+  </main>
+
+  <script src="js/js/tracking.js"></script>
+</body>
+</html>

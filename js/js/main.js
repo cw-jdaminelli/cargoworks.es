@@ -9,7 +9,7 @@ if (langSelect) {
     const nodes = document.querySelectorAll(`[data-i18n="${key}"]`);
     if (nodes.length) {
       nodes.forEach((node) => {
-        if (typeof value === 'string' && value.includes('<li>')) {
+        if (typeof value === 'string' && value.includes('<')) {
           node.innerHTML = value;
         } else {
           node.textContent = value;
@@ -18,7 +18,7 @@ if (langSelect) {
     } else {
       const fallback = document.getElementById(key);
       if (!fallback) return;
-      if (typeof value === 'string' && value.includes('<li>')) {
+      if (typeof value === 'string' && value.includes('<')) {
         fallback.innerHTML = value;
       } else {
         fallback.textContent = value;
@@ -122,17 +122,78 @@ if (langSelect) {
       quoteDropoff.placeholder = dict.quoteDropoffPlaceholder;
       quoteDropoff.setAttribute('aria-label', dict.quoteDropoffPlaceholder);
     }
+    const quoteDate = document.getElementById('quoteDate');
+    if (quoteDate && dict.quotePickupDate) {
+      quoteDate.setAttribute('aria-label', dict.quotePickupDate);
+      quoteDate.setAttribute('title', dict.quotePickupDate);
+    }
+    const quoteTime = document.getElementById('quoteTime');
+    if (quoteTime && dict.quotePickupTime) {
+      quoteTime.setAttribute('aria-label', dict.quotePickupTime);
+      quoteTime.setAttribute('title', dict.quotePickupTime);
+    }
+    const quoteCargo = document.getElementById('quoteCargo');
+    if (quoteCargo && dict.quoteCargoLabel) {
+      quoteCargo.setAttribute('aria-label', dict.quoteCargoLabel);
+    }
+    const quoteDiscount = document.getElementById('quoteDiscount');
+    if (quoteDiscount && dict.quoteDiscountPlaceholder) {
+      quoteDiscount.placeholder = dict.quoteDiscountPlaceholder;
+      quoteDiscount.setAttribute('aria-label', dict.quoteDiscountPlaceholder);
+    }
+    const quoteDiscountApply = document.getElementById('quoteDiscountApply');
+    if (quoteDiscountApply && dict.quoteDiscountApply) {
+      quoteDiscountApply.textContent = dict.quoteDiscountApply;
+      quoteDiscountApply.setAttribute('title', dict.quoteDiscountApply);
+      quoteDiscountApply.setAttribute('aria-label', dict.quoteDiscountApply);
+    }
+    const quoteName = document.getElementById('quoteName');
+    if (quoteName && dict.quoteNamePlaceholder) {
+      quoteName.placeholder = dict.quoteNamePlaceholder;
+      quoteName.setAttribute('aria-label', dict.quoteNamePlaceholder);
+    }
+    const quoteEmail = document.getElementById('quoteEmail');
+    if (quoteEmail && dict.quoteEmailPlaceholder) {
+      quoteEmail.placeholder = dict.quoteEmailPlaceholder;
+      quoteEmail.setAttribute('aria-label', dict.quoteEmailPlaceholder);
+    }
+    const quotePhone = document.getElementById('quotePhone');
+    if (quotePhone && dict.quotePhonePlaceholder) {
+      quotePhone.placeholder = dict.quotePhonePlaceholder;
+      quotePhone.setAttribute('aria-label', dict.quotePhonePlaceholder);
+    }
+    const quoteNotes = document.getElementById('quoteNotes');
+    if (quoteNotes && dict.quoteNotesPlaceholder) {
+      quoteNotes.placeholder = dict.quoteNotesPlaceholder;
+      quoteNotes.setAttribute('aria-label', dict.quoteNotesPlaceholder);
+    }
+    const quoteUpdates = document.getElementById('quoteUpdates');
+    if (quoteUpdates && dict.quoteUpdatesLabel) {
+      quoteUpdates.setAttribute('aria-label', dict.quoteUpdatesLabel);
+    }
     const quoteEstimateBtn = document.getElementById('quoteEstimate');
     if (quoteEstimateBtn && dict.quoteEstimate) {
       quoteEstimateBtn.textContent = dict.quoteEstimate;
       quoteEstimateBtn.setAttribute('title', dict.quoteEstimate);
       quoteEstimateBtn.setAttribute('aria-label', dict.quoteEstimate);
     }
+    const quoteRefreshBtn = document.getElementById('quoteRefresh');
+    if (quoteRefreshBtn && dict.quoteRefresh) {
+      quoteRefreshBtn.textContent = dict.quoteRefresh;
+      quoteRefreshBtn.setAttribute('title', dict.quoteRefresh);
+      quoteRefreshBtn.setAttribute('aria-label', dict.quoteRefresh);
+    }
     const quoteAddStopBtn = document.getElementById('quoteAddStop');
     if (quoteAddStopBtn && dict.quoteAddStop) {
       quoteAddStopBtn.textContent = dict.quoteAddStop;
       quoteAddStopBtn.setAttribute('title', dict.quoteAddStop);
       quoteAddStopBtn.setAttribute('aria-label', dict.quoteAddStop);
+    }
+    const quoteLoadRandomBtn = document.getElementById('quoteLoadRandom');
+    if (quoteLoadRandomBtn && dict.quoteLoadRandom) {
+      quoteLoadRandomBtn.textContent = dict.quoteLoadRandom;
+      quoteLoadRandomBtn.setAttribute('title', dict.quoteLoadRandom);
+      quoteLoadRandomBtn.setAttribute('aria-label', dict.quoteLoadRandom);
     }
     const quoteSwapBtn = document.getElementById('quoteSwap');
     if (quoteSwapBtn && dict.quoteSwapLabel) {

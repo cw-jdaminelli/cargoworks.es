@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+  window.CARGOWORKS_BOOKING_API = "https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec";
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CARGOWORKS - Dispatcher Console</title>
+  <link rel="stylesheet" href="../css/effects/layout.css"/>
+  <style>
+    :root {
+      --dispatch-ink: #172132;
+      --dispatch-accent: #f07b39;
+      --dispatch-bg: #f6efe7;
+      --dispatch-card: #ffffff;
+      --dispatch-border: rgba(23, 33, 50, 0.12);
+    }
+    body { background: var(--dispatch-bg); color: var(--dispatch-ink); }
+    .dispatcher-shell { max-width: 1100px; margin: 5rem auto 4rem; padding: 0 1.5rem; }
+    .dispatcher-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
+    .dispatcher-header h1 { font-family: 'Barlow Condensed', 'Oswald', sans-serif; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: 0.04em; text-transform: uppercase; }
+    .dispatcher-filters { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+    .dispatcher-filters input[type="date"] { padding: 0.45rem 0.6rem; border-radius: 10px; border: 1px solid var(--dispatch-border); background: #fff; }
+    .dispatcher-filters input[type="text"] { padding: 0.45rem 0.6rem; border-radius: 10px; border: 1px solid var(--dispatch-border); background: #fff; }
+    .dispatcher-search { display: flex; align-items: center; gap: 0.35rem; background: #fff; border: 1px solid var(--dispatch-border); border-radius: 10px; padding: 0.2rem 0.5rem; }
+    .dispatcher-search-prefix { font-weight: 700; color: #39455f; letter-spacing: 0.03em; }
+    .dispatcher-search input { border: none; outline: none; padding: 0.3rem 0.2rem; min-width: 150px; }
+    .dispatcher-search input::placeholder { color: rgba(57, 69, 95, 0.6); }
+    .dispatcher-status { font-size: 0.9rem; color: #3a4a63; }
+    .dispatcher-orders { display: grid; gap: 1.2rem; }
+    .dispatcher-card { background: var(--dispatch-card); border-radius: 16px; padding: 1.2rem 1.4rem; border: 1px solid var(--dispatch-border); box-shadow: 0 16px 32px rgba(23, 33, 50, 0.08); }
+    .dispatcher-card h3 { font-family: 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.4rem; }
+    .dispatcher-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.4rem 1rem; font-size: 0.92rem; }
+    .dispatcher-meta span { display: block; }
+    .dispatcher-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem; margin-top: 1rem; }
+    .dispatcher-actions select, .dispatcher-actions textarea, .dispatcher-actions input[type="text"] { width: 100%; padding: 0.5rem 0.6rem; border-radius: 10px; border: 1px solid var(--dispatch-border); }
+    .dispatcher-actions textarea { min-height: 86px; resize: vertical; }
+    .dispatcher-controls { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+    .dispatcher-chip { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.6rem; border-radius: 999px; background: rgba(240, 123, 57, 0.12); color: #a44a1d; font-size: 0.82rem; }
+    .dispatcher-timeline { margin-top: 0.9rem; padding-left: 1rem; font-size: 0.88rem; color: #3a4a63; }
+    .dispatcher-timeline li { margin-bottom: 0.35rem; }
+    .dispatcher-links a { color: var(--dispatch-accent); text-decoration: none; font-weight: 600; }
+    .dispatcher-links a:hover { text-decoration: underline; }
+    .dispatcher-channel { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; }
+    .dispatcher-channel input { margin: 0; }
+    .dispatcher-pod { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+    .dispatcher-action-btn {
+      padding: 0.35rem 0.6rem;
+      font-size: 0.82rem;
+      border-radius: 10px;
+    }
+    .dispatcher-toast {
+      position: fixed;
+      right: 1.25rem;
+      bottom: 1.25rem;
+      background: #1f2a3b;
+      color: #fff;
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.2);
+      font-size: 0.9rem;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.25s ease, transform 0.25s ease;
+      z-index: 999;
+      pointer-events: none;
+      max-width: min(320px, 90vw);
+    }
+    .dispatcher-toast.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    @media (max-width: 720px) {
+      .dispatcher-header { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="admin-gate" id="dispatcherGate">
+    <div class="admin-gate-card">
+      <h1>Dispatcher Console</h1>
+      <p>Enter the admin token to continue.</p>
+      <div class="admin-gate-row">
+        <input id="dispatcherTokenInput" type="password" placeholder="Admin token" aria-label="Admin token" />
+        <button id="dispatcherTokenButton" class="btn" type="button">Unlock</button>
+      </div>
+      <p id="dispatcherGateStatus" class="admin-gate-status" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <nav class="hero-nav">
+      <ul class="nav-links">
+        <li><a href="../index.html#zones">Back to site</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main class="dispatcher-shell">
+    <div class="dispatcher-header">
+      <div>
+        <h1>Dispatcher Console</h1>
+        <p class="dispatcher-status" id="dispatcherSummary">Load a day to see bookings.</p>
+      </div>
+      <div class="dispatcher-filters">
+        <input id="dispatcherDate" type="date" aria-label="Date" />
+        <button id="dispatcherLoad" class="btn" type="button">Load day</button>
+        <button id="dispatcherToday" class="btn btn--ghost" type="button">Today</button>
+        <div class="dispatcher-search" aria-label="Search by reference">
+          <span class="dispatcher-search-prefix">CW-</span>
+          <input id="dispatcherSearchInput" type="text" placeholder="YYYYMMDD-XXXX" aria-label="Reference suffix" />
+        </div>
+        <button id="dispatcherSearchButton" class="btn btn--ghost" type="button">Search</button>
+        <span id="dispatcherStatus" class="dispatcher-status" aria-live="polite"></span>
+      </div>
+    </div>
+    <div id="dispatcherOrders" class="dispatcher-orders"></div>
+  </main>
+
+  <script src="../js/js/dispatcher-admin.js"></script>
+</body>
+</html>

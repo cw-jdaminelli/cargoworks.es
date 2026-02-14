@@ -46,3 +46,23 @@ Notes:
 
 - Editing is intentionally restricted to local (localhost or file protocol) for safety.
 - The public site index.html loads zones from data/zones.geojson and allows address lookup.
+
+## Booking API (MVP Calendar Sync)
+
+The estimator can submit booking requests and read availability via a lightweight backend.
+Set the endpoint in [index.html](index.html#L314) using:
+
+```html
+<script>
+	window.CARGOWORKS_BOOKING_API = 'https://YOUR-API-BASE';
+</script>
+```
+
+Expected endpoints (Apps Script Web App URL):
+
+- `GET ?date=YYYY-MM-DD` → `{ "blocked": [{ "start": 540, "end": 600 }] }`
+- `POST` → accepts a JSON payload with `customer`, `notes`, and `quote`, returns `{ "reference": "ABC123" }`
+
+We plan to use a Google Apps Script web app for MVP. This keeps calendar keys off the client and can be replaced later by a full backend.
+
+Setup steps are in [apps-script/README.md](apps-script/README.md).

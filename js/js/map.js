@@ -5,6 +5,16 @@ window.initZonesMap = function initZonesMap(){
   const STYLE_VERSION = '2026-01-24-1';
   const ZONES_VERSION = '2026-01-24-1';
   const PRICES_VERSION = '2026-01-24-1';
+  const HOLIDAYS_VERSION = '2026-01-24-1';
+  const DISCOUNTS_VERSION = '2026-02-08-1';
+  const CALENDAR_API_KEY = '';
+  const CALENDAR_ID = '';
+  const CALENDAR_TIMEZONE = 'Europe/Madrid';
+  const AVAILABILITY_SLOT_MINUTES = 15;
+  const RETURN_SPEED_KMH = 18;
+  const BOOKING_API_BASE = (function(){
+    try { return String((window && window.CARGOWORKS_BOOKING_API) || '').trim(); } catch(_) { return ''; }
+  })();
   const qStopsWrap = document.getElementById('quoteStops');
   const qAddStop = document.getElementById('quoteAddStop');
   // Removed: "Use destination as first stop" helper button
@@ -27,7 +37,7 @@ window.initZonesMap = function initZonesMap(){
   const center = { lat: 41.3874, lng: 2.1686 }; // Barcelona
   const map = new google.maps.Map(mapEl, {
     center,
-    zoom: 12,
+    zoom: 13,
     mapTypeControl: false,
     streetViewControl: false,
     fullscreenControl: false
@@ -189,7 +199,7 @@ window.initZonesMap = function initZonesMap(){
       const p = num && window._zonePrices && window._zonePrices[num] && window._zonePrices[num].base;
       priceEl.textContent = p ? ('€' + p) : '';
     }
-    try { if (!editMode) handleMapClick(e && e.latLng); } catch(_) {}
+    try { handleMapClick(e && e.latLng); } catch(_) {}
     });
 
   // Load zones from GeoJSON
@@ -201,7 +211,6 @@ window.initZonesMap = function initZonesMap(){
     prev.forEach(f => data.remove(f));
     zonesFeatures = [];
   } catch(_) {}
-
   const zonesUrl = '/data/zones.geojson?v=' + ZONES_VERSION;
   fetch(zonesUrl)
     .then(res => res.json())
@@ -214,7 +223,14 @@ window.initZonesMap = function initZonesMap(){
           const g = f.getGeometry();
           g.forEachLatLng && g.forEachLatLng(latlng => bounds.extend(latlng));
         });
-        if (!bounds.isEmpty()) map.fitBounds(bounds);
+        if (!bounds.isEmpty()) {
+          map.fitBounds(bounds);
+          try {
+            google.maps.event.addListenerOnce(map, 'idle', function(){
+              try { if (13) map.setZoom(13); } catch(_) {}
+            });
+          } catch(_) {}
+        }
       } catch(e) {}
     })
     .catch(() => {});
@@ -227,6 +243,8 @@ window.initZonesMap = function initZonesMap(){
       .then(json => {
         window._zonePrices = (json && json.zones) || {};
         window._distancePricing = (json && json.distance) || null;
+        window._surcharges = (json && json.surcharges) || {};
+        window._businessHours = (json && json.businessHours) || null;
         const curr = (json && json.currency) || 'EUR';
         function symbolForCurrency(code){
           switch(String(code||'').toUpperCase()){ case 'EUR': return '€'; case 'USD': return '$'; case 'GBP': return '£'; default: return '€'; }
@@ -235,6 +253,37 @@ window.initZonesMap = function initZonesMap(){
       })
       .catch(() => { window._zonePrices = {}; });
   })();
+
+  (function loadHolidays(){
+    const holidaysUrl = '/data/holidays.json?v=' + HOLIDAYS_VERSION;
+    fetch(holidaysUrl)
+      .then(res => res.text())
+      .then(text => {
+        const matches = String(text || '').match(/\d{4}-\d{2}-\d{2}/g) || [];
+        window._holidaysSet = new Set(matches);
+      })
+      .catch(() => { window._holidaysSet = new Set(); });
+  })();
+
+  let _discountsReady = false;
+  let _discountsLoadPromise = null;
+  function loadDiscounts(){
+    const discountsUrl = '/data/discounts.json?v=' + DISCOUNTS_VERSION;
+    return fetch(discountsUrl)
+      .then(res => res.json())
+      .then(json => {
+        window._discountCodes = (json && Array.isArray(json.codes)) ? json.codes : [];
+        _discountsReady = true;
+      })
+      .catch(() => { window._discountCodes = []; _discountsReady = true; });
+  }
+  function ensureDiscountsLoaded(){
+    if (_discountsReady) return Promise.resolve();
+    if (_discountsLoadPromise) return _discountsLoadPromise;
+    _discountsLoadPromise = loadDiscounts();
+    return _discountsLoadPromise;
+  }
+  ensureDiscountsLoaded();
 
   function pointInRing(latLng, ringLatLngs){
     const x = latLng.lng();
@@ -542,6 +591,7 @@ window.initZonesMap = function initZonesMap(){
   const qPickup = document.getElementById('quotePickup');
   const qDrop = document.getElementById('quoteDropoff');
   let lastAddressInput = null;
+  let activeLocationInput = null;
   function isAddressInput(el){
     return !!(el && el.tagName === 'INPUT' && (el.id === 'quotePickup' || el.id === 'quoteDropoff' || el.classList.contains('quote-stop')));
   }
@@ -550,6 +600,8 @@ window.initZonesMap = function initZonesMap(){
     if (isAddressInput(el)) lastAddressInput = el;
   });
   function collectAddressInputs(){
+    const ordered = getOrderedInputs();
+    if (ordered.length) return ordered;
     const inputs = [];
     if (qPickup) inputs.push(qPickup);
     if (qDrop) inputs.push(qDrop);
@@ -565,6 +617,31 @@ window.initZonesMap = function initZonesMap(){
       delete inputEl.dataset.lng;
       delete inputEl.dataset.address;
       clearAddressMarker(inputEl);
+      if (typeof invalidateEstimate === 'function') invalidateEstimate();
+    } catch(_) {}
+  }
+  function requestGeocodeForInput(inputEl){
+    try {
+      if (!inputEl) return;
+      const val = String(inputEl.value || '').trim();
+      if (!val) {
+        clearStoredLocation(inputEl);
+        clearRouteOverlays();
+        updateAddressMarkers();
+        return;
+      }
+      const stored = String((inputEl.dataset && inputEl.dataset.address) || '').trim();
+      const hasCoords = inputEl.dataset && inputEl.dataset.lat && inputEl.dataset.lng;
+      if (stored && stored === val && hasCoords) return;
+      geocodeOne(val).then(function(loc){
+        if (!loc) return;
+        inputEl.dataset.lat = String(loc.lat());
+        inputEl.dataset.lng = String(loc.lng());
+        inputEl.dataset.address = val;
+        setAddressMarker(inputEl, loc);
+        updateAddressMarkers();
+        autoEstimateIfReady();
+      });
     } catch(_) {}
   }
   function attachAddressInputHandlers(inputEl){
@@ -572,6 +649,12 @@ window.initZonesMap = function initZonesMap(){
       if (!inputEl) return;
       inputEl.addEventListener('input', function(){
         const val = String(inputEl.value || '').trim();
+        if (!val) {
+          clearStoredLocation(inputEl);
+          clearRouteOverlays();
+          updateAddressMarkers();
+          return;
+        }
         const stored = String((inputEl.dataset && inputEl.dataset.address) || '').trim();
         if (!stored) { clearAddressMarker(inputEl); return; }
         if (val !== stored) {
@@ -579,6 +662,23 @@ window.initZonesMap = function initZonesMap(){
           clearRouteOverlays();
           updateAddressMarkers();
         }
+      });
+      inputEl.addEventListener('focus', function(){
+        activeLocationInput = inputEl;
+        scheduleLocationOptionRefresh();
+      });
+      inputEl.addEventListener('blur', function(){
+        if (activeLocationInput === inputEl) activeLocationInput = null;
+        requestGeocodeForInput(inputEl);
+      });
+      inputEl.addEventListener('keydown', function(e){
+        if (e && e.key === 'Enter') {
+          e.preventDefault();
+          requestGeocodeForInput(inputEl);
+        }
+      });
+      inputEl.addEventListener('input', function(){
+        if (document.activeElement === inputEl) scheduleLocationOptionRefresh();
       });
     } catch(_) {}
   }
@@ -595,14 +695,121 @@ window.initZonesMap = function initZonesMap(){
         return s;
       } catch(_) { return ''; }
     }
+
+  function findPacContainerForInput(inputEl){
+    try {
+      const ownedId = (inputEl && (inputEl.getAttribute('aria-controls') || inputEl.getAttribute('aria-owns'))) || '';
+      if (ownedId) {
+        const ownedEl = document.getElementById(ownedId);
+        if (ownedEl && ownedEl.classList && ownedEl.classList.contains('pac-container')) return ownedEl;
+      }
+      const containers = Array.from(document.querySelectorAll('.pac-container'));
+      if (!containers.length) return null;
+      const inputRect = inputEl.getBoundingClientRect();
+      let best = null;
+      let bestScore = Number.POSITIVE_INFINITY;
+      containers.forEach(function(container){
+        const r = container.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        const dx = Math.abs(r.left - inputRect.left);
+        const dy = Math.abs(r.top - inputRect.bottom);
+        const score = dx + dy;
+        if (score < bestScore) { bestScore = score; best = container; }
+      });
+      return best;
+    } catch(_) { return null; }
+  }
+  function ensureLocationOptionInPac(inputEl){
+    if (!inputEl) return;
+    const container = findPacContainerForInput(inputEl);
+    if (!container) return;
+    let option = container.querySelector('.cw-location-option');
+    if (option && option._cwInput && option._cwInput !== inputEl) {
+      option.remove();
+      option = null;
+    }
+    const label = i18n('useCurrentLocation') || 'Use current location';
+    if (!option) {
+      option = document.createElement('div');
+      option.className = 'pac-item cw-location-option';
+      option.setAttribute('role', 'option');
+      option.tabIndex = -1;
+      option.innerHTML = '<span class="cw-location-icon" aria-hidden="true">⌖</span><span class="cw-location-text"></span>';
+      option.addEventListener('mousedown', function(e){ try { e.preventDefault(); } catch(_) {} });
+      option.addEventListener('click', function(){
+        try { setCurrentLocationForInput(inputEl); } catch(_) {}
+      });
+      option._cwInput = inputEl;
+      container.appendChild(option);
+    }
+    const text = option.querySelector('.cw-location-text');
+    if (text) text.textContent = label;
+  }
+  function scheduleLocationOptionRefresh(){
+    if (!activeLocationInput) return;
+    window.setTimeout(function(){
+      try { ensureLocationOptionInPac(activeLocationInput); } catch(_) {}
+    }, 0);
+  }
+  const pacObserver = new MutationObserver(function(){
+    if (activeLocationInput) scheduleLocationOptionRefresh();
+  });
+  try {
+    pacObserver.observe(document.body, { childList: true, subtree: true });
+  } catch(_) {}
+  function setCurrentLocationForInput(inputEl){
+    try {
+      if (!inputEl || !navigator.geolocation) {
+        setQuoteResultWithDebug(i18n('quoteLocationUnavailable') || 'Location unavailable', 'Geolocation not supported');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(async function(pos){
+        try {
+          const ll = new google.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+          const addr = await reverseGeocodeAddress(ll);
+          const label = addr || (i18n('quoteCurrentLocation') || 'Current location');
+          inputEl.value = label;
+          inputEl.dataset.lat = String(ll.lat());
+          inputEl.dataset.lng = String(ll.lng());
+          inputEl.dataset.address = label;
+          setAddressMarker(inputEl, ll);
+          updateAddressMarkers();
+          autoEstimateIfReady();
+        } catch(err) {
+          setQuoteResultWithDebug(i18n('quoteLocationUnavailable') || 'Location unavailable', (err && err.message) || 'Reverse geocode failed');
+        }
+      }, function(err){
+        setQuoteResultWithDebug(i18n('quoteLocationUnavailable') || 'Location unavailable', (err && err.message) || 'Geolocation blocked');
+      }, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000
+      });
+    } catch(_) {}
+  }
   // Note: Removed helper that converted destination into the first stop.
   const qEstimate = document.getElementById('quoteEstimate');
   const qOptimize = document.getElementById('quoteOptimize');
   const qOut = document.getElementById('quoteResult');
   const qRate = document.getElementById('quoteRate');
-  const qAddRandomStop = document.getElementById('quoteAddRandomStop');
+  const qDate = document.getElementById('quoteDate');
+  const qTime = document.getElementById('quoteTime');
+  const qCargo = document.getElementById('quoteCargo');
   const qLoadRandom = document.getElementById('quoteLoadRandom');
   const qRefresh = document.getElementById('quoteRefresh');
+  const qDiscount = document.getElementById('quoteDiscount');
+  const qDiscountApply = document.getElementById('quoteDiscountApply');
+  const qDiscountStatus = document.getElementById('quoteDiscountStatus');
+  const qTimeStatus = document.getElementById('quoteTimeStatus');
+  const qName = document.getElementById('quoteName');
+  const qEmail = document.getElementById('quoteEmail');
+  const qPhone = document.getElementById('quotePhone');
+  const qNotes = document.getElementById('quoteNotes');
+  const qUpdates = document.getElementById('quoteUpdates');
+  const qConsent = document.getElementById('quoteConsent');
+  const qSubmit = document.getElementById('quoteSubmit');
+  const qBookingStatus = document.getElementById('quoteBookingStatus');
+  const DEFAULT_DISCOUNT_CODE = 'SELF5';
   // const qByDistance = document.getElementById('quoteByDistance'); // removed toggle
   // Show simple API status near estimator
   (function showApiStatus(){
@@ -626,6 +833,341 @@ window.initZonesMap = function initZonesMap(){
       }
     } catch(_) {}
   })();
+  function pad2(n){ return String(n).padStart(2, '0'); }
+  function defaultDateTimeInputs(){
+    try {
+      const now = new Date();
+      if (qDate && !qDate.value) {
+        qDate.value = now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-' + pad2(now.getDate());
+      }
+      if (qTime && !qTime.value) {
+        qTime.value = pad2(now.getHours()) + ':' + pad2(now.getMinutes());
+      }
+    } catch(_) {}
+  }
+  if (qDiscount && !qDiscount.value) qDiscount.value = DEFAULT_DISCOUNT_CODE;
+  if (qDate) qDate.addEventListener('change', function(){ try { autoEstimateIfReady(); refreshAvailability(); } catch(_) {} });
+  if (qTime) qTime.addEventListener('change', function(){ try { autoEstimateIfReady(); refreshAvailability(); } catch(_) {} });
+  if (qCargo) qCargo.addEventListener('change', function(){ try { autoEstimateIfReady(); } catch(_) {} });
+  let activeDiscountCodes = [];
+  function setDiscountStatus(msg, isError){
+    if (!qDiscountStatus) return;
+    qDiscountStatus.textContent = msg || '';
+    qDiscountStatus.classList.toggle('is-error', !!isError);
+  }
+  function setBookingStatus(msg, isError){
+    if (!qBookingStatus) return;
+    qBookingStatus.textContent = msg || '';
+    qBookingStatus.classList.toggle('is-error', !!isError);
+  }
+  function setBookingStatusHtml(parts, isError){
+    if (!qBookingStatus) return;
+    qBookingStatus.textContent = '';
+    qBookingStatus.classList.toggle('is-error', !!isError);
+    (parts || []).forEach(function(part){
+      if (typeof part === 'string') {
+        qBookingStatus.appendChild(document.createTextNode(part));
+      } else if (part && part.nodeType) {
+        qBookingStatus.appendChild(part);
+      }
+    });
+  }
+  function buildStatusLink(url, label){
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = label || url;
+    return link;
+  }
+  function normalizeDiscountCode(code){
+    return String(code || '').trim().toUpperCase();
+  }
+  function getDiscountCodes(){
+    return Array.isArray(window._discountCodes) ? window._discountCodes : [];
+  }
+  function findDiscountByCode(code){
+    const target = normalizeDiscountCode(code);
+    if (!target) return null;
+    return getDiscountCodes().find(item => normalizeDiscountCode(item && item.code) === target) || null;
+  }
+  function computeDiscountAmount(discount, total){
+    if (!discount || !total) return 0;
+    const type = String(discount.type || '').toLowerCase();
+    const amount = Number(discount.amount || 0) || 0;
+    if (type === 'fixed') return Math.min(total, Math.max(0, amount));
+    if (type === 'percent') return Math.min(total, Math.max(0, (total * amount / 100)));
+    return 0;
+  }
+  function resolveDiscountsForEstimate(totalBeforeDiscount, dateKey, cur){
+    const codes = Array.isArray(activeDiscountCodes) ? activeDiscountCodes.slice() : [];
+    const applied = [];
+    const errors = [];
+    const baseTotal = Number(totalBeforeDiscount || 0) || 0;
+    codes.forEach(function(code){
+      const normalized = normalizeDiscountCode(code);
+      if (!normalized) return;
+      const discount = findDiscountByCode(normalized);
+      if (!discount) {
+        errors.push(i18n('discountNotFound') || 'Code not found.');
+        return;
+      }
+      if (discount.active === false) {
+        errors.push(i18n('discountInactive') || 'Code inactive.');
+        return;
+      }
+      const start = String(discount.start || '').trim();
+      const end = String(discount.end || '').trim();
+      if (start && dateKey < start) {
+        errors.push(i18n('discountNotActiveYet') || 'Code not active yet.');
+        return;
+      }
+      if (end && dateKey > end) {
+        errors.push(i18n('discountExpired') || 'Code expired.');
+        return;
+      }
+      const minOrder = Number(discount.minOrder || 0) || 0;
+      if (minOrder && baseTotal < minOrder) {
+        const minMsg = i18n('discountMinOrder', { currency: (cur || '€'), amount: minOrder.toFixed(2) }) || ('Min order ' + (cur || '€') + minOrder.toFixed(2));
+        errors.push(minMsg);
+        return;
+      }
+      const amount = computeDiscountAmount(discount, baseTotal);
+      if (amount) {
+        applied.push({ code: normalized, amount, discount });
+      }
+    });
+    const totalDiscount = Math.min(baseTotal, applied.reduce((sum, item) => sum + (Number(item.amount || 0) || 0), 0));
+    return { totalDiscount, applied, errors };
+  }
+  function clearActiveDiscount(){
+    activeDiscountCodes = [];
+    if (qDiscount) qDiscount.value = '';
+    setDiscountStatus('');
+  }
+
+  if (qDiscountApply) {
+    qDiscountApply.addEventListener('click', function(){
+      const code = normalizeDiscountCode(qDiscount && qDiscount.value);
+      if (!code) { clearActiveDiscount(); return; }
+      setDiscountStatus(i18n('discountChecking') || 'Checking code...');
+      ensureDiscountsLoaded().then(function(){
+        const discount = findDiscountByCode(code);
+        if (!discount) {
+          setDiscountStatus(i18n('discountNotFound') || 'Code not found.', true);
+          return;
+        }
+        if (activeDiscountCodes.includes(code)) {
+          setDiscountStatus('Code already applied.');
+          return;
+        }
+        activeDiscountCodes.push(code);
+        setDiscountStatus(i18n('discountApplied', { code }) || ('Code applied: ' + code));
+        if (typeof runEstimate === 'function') runEstimate();
+      });
+    });
+  }
+  if (qDiscount) {
+    qDiscount.addEventListener('input', function(){
+      const code = normalizeDiscountCode(qDiscount.value);
+      if (!code || !activeDiscountCodes.includes(code)) setDiscountStatus('');
+    });
+  }
+
+  function parseTimeToMinutes(str){
+    const s = String(str || '').trim();
+    if (!s) return null;
+    const parts = s.split(':');
+    if (!parts.length) return null;
+    const h = Number(parts[0] || 0);
+    const m = Number(parts[1] || 0);
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    return (h * 60) + m;
+  }
+  function formatDateKeyLocal(dt){
+    return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+  }
+  function getSelectedDateTime(){
+    try {
+      const now = new Date();
+      const dateStr = qDate && qDate.value ? String(qDate.value) : '';
+      const timeStr = qTime && qTime.value ? String(qTime.value) : '';
+      const base = dateStr ? new Date(dateStr + 'T00:00:00') : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const minutes = parseTimeToMinutes(timeStr);
+      const h = minutes != null ? Math.floor(minutes / 60) : now.getHours();
+      const m = minutes != null ? (minutes % 60) : now.getMinutes();
+      return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m, 0, 0);
+    } catch(_) { return new Date(); }
+  }
+  function getBusinessHours(isWeekendHoliday){
+    const bh = window._businessHours || {};
+    const fallback = {
+      weekday: { start: '07:00', end: '17:00' },
+      weekendHoliday: { start: '07:00', end: '14:00' }
+    };
+    const use = isWeekendHoliday ? (bh.weekendHoliday || fallback.weekendHoliday) : (bh.weekday || fallback.weekday);
+    return use || fallback.weekday;
+  }
+  function computeSurchargeInfo(){
+    const hasDate = !!(qDate && qDate.value);
+    const hasTime = !!(qTime && qTime.value);
+    const now = new Date();
+    const dateBase = hasDate
+      ? new Date(String(qDate.value) + 'T00:00:00')
+      : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dateKey = formatDateKeyLocal(dateBase);
+    const holidays = window._holidaysSet instanceof Set ? window._holidaysSet : new Set();
+    const isHoliday = hasDate ? holidays.has(dateKey) : false;
+    const isWeekend = hasDate ? (dateBase.getDay() === 0 || dateBase.getDay() === 6) : false;
+    const isWeekendHoliday = isWeekend || isHoliday;
+    const hours = getBusinessHours(isWeekendHoliday);
+    const startMin = parseTimeToMinutes(hours && hours.start) ?? 0;
+    const endMin = parseTimeToMinutes(hours && hours.end) ?? (24 * 60);
+    const timeMin = hasTime ? parseTimeToMinutes(qTime && qTime.value) : null;
+    const afterHours = (timeMin == null) ? false : (timeMin < startMin || timeMin >= endMin);
+    const sur = window._surcharges || {};
+    const weekendRate = Number(sur.weekend_holiday || 0) || 0;
+    const afterRate = Number(sur.after_hours || 0) || 0;
+    const rate = (isWeekendHoliday ? weekendRate : 0) + (afterHours ? afterRate : 0);
+    return {
+      dateKey,
+      timeLabel: (timeMin == null) ? '' : (pad2(Math.floor(timeMin / 60)) + ':' + pad2(timeMin % 60)),
+      isHoliday,
+      isWeekend,
+      isWeekendHoliday,
+      afterHours,
+      rate,
+      weekendRate,
+      afterRate
+    };
+  }
+
+  const availabilityCache = new Map();
+  let availabilitySeq = 0;
+  function setAvailabilityStatus(msg, isError){
+    if (!qTimeStatus) return;
+    qTimeStatus.textContent = msg || '';
+    qTimeStatus.classList.toggle('is-error', !!isError);
+  }
+  function calendarConfigured(){
+    return !!BOOKING_API_BASE;
+  }
+  function parseLatLngFromText(text){
+    const m = String(text || '').match(/(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+    if (!m) return null;
+    const lat = Number(m[1]);
+    const lng = Number(m[2]);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+    return { lat, lng };
+  }
+  function extractReturnOverride(text){
+    const m = String(text || '').match(/return\s*[:=]\s*(\d+)/i);
+    if (!m) return null;
+    return Number(m[1] || 0) || 0;
+  }
+  async function getReturnMinutesForEvent(event){
+    try {
+      const desc = (event && event.description) || '';
+      const sum = (event && event.summary) || '';
+      const override = extractReturnOverride(desc) ?? extractReturnOverride(sum);
+      if (override != null) return override;
+      const dropText = desc || sum || (event && event.location) || '';
+      const parsed = parseLatLngFromText(dropText);
+      let ll = parsed;
+      if (!ll && event && event.location) {
+        const loc = await geocodeOne(event.location);
+        if (loc) ll = { lat: loc.lat(), lng: loc.lng() };
+      }
+      if (!ll) return 0;
+      const distanceKm = Math.max(0, haversineKm(center, ll) || 0);
+      return Math.round((distanceKm / RETURN_SPEED_KMH) * 60);
+    } catch(_) { return 0; }
+  }
+  function eventDateFromValue(val){
+    if (!val) return null;
+    const dt = new Date(val);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  async function fetchAvailabilityForDate(dateKey){
+    if (!calendarConfigured()) return null;
+    if (availabilityCache.has(dateKey)) return availabilityCache.get(dateKey);
+    const base = BOOKING_API_BASE.replace(/\/$/, '');
+    const url = base + '?date=' + encodeURIComponent(dateKey);
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error('Availability fetch failed');
+    const json = await res.json();
+    const blocked = Array.isArray(json && json.blocked) ? json.blocked : [];
+    const result = { blocked };
+    availabilityCache.set(dateKey, result);
+    return result;
+  }
+  function isTimeBlocked(min, blocked){
+    return blocked.some(b => min >= b.start && min < b.end);
+  }
+  function isWeekendHolidayKey(dateKey){
+    const holidays = window._holidaysSet instanceof Set ? window._holidaysSet : new Set();
+    if (holidays.has(dateKey)) return true;
+    const parts = String(dateKey || '').split('-');
+    if (parts.length !== 3) return false;
+    const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const day = dt.getDay();
+    return day === 0 || day === 6;
+  }
+  function findNextAvailableMinute(startMin, blocked, dateKey){
+    const hours = getBusinessHours(isWeekendHolidayKey(dateKey));
+    const startHours = parseTimeToMinutes(hours && hours.start) ?? 0;
+    const endHours = parseTimeToMinutes(hours && hours.end) ?? (24 * 60);
+    const start = Math.max(startMin, startHours);
+    for (let m = start; m < endHours; m += AVAILABILITY_SLOT_MINUTES){
+      if (!isTimeBlocked(m, blocked)) return m;
+    }
+    return null;
+  }
+  function setTimeInputMinutes(min){
+    if (!qTime || min == null) return;
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    qTime.value = pad2(h) + ':' + pad2(m);
+  }
+  async function refreshAvailability(){
+    if (!calendarConfigured()) { setAvailabilityStatus(''); return; }
+    const dateKey = qDate && qDate.value ? String(qDate.value) : formatDateKeyLocal(new Date());
+    const seq = ++availabilitySeq;
+    setAvailabilityStatus(i18n('availabilityChecking') || 'Checking availability...');
+    try {
+      const data = await fetchAvailabilityForDate(dateKey);
+      if (seq !== availabilitySeq) return;
+      const blocked = (data && data.blocked) || [];
+      const selectedMin = parseTimeToMinutes(qTime && qTime.value);
+      const nextMin = findNextAvailableMinute(selectedMin != null ? selectedMin : 0, blocked, dateKey);
+      if (nextMin == null) {
+        setAvailabilityStatus(i18n('availabilityNone') || 'No availability on this date.', true);
+        return;
+      }
+      if (selectedMin == null || selectedMin !== nextMin) {
+        setTimeInputMinutes(nextMin);
+        const slot = pad2(Math.floor(nextMin / 60)) + ':' + pad2(nextMin % 60);
+        setAvailabilityStatus(i18n('availabilityNextSlot', { time: slot }) || ('Next available slot: ' + slot));
+      } else {
+        setAvailabilityStatus(i18n('availabilityAvailable') || 'Time available.');
+      }
+    } catch(_){
+      if (seq !== availabilitySeq) return;
+      setAvailabilityStatus(i18n('availabilityError') || 'Could not load calendar availability.', true);
+    }
+  }
+  if (qDate && qTime) {
+    try { refreshAvailability(); } catch(_) {}
+  }
+  function getCargoAdjustment(){
+    try {
+      const value = qCargo ? String(qCargo.value || 'regular') : 'regular';
+      if (value === 'small') return { key: 'small', label: 'Small parcel (shoebox)', rate: -0.15 };
+      if (value === 'large') return { key: 'large', label: 'Large or multiple regular', rate: 0.15 };
+      return { key: 'regular', label: 'Regular (60x40x30cm)', rate: 0 };
+    } catch(_) { return { key: 'regular', label: 'Regular (60x40x30cm)', rate: 0 }; }
+  }
+
   // Structured output helpers
   function setQuoteResultWithDebug(visibleText, debugText, headlineText){
     if (!qOut) return;
@@ -721,17 +1263,197 @@ window.initZonesMap = function initZonesMap(){
       });
       const meta = document.createElement('div');
       meta.className = 'quote-breakdown-meta';
-      meta.textContent = 'Recalculated at ' + hh + ':' + mm + ':' + ss;
+      const recalculated = i18n('quoteRecalculatedAt', { time: (hh + ':' + mm + ':' + ss) }) || ('Recalculated at ' + hh + ':' + mm + ':' + ss);
+      meta.textContent = recalculated;
       box.appendChild(meta);
       qOut.appendChild(box);
+      if (window.ScrollTrigger && typeof window.ScrollTrigger.refresh === 'function') {
+        window.requestAnimationFrame(function(){
+          try { window.ScrollTrigger.refresh(); } catch(_) {}
+        });
+      }
     } catch(_) {}
+  }
+  function formatNumberLocalized(value, decimals){
+    const num = Number(value || 0) || 0;
+    const fixed = num.toFixed(decimals);
+    const lang = document.documentElement.lang || 'en';
+    return (lang === 'en') ? fixed : fixed.replace('.', ',');
+  }
+  function formatMoneyLocalized(value, cur){
+    return String(cur || '€') + formatNumberLocalized(value, 2);
+  }
+  function formatMoneySigned(value, cur){
+    const num = Number(value || 0) || 0;
+    const abs = Math.abs(num);
+    const sign = num < 0 ? '-' : '';
+    return sign + formatMoneyLocalized(abs, cur);
+  }
+  function setPricingUiCopy(ctx){
+    try {
+      const summaryEl = document.getElementById('pricingUiSummary');
+      const breakdownEl = document.getElementById('pricingUiBreakdown');
+      const blockEl = document.getElementById('pricingUiBlock');
+      if (!summaryEl && !breakdownEl) return;
+      const cur = ctx.cur || '€';
+      const kmText = formatNumberLocalized(ctx.totalKm || 0, 1);
+      const minsText = Math.round(Number(ctx.etaTotalMins || 0) || 0);
+      const dropCount = Number(ctx.dropCount || 0) || 0;
+      const dropLabel = dropCount === 1
+        ? (i18n('summaryDropSingle') || 'drop')
+        : (i18n('summaryDropPlural') || 'drops');
+      const routeText = kmText + ' km ' + (i18n('summaryRouteSeparator') || '·') + ' ' + minsText + ' min ' + (i18n('summaryRouteSeparator') || '·') + ' ' + dropCount + ' ' + dropLabel;
+      const serviceParts = [];
+      if (ctx.isWeekendHoliday) serviceParts.push(i18n('summaryServiceWeekend') || 'Weekend service');
+      if (ctx.afterHours) serviceParts.push(i18n('summaryServiceAfterHours') || 'After-hours');
+      if (ctx.cargoKey === 'large') serviceParts.push(i18n('summaryServiceLargeCargo') || 'Large cargo');
+      if (ctx.cargoKey === 'small') serviceParts.push(i18n('summaryServiceSmallCargo') || 'Small cargo');
+      const serviceText = serviceParts.length
+        ? serviceParts.join(' ' + (i18n('summaryServiceSeparator') || '·') + ' ')
+        : (i18n('summaryServiceStandard') || 'Standard service');
+      if (summaryEl) {
+        const summaryParts = [];
+        summaryParts.push('<strong>' + (i18n('summaryTotalLabel') || 'Total') + '</strong><br>' + formatMoneyLocalized(ctx.total || 0, cur));
+        summaryParts.push('<strong>' + (i18n('summaryRouteLabel') || 'Route') + '</strong><br>' + routeText);
+        summaryParts.push('<strong>' + (i18n('summaryServiceLabel') || 'Service') + '</strong><br>' + serviceText);
+        if (ctx.discountAmount) {
+          const discountText = i18n('summaryDiscountApplied') || 'Discount applied';
+          summaryParts.push('<strong>' + (i18n('summaryDiscountLabel') || 'Discount') + '</strong><br>' + discountText);
+        }
+        summaryEl.innerHTML = summaryParts.join('<br><br>');
+        summaryEl.classList.remove('is-hidden');
+      }
+      if (breakdownEl) {
+        const zoneLabel = i18n('breakdownZoneLabel', { n: ctx.pickupZone }) || ('Zone ' + String(ctx.pickupZone || ''));
+        const dropZoneLabel = i18n('breakdownZoneLabel', { n: ctx.dropZone }) || ('Zone ' + String(ctx.dropZone || ''));
+        const lines = [];
+        lines.push('<strong><u>' + (i18n('breakdownZonesLabel') || 'Zones') + '</u></strong>');
+        lines.push('- <strong>' + (i18n('breakdownPickupLabel') || 'Pickup') + ':</strong> ' + zoneLabel);
+        lines.push('- <strong>' + (i18n('breakdownDeliveryLabel') || 'Delivery') + ':</strong> ' + dropZoneLabel);
+        lines.push('');
+        lines.push('<strong><u>' + (i18n('breakdownLineItemsLabel') || 'Line items') + '</u></strong>');
+        lines.push('- <strong>' + (i18n('breakdownBaseServiceLabel') || 'Base service') + ':</strong> ' + formatMoneyLocalized(ctx.pickupCharge || 0, cur));
+        lines.push('- <strong>' + (i18n('breakdownDistanceLabel') || 'Distance') + ':</strong> ' + formatMoneyLocalized(ctx.distanceTotal || 0, cur));
+        if (ctx.addressFeeCount) {
+          const perUnitValue = (ctx.addressFeePer != null)
+            ? Number(ctx.addressFeePer || 0)
+            : (ctx.addressFeeCount ? (Number(ctx.addressFee || 0) / Number(ctx.addressFeeCount || 1)) : 0);
+          const perUnit = formatMoneyLocalized(perUnitValue || 0, cur);
+          const deliveryLine = (i18n('breakdownDeliveryFeeLine', {
+            count: ctx.addressFeeCount,
+            unit: perUnit,
+            total: formatMoneyLocalized(ctx.addressFee || 0, cur)
+          }) || ('Deliveries: ' + ctx.addressFeeCount + ' x ' + perUnit + ' = ' + formatMoneyLocalized(ctx.addressFee || 0, cur)));
+          lines.push('- <strong>' + (i18n('breakdownDeliveriesLabel') || 'Deliveries') + ':</strong> ' + deliveryLine);
+        }
+        if (ctx.cargoKey === 'large' && ctx.cargoAmount) {
+          lines.push('- <strong>' + (i18n('breakdownLargeCargoLabel') || 'Large cargo') + ':</strong> ' + formatMoneyLocalized(ctx.cargoAmount || 0, cur));
+        }
+        if (ctx.cargoKey === 'small' && ctx.cargoAmount) {
+          lines.push('- <strong>' + (i18n('breakdownSmallCargoLabel') || 'Small cargo') + ':</strong> ' + formatMoneySigned(ctx.cargoAmount || 0, cur));
+        }
+        if (ctx.isWeekendHoliday && ctx.weekendSurchargeAmount) {
+          lines.push('- <strong>' + (i18n('breakdownSurchargeWeekendLabel') || 'Weekend/holiday surcharge') + ':</strong> ' + formatMoneyLocalized(ctx.weekendSurchargeAmount || 0, cur));
+        }
+        if (ctx.afterHours && ctx.afterHoursSurchargeAmount) {
+          lines.push('- <strong>' + (i18n('breakdownSurchargeAfterLabel') || 'After-hours surcharge') + ':</strong> ' + formatMoneyLocalized(ctx.afterHoursSurchargeAmount || 0, cur));
+        }
+        const discountItems = Array.isArray(ctx.discountItems) ? ctx.discountItems : [];
+        if (discountItems.length) {
+          discountItems.forEach(function(item){
+            const promoLabel = i18n('breakdownPromoLabel', { code: item.code }) || ('Promo ' + item.code);
+            lines.push('- ' + promoLabel + ': ' + formatMoneySigned(-(Math.abs(item.amount || 0)), cur));
+          });
+          lines.push('- <strong>' + (i18n('breakdownDiscountTotalLabel') || 'Discount total') + ':</strong> ' + formatMoneySigned(-(Math.abs(ctx.discountTotal || 0)), cur));
+        }
+        lines.push('');
+        lines.push('<strong><u>' + (i18n('breakdownTotalLabel') || 'Total') + '</u></strong>');
+        lines.push(formatMoneyLocalized(ctx.total || 0, cur));
+        breakdownEl.innerHTML = lines.join('<br>');
+      }
+      if (blockEl) blockEl.classList.remove('is-hidden');
+      const breakdownToggle = document.querySelector('.pricing-ui-copy');
+      if (breakdownToggle) breakdownToggle.open = false;
+    } catch(_) {}
+  }
+  function buildQuoteTrace(ctx){
+    try {
+      const cur = ctx.cur || '€';
+      const money = (val) => cur + Number(val || 0).toFixed(2);
+      const pct = (val) => (Math.round((Number(val || 0) * 100)) + '%');
+      const zonePath = Array.isArray(ctx.zonePath) ? ctx.zonePath : [];
+      const parts = Array.isArray(ctx.parts) ? ctx.parts : [];
+      const legs = Array.isArray(ctx.legs) ? ctx.legs : [];
+      const minApplied = !!ctx.minApplied;
+      const minTag = minApplied ? ('min→' + money(ctx.minimum)) : 'min:-';
+
+      const flags = [];
+      if (ctx.isWeekend) flags.push('Wknd');
+      if (ctx.isHoliday) flags.push('Hol');
+      if (ctx.afterHours) flags.push('AH');
+      const flagText = flags.length ? flags.join(' ') : '-';
+
+      const discount = ctx.discount || null;
+      let discText = 'disc:-';
+      if (discount && ctx.discountAmount) {
+        const type = String(discount.type || '').toLowerCase() || 'unknown';
+        const code = String(discount.code || '').trim() || '-';
+        const amountLabel = type === 'percent' ? (Number(discount.amount || 0) + '%') : money(discount.amount || 0);
+        discText = 'disc:' + code + ':' + type + ':' + amountLabel + ':' + money(ctx.discountAmount);
+      }
+
+      const legsText = legs.map(function(_, idx){
+        const fromZ = zonePath[idx] != null ? zonePath[idx] : '?';
+        const toZ = zonePath[idx + 1] != null ? zonePath[idx + 1] : '?';
+        const leg = parts[idx] || {};
+        const legPrice = money(leg.price || 0);
+        const km = (leg.km != null) ? String(leg.km) : null;
+        const eta = (leg.etaMin != null) ? String(leg.etaMin) : null;
+        const tail = (km || eta) ? (' (' + (km || '?') + 'km/' + (eta || '?') + 'm)') : '';
+        return 'Z' + fromZ + '→Z' + toZ + ' s? m? b?=' + legPrice + tail;
+      }).join(';');
+
+      const addressFee = Number(ctx.addressFee || 0) || 0;
+      const addressFeeCount = Number(ctx.addressFeeCount || 0) || 0;
+      const totalEq = [
+        'pz' + ctx.pickupZone + ' perKm=' + Number(ctx.perKm || 0).toFixed(2),
+        'basis=max(' + Number(ctx.totalKm || 0).toFixed(2) + ',' + Number(ctx.dropCenterKm || 0).toFixed(2) + ')=' + Number(ctx.distanceBasisKm || 0).toFixed(2),
+        'dist=' + money(ctx.distanceTotal),
+        'pickup=' + money(ctx.pickupCharge),
+        'addr(' + addressFeeCount + ')=' + money(addressFee),
+        minTag,
+        'cargo=' + pct(ctx.cargoRate) + '/' + money(ctx.cargoAmount),
+        'sur=' + pct(ctx.surchargeRate) + '/' + money(ctx.surchargeAmount),
+        discText,
+        'sub=' + money(ctx.subtotal),
+        'surTot=' + money(ctx.surchargeAmount),
+        'discTot=' + money(ctx.discountAmount),
+        'total=' + money(ctx.total)
+      ].join(' ');
+
+      const dateTime = String(ctx.dateKey || '') + ' ' + String(ctx.timeLabel || '');
+      const kmEta = Number(ctx.totalKm || 0).toFixed(2) + 'km/' + Math.round(Number(ctx.etaTotalMins || 0)) + 'm';
+      return totalEq + ' | legs[' + legsText + '] | ' + dateTime + ' [' + flagText + '] | ' + kmEta;
+    } catch(_) {
+      return 'Trace unavailable';
+    }
   }
   function attachAutocomplete(inputEl){
     try {
       if (!inputEl || !google.maps.places) return;
       // Use classic Places Autocomplete only; avoid experimental PlaceAutocompleteElement
       if (google.maps.places.Autocomplete) {
-        const ac = new google.maps.places.Autocomplete(inputEl);
+        const ac = new google.maps.places.Autocomplete(inputEl, {
+          types: ['geocode', 'establishment'],
+          componentRestrictions: { country: 'es' }
+        });
+        try {
+          const sw = new google.maps.LatLng(41.30, 1.96);
+          const ne = new google.maps.LatLng(41.52, 2.30);
+          const bcnBounds = new google.maps.LatLngBounds(sw, ne);
+          ac.setBounds(bcnBounds);
+          ac.setOptions({ strictBounds: true });
+        } catch(_) {}
         ac.addListener('place_changed', function(){
           try {
             const place = ac.getPlace();
@@ -750,64 +1472,26 @@ window.initZonesMap = function initZonesMap(){
       }
     } catch(_) {}
   }
+  const enableStopDrag = true;
   // Drag & drop ordering for stop inputs
   function attachStopDragHandlers(el){
     try {
       if (!el) return;
-      el.draggable = true;
-      function swapInputValues(a, b){
+      const input = el.querySelector && el.querySelector('input');
+      if (!enableStopDrag) {
         try {
-          if (!a || !b) return;
-          const tmpVal = a.value;
-          const tmpLat = a.dataset.lat; const tmpLng = a.dataset.lng; const tmpAddr = a.dataset.address;
-          a.value = b.value;
-          a.dataset.lat = b.dataset.lat || '';
-          a.dataset.lng = b.dataset.lng || '';
-          a.dataset.address = b.dataset.address || '';
-          b.value = tmpVal;
-          if (tmpLat != null) b.dataset.lat = tmpLat; else delete b.dataset.lat;
-          if (tmpLng != null) b.dataset.lng = tmpLng; else delete b.dataset.lng;
-          if (tmpAddr != null) b.dataset.address = tmpAddr; else delete b.dataset.address;
+          el.draggable = false;
+          if (input) input.draggable = false;
         } catch(_) {}
+        return;
       }
-      // Allow dropping directly on an item to swap positions
-      el.addEventListener('dragover', function(e){ try { e.preventDefault(); } catch(_){} });
-      el.addEventListener('drop', function(e){
-        try {
-          e.preventDefault();
-          e.stopPropagation();
-          const dragged = window._draggedStop;
-          if (!dragged || dragged === el) return;
-          const parent = el.parentElement;
-          if (!parent || parent !== dragged.parentElement) return;
-          const roleDragged = (dragged && dragged.dataset && dragged.dataset.role) || 'stop';
-          const roleTarget = (el && el.dataset && el.dataset.role) || 'stop';
-          const inA = dragged.querySelector && dragged.querySelector('.quote-stop');
-          const inB = el.querySelector && el.querySelector('.quote-stop');
-          if (roleDragged !== 'stop' || roleTarget !== 'stop') {
-            // If either side is pickup/drop, swap input values/coords instead of DOM position
-            swapInputValues(inA, inB);
-          } else {
-            // Swap nodes using placeholders to avoid DOM reflow issues
-            const phA = document.createElement('div');
-            const phB = document.createElement('div');
-            parent.replaceChild(phA, dragged);
-            parent.replaceChild(phB, el);
-            parent.replaceChild(dragged, phB);
-            parent.replaceChild(el, phA);
-          }
-          // Recompute after swap
-          try { if (typeof runEstimate === 'function') runEstimate(); } catch(_){ }
-        } catch(_){ }
-      });
+      el.draggable = true;
       el.addEventListener('dragstart', function(){
         try { window._draggedStop = el; el.classList.add('dragging'); } catch(_) {}
       });
       el.addEventListener('dragend', function(){
         try { el.classList.remove('dragging'); window._draggedStop = null; } catch(_){ }
       });
-      // Make inner input draggable too, so all stops (pre-existing or added) can be dragged by grabbing the input
-      const input = el.querySelector && el.querySelector('.quote-stop');
       if (input) {
         input.draggable = true;
         input.addEventListener('dragstart', function(){
@@ -816,46 +1500,53 @@ window.initZonesMap = function initZonesMap(){
         input.addEventListener('dragend', function(){
           try { el.classList.remove('dragging'); window._draggedStop = null; } catch(_){ }
         });
-        // Support swapping when dropping directly onto the input element
-        input.addEventListener('dragover', function(e){ try { e.preventDefault(); } catch(_){} });
-        input.addEventListener('drop', function(e){
-          try {
-            e.preventDefault();
-            e.stopPropagation();
-            const dragged = window._draggedStop;
-            if (!dragged || dragged === el) return;
-            const parent = el.parentElement;
-            if (!parent || parent !== dragged.parentElement) return;
-            const roleDragged = (dragged && dragged.dataset && dragged.dataset.role) || 'stop';
-            const roleTarget = (el && el.dataset && el.dataset.role) || 'stop';
-            const inA = dragged.querySelector && dragged.querySelector('.quote-stop');
-            const inB = el.querySelector && el.querySelector('.quote-stop');
-            if (roleDragged !== 'stop' || roleTarget !== 'stop') {
-              swapInputValues(inA, inB);
-            } else {
-              const phA = document.createElement('div');
-              const phB = document.createElement('div');
-              parent.replaceChild(phA, dragged);
-              parent.replaceChild(phB, el);
-              parent.replaceChild(dragged, phB);
-              parent.replaceChild(el, phA);
-            }
-            try { if (typeof runEstimate === 'function') runEstimate(); } catch(_){ }
-          } catch(_){ }
-        });
       }
     } catch(_){ }
+  }
+
+  function getOrderedInputs(){
+    try {
+      if (!qStopsWrap) return [];
+      return Array.from(qStopsWrap.querySelectorAll('.quote-stop-item'))
+        .map(w => w.querySelector('input'))
+        .filter(Boolean);
+    } catch(_) { return []; }
+  }
+
+  function normalizeStopOrder(){
+    try {
+      if (!qStopsWrap) return;
+      const items = Array.from(qStopsWrap.querySelectorAll('.quote-stop-item'));
+      if (!items.length) return;
+      items.forEach(function(w, idx){
+        const role = idx === 0 ? 'pickup' : (idx === items.length - 1 ? 'drop' : 'stop');
+        w.dataset.role = role;
+        const input = w.querySelector('input');
+        if (!input) return;
+        const ph = role === 'pickup'
+          ? (i18n('quotePickupPlaceholder') || 'Pickup address')
+          : role === 'drop'
+            ? (i18n('quoteDropoffPlaceholder') || 'Dropoff address')
+            : (i18n('quoteStopPlaceholder') || 'Stop address');
+        input.placeholder = ph;
+        input.setAttribute('aria-label', ph);
+        if (role === 'stop') input.classList.add('quote-stop');
+        else input.classList.remove('quote-stop');
+      });
+    } catch(_) {}
   }
   // Create a stop item and return its input element
   function createStopItem(){
     if (!qStopsWrap) return null;
     const w = document.createElement('div');
     w.className = 'quote-stop-item';
-    w.draggable = true;
-    const h = document.createElement('span');
-    h.className = 'drag-handle';
-    h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
-    h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
+    w.draggable = enableStopDrag;
+    const h = enableStopDrag ? document.createElement('span') : null;
+    if (h) {
+      h.className = 'drag-handle';
+      h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
+      h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
+    }
     const i = document.createElement('input');
     i.type = 'text';
     const ph = i18n('quoteStopPlaceholder') || 'Stop address';
@@ -869,28 +1560,30 @@ window.initZonesMap = function initZonesMap(){
     del.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
     del.textContent = '×';
     del.addEventListener('click', function(){
-      try { clearAddressMarker(i); w.remove(); if (typeof runEstimate === 'function') runEstimate(); } catch(_) {}
+      try {
+        clearAddressMarker(i);
+        w.remove();
+        normalizeStopOrder();
+        if (typeof runEstimate === 'function') runEstimate();
+      } catch(_) {}
     });
-    w.appendChild(h);
+    if (h) w.appendChild(h);
     w.appendChild(i);
     w.appendChild(del);
     qStopsWrap.appendChild(w);
     attachAutocomplete(i);
     attachStopDragHandlers(w);
     attachAddressInputHandlers(i);
+    normalizeStopOrder();
     return i;
   }
   function pickTargetInputForMapClick(){
-    const pickupEl = document.getElementById('quotePickup');
-    const dropEl = document.getElementById('quoteDropoff');
-    const stopInputs = qStopsWrap
-      ? Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).filter(function(w){
-          return ((w && w.dataset && w.dataset.role) || 'stop') === 'stop';
-        }).map(function(w){ return w.querySelector && w.querySelector('.quote-stop'); }).filter(Boolean)
-      : [];
-    const ordered = [pickupEl, dropEl].concat(stopInputs).filter(Boolean);
-    const empty = ordered.find(function(inp){ return !(inp && (inp.value || '').trim()); }) || null;
-    return empty || createStopItem();
+    const ordered = getOrderedInputs();
+    for (let i = 0; i < ordered.length; i++) {
+      const val = (ordered[i] && ordered[i].value || '').trim();
+      if (!val) return ordered[i];
+    }
+    return createStopItem();
   }
   function setKnownLocation(inputEl, item){
     try {
@@ -985,36 +1678,6 @@ window.initZonesMap = function initZonesMap(){
     }
     return used;
   }
-  async function addRandomStopAndEstimate(){
-    try {
-      if (window._addingRandomStop) return; window._addingRandomStop = true;
-      const pickupEl = document.getElementById('quotePickup');
-      const dropEl = document.getElementById('quoteDropoff');
-      const used = collectUsedLocationKeys();
-      const stopItems = qStopsWrap
-        ? Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).filter(function(w){
-            return ((w && w.dataset && w.dataset.role) || 'stop') === 'stop';
-          })
-        : [];
-      const stopInputs = stopItems.map(function(w){
-        return w.querySelector && w.querySelector('.quote-stop');
-      }).filter(Boolean);
-      const randomItem = await pickRandomServiceAddress(used);
-      if (!randomItem) { try { setQuoteResultWithDebug(i18n('quoteOutsideService') || 'Outside service map — please contact us for a custom quote.', 'Random address generation failed within service area'); } catch(_) {} return; }
-      const orderedInputs = [pickupEl, dropEl].concat(stopInputs).filter(Boolean);
-      const focusedInput = (lastAddressInput && document.contains(lastAddressInput) && isAddressInput(lastAddressInput))
-        ? lastAddressInput
-        : null;
-      const emptyInput = orderedInputs.find(function(inp){
-        return inp && !(inp.value || '').trim();
-      }) || null;
-      const targetInput = focusedInput || emptyInput || createStopItem();
-      if (targetInput) setKnownLocation(targetInput, randomItem);
-      if (focusedInput) lastAddressInput = null;
-      try { if (typeof runEstimate === 'function') runEstimate(); } catch(_){ }
-    } catch(_){
-    } finally { try { window._addingRandomStop = false; } catch(__){} }
-  }
   async function loadRandomScenario(){
     try {
       const pickupEl = document.getElementById('quotePickup');
@@ -1022,10 +1685,11 @@ window.initZonesMap = function initZonesMap(){
       if (!pickupEl || !dropEl) return;
       // Clear existing stops
       if (qStopsWrap) {
-        Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).forEach(function(w){
-          const role = (w && w.dataset && w.dataset.role) || 'stop';
-          if (role === 'stop') w.remove();
+        const items = Array.from(qStopsWrap.querySelectorAll('.quote-stop-item'));
+        items.forEach(function(w, idx){
+          if (idx !== 0 && idx !== items.length - 1) w.remove();
         });
+        normalizeStopOrder();
       }
       const used = collectUsedLocationKeys();
       const recent = Array.isArray(window._recentRandomStops) ? window._recentRandomStops : [];
@@ -1062,8 +1726,8 @@ window.initZonesMap = function initZonesMap(){
     try {
       const pickupEl = document.getElementById('quotePickup');
       const dropEl = document.getElementById('quoteDropoff');
-      if (pickupEl) { pickupEl.value = ''; delete pickupEl.dataset.lat; delete pickupEl.dataset.lng; delete pickupEl.dataset.address; }
-      if (dropEl) { dropEl.value = ''; delete dropEl.dataset.lat; delete dropEl.dataset.lng; delete dropEl.dataset.address; }
+      if (pickupEl) { pickupEl.value = ''; clearStoredLocation(pickupEl); }
+      if (dropEl) { dropEl.value = ''; clearStoredLocation(dropEl); }
       if (qStopsWrap) {
         Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).forEach(function(w){
           const role = (w && w.dataset && w.dataset.role) || 'stop';
@@ -1080,13 +1744,33 @@ window.initZonesMap = function initZonesMap(){
             if (el.dataset) { delete el.dataset.lat; delete el.dataset.lng; delete el.dataset.address; }
           } catch(_) {}
         });
+        if (qCargo) qCargo.value = 'regular';
+        if (qDiscount) qDiscount.value = DEFAULT_DISCOUNT_CODE;
+        activeDiscountCodes = [];
+        setDiscountStatus('');
       }
       // Clear outputs and overlays
       if (qOut) qOut.textContent = '';
+      const summaryEl = document.getElementById('pricingUiSummary');
+      const breakdownEl = document.getElementById('pricingUiBreakdown');
+      if (summaryEl) summaryEl.textContent = '';
+      if (breakdownEl) breakdownEl.textContent = '';
+      const blockEl = document.getElementById('pricingUiBlock');
+      if (blockEl) blockEl.classList.add('is-hidden');
+      if (qRate) qRate.classList.remove('is-hidden');
+      if (qOut) qOut.classList.remove('is-hidden');
+      const traceInfo = document.getElementById('quoteTraceInfo');
+      if (traceInfo) {
+        traceInfo.setAttribute('aria-label', '');
+        traceInfo.setAttribute('title', '');
+        traceInfo.removeAttribute('data-tooltip');
+      }
+      setBookingStatus('');
+      window._lastQuoteContext = null;
+      clearAllAddressMarkers();
       clearRouteOverlays();
     } catch(_){}
   }
-  if (qAddRandomStop) qAddRandomStop.addEventListener('click', addRandomStopAndEstimate);
   if (qLoadRandom) qLoadRandom.addEventListener('click', () => { loadRandomScenario(); });
   if (qRefresh) qRefresh.addEventListener('click', () => { resetEstimator(); });
   // Distance helper (km)
@@ -1216,7 +1900,7 @@ window.initZonesMap = function initZonesMap(){
       return closest.element;
     } catch(_) { return null; }
   }
-  if (qStopsWrap) {
+  if (qStopsWrap && enableStopDrag) {
     qStopsWrap.addEventListener('dragover', function(e){
       e.preventDefault();
       try {
@@ -1227,6 +1911,7 @@ window.initZonesMap = function initZonesMap(){
       } catch(_){}
     });
     qStopsWrap.addEventListener('drop', async function(){
+      try { normalizeStopOrder(); } catch(_) {}
       // Recompute after reorder
       try { if (typeof runEstimate === 'function') await runEstimate(); } catch(_){}
     });
@@ -1269,7 +1954,9 @@ window.initZonesMap = function initZonesMap(){
     } catch(_) {}
   }
   function hasReadyPickupDrop(){
-    return !!(qPickup && qDrop && getLocationForInput(qPickup) && getLocationForInput(qDrop));
+    const ordered = getOrderedInputs();
+    if (ordered.length < 2) return false;
+    return !!(getLocationForInput(ordered[0]) && getLocationForInput(ordered[ordered.length - 1]));
   }
   function autoEstimateIfReady(){
     try {
@@ -1299,6 +1986,10 @@ window.initZonesMap = function initZonesMap(){
         if (alreadyWrapped) {
           parent.dataset.role = role;
           attachStopDragHandlers(parent);
+          if (!enableStopDrag) {
+            const existingHandle = parent.querySelector('.drag-handle');
+            if (existingHandle) existingHandle.remove();
+          }
           if (!parent.querySelector('.stop-delete')) {
             const delExisting = document.createElement('button');
             delExisting.type = 'button';
@@ -1310,6 +2001,7 @@ window.initZonesMap = function initZonesMap(){
               try {
                 inputEl.value = '';
                 clearStoredLocation(inputEl);
+                normalizeStopOrder();
                 if (typeof runEstimate === 'function') runEstimate();
               } catch(_) {}
             });
@@ -1319,14 +2011,16 @@ window.initZonesMap = function initZonesMap(){
         }
         var w = document.createElement('div');
         w.className = 'quote-stop-item';
-        w.draggable = true;
+        w.draggable = enableStopDrag;
         w.dataset.role = role;
-        var h = document.createElement('span');
-        h.className = 'drag-handle';
-        h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
-        h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
+        var h = enableStopDrag ? document.createElement('span') : null;
+        if (h) {
+          h.className = 'drag-handle';
+          h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
+          h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
+        }
         if (inputEl.parentElement) inputEl.parentElement.insertBefore(w, inputEl);
-        w.appendChild(h);
+        if (h) w.appendChild(h);
         w.appendChild(inputEl);
         const del = document.createElement('button');
         del.type = 'button';
@@ -1351,13 +2045,13 @@ window.initZonesMap = function initZonesMap(){
       }
       wrapIfNeeded(qPickup, 'pickup');
       wrapIfNeeded(qDrop, 'drop');
+      normalizeStopOrder();
     } catch(_) {}
   })();
   // Allow clicking the map to add a pinpoint and fill the next field
   try {
     map.addListener('click', function(e){
       try {
-        if (editMode) return;
         const ll = e && e.latLng;
         if (!ll) return;
         handleMapClick(ll);
@@ -1368,11 +2062,13 @@ window.initZonesMap = function initZonesMap(){
     qAddStop.addEventListener('click', function(){
       const w = document.createElement('div');
       w.className = 'quote-stop-item';
-      w.draggable = true;
-      const h = document.createElement('span');
-      h.className = 'drag-handle';
-      h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
-      h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
+      w.draggable = enableStopDrag;
+      const h = enableStopDrag ? document.createElement('span') : null;
+      if (h) {
+        h.className = 'drag-handle';
+        h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
+        h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
+      }
       const i = document.createElement('input');
       i.type = 'text';
       const ph = i18n('quoteStopPlaceholder') || 'Stop address';
@@ -1383,11 +2079,12 @@ window.initZonesMap = function initZonesMap(){
       del.type = 'button';
       del.className = 'stop-delete';
       del.setAttribute('title', i18n('quoteDeleteStop') || 'Delete stop');
-      del.innerHTML = '<i class="fa fa-trash" aria-hidden="true"></i>';
+      del.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
+      del.textContent = '×';
       del.addEventListener('click', function(){
         try { clearAddressMarker(i); w.remove(); if (typeof runEstimate === 'function') runEstimate(); } catch(_) {}
       });
-      w.appendChild(h);
+      if (h) w.appendChild(h);
       w.appendChild(i);
       w.appendChild(del);
       qStopsWrap.appendChild(w);
@@ -1401,7 +2098,10 @@ window.initZonesMap = function initZonesMap(){
     Array.from(qStopsWrap.querySelectorAll('.quote-stop')).forEach(function(i){
       try {
         if (i.parentElement && i.parentElement.classList && i.parentElement.classList.contains('quote-stop-item')) {
-          if (!i.parentElement.querySelector('.drag-handle')) {
+          if (!enableStopDrag) {
+            const existingHandle = i.parentElement.querySelector('.drag-handle');
+            if (existingHandle) existingHandle.remove();
+          } else if (!i.parentElement.querySelector('.drag-handle')) {
             const h = document.createElement('span');
             h.className = 'drag-handle';
             h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
@@ -1426,13 +2126,15 @@ window.initZonesMap = function initZonesMap(){
         } else {
           const w = document.createElement('div');
           w.className = 'quote-stop-item';
-          w.draggable = true;
-          const h = document.createElement('span');
-          h.className = 'drag-handle';
-          h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
-          h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
+          w.draggable = enableStopDrag;
+          const h = enableStopDrag ? document.createElement('span') : null;
+          if (h) {
+            h.className = 'drag-handle';
+            h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
+            h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
+          }
           i.parentElement ? i.parentElement.insertBefore(w, i) : qStopsWrap.appendChild(w);
-          w.appendChild(h);
+          if (h) w.appendChild(h);
           w.appendChild(i);
           const del = document.createElement('button');
           del.type = 'button';
@@ -1452,17 +2154,157 @@ window.initZonesMap = function initZonesMap(){
     });
   }
   // Swap button removed; pickup/drop are now draggable and ordered in the list
+  function latLngToObj(ll){
+    try {
+      if (!ll) return null;
+      if (typeof ll.lat === 'function' && typeof ll.lng === 'function') return { lat: ll.lat(), lng: ll.lng() };
+      if (typeof ll.lat === 'number' && typeof ll.lng === 'number') return { lat: ll.lat, lng: ll.lng };
+      return null;
+    } catch(_) { return null; }
+  }
+  function addressLabelForInput(inputEl){
+    try {
+      if (!inputEl) return '';
+      return String((inputEl.dataset && inputEl.dataset.address) || inputEl.value || '').trim();
+    } catch(_) { return ''; }
+  }
+  function buildBookingPayload(){
+    const ctx = window._lastQuoteContext || null;
+    if (!ctx) return { error: i18n('quoteEstimateFirst') || 'Please calculate a quote first.' };
+    try { defaultDateTimeInputs(); } catch(_) {}
+    const name = String((qName && qName.value) || '').trim();
+    const email = String((qEmail && qEmail.value) || '').trim();
+    const phone = String((qPhone && qPhone.value) || '').trim();
+    const notes = String((qNotes && qNotes.value) || '').trim();
+    const updatesPreference = String((qUpdates && qUpdates.value) || '').trim();
+    const consent = !!(qConsent && qConsent.checked);
+    if (!name) return { error: 'Please enter your name.' };
+    if (!email && !phone) return { error: 'Please add an email or phone number.' };
+    if (!consent) return { error: 'Please confirm you agree to be contacted.' };
+    const dateVal = (qDate && qDate.value) ? String(qDate.value) : '';
+    const timeVal = (qTime && qTime.value) ? String(qTime.value) : '';
+    if (!dateVal || !timeVal) return { error: 'Please choose a date and time.' };
+    const mergedQuote = Object.assign({}, ctx, {
+      schedule: { date: dateVal, time: timeVal }
+    });
+    return {
+      customer: { name, email, phone },
+      notes,
+      updatesPreference,
+      language: document.documentElement.lang || 'en',
+      sourceUrl: location.href,
+      quote: mergedQuote
+    };
+  }
+  function buildTrackingUrlFromRef(ref){
+    try {
+      if (!ref) return '';
+      const origin = (location.origin && location.origin !== 'null') ? location.origin : '';
+      if (origin) return origin.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(ref);
+      const clean = location.href.replace(/[#?].*$/, '');
+      const base = clean.replace(/\/[a-zA-Z0-9._-]+$/, '');
+      return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(ref);
+    } catch(_) {
+      return '';
+    }
+  }
+  async function submitBooking(){
+    try {
+      if (!BOOKING_API_BASE) {
+        setBookingStatus('Booking is not configured yet.', true);
+        return;
+      }
+      const payload = buildBookingPayload();
+      if (payload.error) {
+        setBookingStatus(payload.error, true);
+        return;
+      }
+      const base = BOOKING_API_BASE.replace(/\/$/, '');
+      if (qSubmit) qSubmit.disabled = true;
+      setBookingStatus('Sending booking request...');
+      const form = new URLSearchParams();
+      form.set('payload', JSON.stringify(payload));
+      const res = await fetch(base, {
+        method: 'POST',
+        body: form
+      });
+      if (!res.ok) {
+        throw new Error('Booking request failed');
+      }
+      const json = await res.json();
+      if (json && json.error) {
+        setBookingStatus(json.error, true);
+        return;
+      }
+      const ref = (json && (json.reference || json.id)) ? String(json.reference || json.id) : '';
+      const hasPay = !!(json && json.paymentUrl);
+      const paymentUrl = json && json.paymentUrl ? String(json.paymentUrl) : '';
+      const whatsappUrl = json && json.whatsappUrl ? String(json.whatsappUrl) : '';
+      const trackingUrl = json && json.trackingUrl ? String(json.trackingUrl) : (ref ? buildTrackingUrlFromRef(ref) : '');
+      const paymentError = json && json.paymentError ? String(json.paymentError) : '';
+      const mail = json && json.mail ? json.mail : null;
+      let mailNote = '';
+      if (mail && mail.clientSent === false) mailNote = ' Email could not be sent.';
+      const parts = [];
+      const requestReceived = i18n('bookingRequestReceived') || 'Request received - I\'ll take it from here.';
+      const refLine = ref ? (i18n('bookingRefLabel', { ref }) || ('Ref: ' + ref)) : '';
+      const payHere = i18n('bookingPayHere') || 'Pay here: ';
+      const trackHere = i18n('bookingTrackHere') || 'Track it here: ';
+      const paymentLabel = i18n('bookingPaymentLink') || 'Payment link';
+      const trackingLabel = i18n('bookingTrackingLink') || 'Tracking link';
+      const whatsappLabel = i18n('bookingWhatsAppMe') || 'WhatsApp me';
+      const helpNote = i18n('bookingHelpNote') || ' if you need anything :)';
+
+      parts.push(requestReceived);
+      parts.push(document.createElement('br'));
+      parts.push(document.createElement('br'));
+      if (refLine) {
+        parts.push(refLine);
+        parts.push(document.createElement('br'));
+      }
+      if (hasPay && paymentUrl) {
+        parts.push(payHere);
+        parts.push(buildStatusLink(paymentUrl, paymentLabel));
+        parts.push(document.createElement('br'));
+      } else if (paymentError) {
+        parts.push(String(paymentError || 'Payment link could not be created.'));
+        parts.push(document.createElement('br'));
+      }
+      if (trackingUrl) {
+        parts.push(trackHere);
+        parts.push(buildStatusLink(trackingUrl, trackingLabel));
+        parts.push(document.createElement('br'));
+      }
+      if (whatsappUrl) {
+        parts.push(buildStatusLink(whatsappUrl, whatsappLabel));
+        parts.push(document.createTextNode(helpNote));
+      }
+      if (mailNote) parts.push(mailNote);
+      setBookingStatusHtml(parts);
+    } catch(e) {
+      setBookingStatus('Could not send booking request. Please try again.', true);
+    } finally {
+      if (qSubmit) qSubmit.disabled = false;
+    }
+  }
+  let estimateSeq = 0;
+  function invalidateEstimate(){ estimateSeq++; }
   async function runEstimate(){
-    const pickupEl = document.getElementById('quotePickup');
-    const dropEl = document.getElementById('quoteDropoff');
+    const seq = ++estimateSeq;
+    const orderedInputs = getOrderedInputs();
+    if (orderedInputs.length < 2) { if (qOut) qOut.textContent = i18n('quoteEnterBoth') || 'Enter pickup and dropoff'; return; }
+    const pickupEl = orderedInputs[0];
+    const dropEl = orderedInputs[orderedInputs.length - 1];
+    const stopInputs = orderedInputs.slice(1, -1);
     const pickupQ = (pickupEl && pickupEl.value || '').trim();
     const dropQ = (dropEl && dropEl.value || '').trim();
     if (!pickupQ || !dropQ) { if (qOut) qOut.textContent = i18n('quoteEnterBoth') || 'Enter pickup and dropoff'; return; }
-    const stopInputs = qStopsWrap ? Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).filter(function(w){ return ((w && w.dataset && w.dataset.role) || 'stop') === 'stop'; }).map(function(w){ return w.querySelector('.quote-stop'); }) : [];
     try {
       const origin = getZoneCenterLatLng('1');
       const pickupLoc = getLocationForInput(pickupEl) || await geocodeOne(pickupQ);
+      if (seq !== estimateSeq) return;
       const dropLoc = getLocationForInput(dropEl) || await geocodeOne(dropQ);
+      if (seq !== estimateSeq) return;
       const stopLocs = [];
       const stopAddrs = [];
       for (let idx = 0; idx < stopInputs.length; idx++){
@@ -1470,6 +2312,7 @@ window.initZonesMap = function initZonesMap(){
         const val = (el && el.value || '').trim();
         if (!val) continue;
         const loc = getLocationForInput(el) || await geocodeOne(val);
+        if (seq !== estimateSeq) return;
         if (loc) { stopLocs.push(loc); stopAddrs.push((el && el.dataset && el.dataset.address) || val); }
       }
       if (!pickupLoc || !dropLoc) { if (qOut) qOut.textContent = i18n('quoteAddressNotFound') || 'Address not found'; return; }
@@ -1490,6 +2333,7 @@ window.initZonesMap = function initZonesMap(){
         return;
       }
       const routeDetails = await computeRouteDetails(origin, [pickupLoc].concat(stopLocs), dropLoc);
+      if (seq !== estimateSeq) return;
       // Render route overlays on map
       renderRoute(pickupLoc, stopLocs, dropLoc, routeDetails);
       // Combined pricing: distance dominates + pickup zone base charge
@@ -1537,91 +2381,183 @@ window.initZonesMap = function initZonesMap(){
         parts.push(line);
       }
       const totalKm = Math.round((totalMeters/1000) * 100) / 100;
-      let distanceTotal = Math.round((totalKm * perKm) * 100) / 100;
+      const dropCenterKm = Math.round(haversineKm(origin, dropLoc) * 100) / 100;
+      const distanceBasisKm = Math.max(totalKm, dropCenterKm);
+      let distanceTotal = Math.round((distanceBasisKm * perKm) * 100) / 100;
       // Pickup zone full base charge
       const base = basePriceForZone(pickupZone);
       const pickupCharge = Math.round((base) * 100) / 100;
-      let total = Math.round((distanceTotal + pickupCharge) * 100) / 100;
-      if (minimum && total < minimum) total = minimum;
+      const addressFeePer = 1.5;
+      const addressFeeCount = stopLocs.length + 1; // dropoff + stops (exclude pickup)
+      const addressFee = Math.round((addressFeePer * addressFeeCount) * 100) / 100;
+      const preMinSubtotal = Math.round((distanceTotal + pickupCharge + addressFee) * 100) / 100;
+      let subtotal = Math.round((distanceTotal + pickupCharge + addressFee) * 100) / 100;
+      if (minimum && subtotal < minimum) subtotal = minimum;
+      const cargoInfo = getCargoAdjustment();
+      const cargoAmount = Math.round((subtotal * (cargoInfo.rate || 0)) * 100) / 100;
+      subtotal = Math.round((subtotal + cargoAmount) * 100) / 100;
+      const surchargeInfo = computeSurchargeInfo();
+      const surchargeAmount = Math.round((subtotal * (surchargeInfo.rate || 0)) * 100) / 100;
+      const weekendSurchargeAmount = Math.round((subtotal * (surchargeInfo.isWeekendHoliday ? surchargeInfo.weekendRate : 0)) * 100) / 100;
+      const afterHoursSurchargeAmount = Math.round((subtotal * (surchargeInfo.afterHours ? surchargeInfo.afterRate : 0)) * 100) / 100;
+      let total = Math.round((subtotal + surchargeAmount) * 100) / 100;
+      const totalBeforeDiscount = total;
+      const discountInfo = resolveDiscountsForEstimate(totalBeforeDiscount, surchargeInfo.dateKey, cur);
+      const discountAmount = Math.round((discountInfo.totalDiscount || 0) * 100) / 100;
+      const discountItems = Array.isArray(discountInfo.applied) ? discountInfo.applied : [];
+      if (discountAmount) total = Math.max(0, Math.round((totalBeforeDiscount - discountAmount) * 100) / 100);
       const travelSecsAfterPickup = legs.reduce((a, l) => a + (Number(l.sec||0)||0), 0);
       const travelMins = Math.round(travelSecsAfterPickup / 60);
       const serviceMins = 5 + (3 * (stopInputs.length + 1));
       const etaTotalMins = travelMins + serviceMins;
-      const info = 'Mode=distance · perKm=' + perKm.toFixed(2) + ' (pickup zone ' + pickupZone + ')';
-      const summary = 'Order totals: ' + cur + total.toFixed(2) + ' / ' + totalKm.toFixed(2) + ' km / ' + etaTotalMins + ' min';
-      // Build structured rundown per requested format (Address, Zone, Distances)
-      const pickupAddr = (pickupEl && pickupEl.dataset && pickupEl.dataset.address) || pickupQ;
-      const dropAddr = (dropEl && dropEl.dataset && dropEl.dataset.address) || dropQ;
-      const z1Center = origin; // center of zone 1
-      function km(a,b){ return Math.round(haversineKm(a,b) * 100) / 100; }
-      const breakdownLines = [];
-      const eurPerKm = totalKm > 0 ? (total / totalKm) : 0;
-      const eurPerMin = etaTotalMins > 0 ? (total / etaTotalMins) : 0;
+      const info = 'Mode=distance · perKm=' + perKm.toFixed(2) + ' (pickup zone ' + pickupZone + ')' + (cargoInfo.rate ? (' · cargo ' + Math.round(cargoInfo.rate * 100) + '%') : '') + (surchargeInfo.rate ? (' · surcharge ' + Math.round(surchargeInfo.rate * 100) + '%') : '') + (discountAmount ? (' · discount ' + cur + discountAmount.toFixed(2)) : '');
+      const discountNote = discountAmount ? (i18n('quoteSummaryDiscountNote') || ' (discount applied)') : '';
+      const summary = i18n('quoteSummaryDistance', {
+        currency: cur,
+        total: total.toFixed(2),
+        km: totalKm.toFixed(2),
+        mins: etaTotalMins,
+        discountNote
+      }) || ('Order totals: ' + cur + total.toFixed(2) + ' / ' + totalKm.toFixed(2) + ' km / ' + etaTotalMins + ' min' + discountNote);
       const eurPerHour = etaTotalMins > 0 ? (total / (etaTotalMins / 60)) : 0;
-      const eurPerHourHeadline = 'EUR/h: ' + cur + eurPerHour.toFixed(2);
-      setQuoteResultWithDebug(summary, info, eurPerHourHeadline);
-      breakdownLines.push('Order totals:');
-      breakdownLines.push('EUR/km');
-      breakdownLines.push(cur + eurPerKm.toFixed(2));
-      breakdownLines.push('EUR/min');
-      breakdownLines.push(cur + eurPerMin.toFixed(2));
-      breakdownLines.push('EUR/h');
-      breakdownLines.push(cur + eurPerHour.toFixed(2));
-      // Pickup block
-      breakdownLines.push('Pickup:');
-      breakdownLines.push('Address');
-      breakdownLines.push(String(pickupAddr||''));
-      breakdownLines.push('Zone');
-      breakdownLines.push(String(pickupZone||''));
-      breakdownLines.push('Pickup price (EUR)');
-      breakdownLines.push(cur + pickupCharge.toFixed(2));
-      breakdownLines.push('Distance from center of zone 1');
-      breakdownLines.push(km(z1Center, pickupLoc) + ' km');
-      // Each Stop
-      for (let i = 0; i < stopLocs.length; i++){
-        breakdownLines.push('Stop ' + (i+1) + ':');
-        breakdownLines.push('Address');
-        breakdownLines.push(String(stopAddrs[i]||''));
-        breakdownLines.push('Zone');
-        breakdownLines.push(String(stopZoneNums[i]||''));
-        breakdownLines.push('Distance from previous stop');
-        const legMeters = Number(legs[i] && legs[i].meters || 0) || 0; // legs[0] = pickup->stop1
-        const legKm = Math.round((legMeters/1000)*100)/100;
-        const legPrice = Math.round((legKm * perKm)*100)/100;
-        breakdownLines.push(legKm + ' km');
-        breakdownLines.push('Price for leg (EUR)');
-        breakdownLines.push(cur + legPrice.toFixed(2));
-        breakdownLines.push('Raw calculation');
-        breakdownLines.push(legKm.toFixed(2) + ' km × ' + cur + perKm.toFixed(2) + '/km = ' + cur + legPrice.toFixed(2));
+      const eurPerHourHeadline = i18n('quoteEurPerHourHeadline', { currency: cur, rate: eurPerHour.toFixed(2) }) || ('EUR/h: ' + cur + eurPerHour.toFixed(2));
+      if (qRate) { qRate.textContent = ''; qRate.classList.add('is-hidden'); }
+      if (qOut) { qOut.textContent = ''; qOut.classList.add('is-hidden'); }
+      const zonePath = [pickupZoneNum].concat(stopZoneNums).concat([dropZoneNum]);
+      const trace = buildQuoteTrace({
+        cur,
+        pickupZone: pickupZone,
+        perKm,
+        totalKm,
+        dropCenterKm,
+        distanceBasisKm,
+        distanceTotal,
+        pickupCharge,
+        addressFee,
+        addressFeePer,
+        addressFeeCount,
+        minimum,
+        minApplied: (minimum && preMinSubtotal < minimum),
+        cargoRate: cargoInfo.rate || 0,
+        cargoAmount,
+        surchargeRate: surchargeInfo.rate || 0,
+        surchargeAmount,
+        discounts: discountItems,
+        discountTotal: discountAmount,
+        subtotal,
+        total,
+        parts,
+        legs,
+        zonePath,
+        dateKey: surchargeInfo.dateKey,
+        timeLabel: surchargeInfo.timeLabel,
+        isWeekend: surchargeInfo.isWeekend,
+        isHoliday: surchargeInfo.isHoliday,
+        afterHours: surchargeInfo.afterHours,
+        etaTotalMins
+      });
+      setPricingUiCopy({
+        cur,
+        total,
+        totalKm,
+        etaTotalMins,
+        dropCount: stopInputs.length + 1,
+        pickupZone,
+        dropZone: dropZoneNum,
+        pickupCharge,
+        distanceTotal,
+        addressFee,
+        addressFeePer,
+        addressFeeCount,
+        cargoKey: cargoInfo.key,
+        cargoAmount,
+        surchargeRate: surchargeInfo.rate || 0,
+        surchargeAmount,
+        weekendSurchargeAmount,
+        afterHoursSurchargeAmount,
+        isWeekendHoliday: surchargeInfo.isWeekendHoliday,
+        afterHours: surchargeInfo.afterHours,
+        discountAmount,
+        discountItems,
+        discountTotal: discountAmount
+      });
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      const recalculated = i18n('quoteRecalculatedAt', { time: (hh + ':' + mm + ':' + ss) }) || ('Recalculated at ' + hh + ':' + mm + ':' + ss);
+      const traceInfo = document.getElementById('quoteTraceInfo');
+      if (traceInfo) {
+        const tooltip = [
+          eurPerHourHeadline,
+          summary,
+          'Trace',
+          trace,
+          recalculated
+        ].join('\n');
+        traceInfo.setAttribute('aria-label', tooltip);
+        traceInfo.setAttribute('title', tooltip);
+        traceInfo.setAttribute('data-tooltip', tooltip);
       }
-      // Dropoff block
-      breakdownLines.push('Dropoff:');
-      breakdownLines.push('Address');
-      breakdownLines.push(String(dropAddr||''));
-      breakdownLines.push('Zone');
-      breakdownLines.push(String(dropZoneNum||''));
-      breakdownLines.push('Distance from previous stop');
-      const lastLegMeters = Number(legs[legs.length-1] && legs[legs.length-1].meters || 0) || 0;
-      const lastKm = Math.round((lastLegMeters/1000)*100)/100;
-      const lastPrice = Math.round((lastKm * perKm)*100)/100;
-      breakdownLines.push(lastKm + ' km');
-      breakdownLines.push('Price for leg (EUR)');
-      breakdownLines.push(cur + lastPrice.toFixed(2));
-      breakdownLines.push('Raw calculation');
-      breakdownLines.push(lastKm.toFixed(2) + ' km × ' + cur + perKm.toFixed(2) + '/km = ' + cur + lastPrice.toFixed(2));
-      breakdownLines.push('Distance from center of zone 1');
-      breakdownLines.push(km(z1Center, dropLoc) + ' km');
-      // Total ETA
-      breakdownLines.push('Total ETA: (travel time + service time)');
-      breakdownLines.push(travelMins + ' min + ' + serviceMins + ' min');
-      setBreakdownLines(breakdownLines.filter(Boolean));
+      window._lastQuoteContext = {
+        createdAt: new Date().toISOString(),
+        currency: cur,
+        total: total,
+        subtotal: subtotal,
+        totalKm: totalKm,
+        etaMins: etaTotalMins,
+        pickupZone: pickupZoneNum,
+        dropZone: dropZoneNum,
+        cargoKey: cargoInfo.key,
+        discountCodes: activeDiscountCodes.slice(),
+        discountTotal: discountAmount,
+        surchargeRate: surchargeInfo.rate,
+        isWeekendHoliday: surchargeInfo.isWeekendHoliday,
+        afterHours: surchargeInfo.afterHours,
+        dateKey: surchargeInfo.dateKey,
+        timeLabel: surchargeInfo.timeLabel,
+        schedule: {
+          date: (qDate && qDate.value) ? String(qDate.value) : '',
+          time: (qTime && qTime.value) ? String(qTime.value) : ''
+        },
+        route: {
+          pickup: {
+            address: addressLabelForInput(pickupEl) || pickupQ,
+            latLng: latLngToObj(pickupLoc),
+            zone: pickupZoneNum
+          },
+          stops: stopInputs.map(function(el, idx){
+            return {
+              address: stopAddrs[idx] || addressLabelForInput(el),
+              latLng: latLngToObj(stopLocs[idx]),
+              zone: stopZoneNums[idx] || ''
+            };
+          }),
+          dropoff: {
+            address: addressLabelForInput(dropEl) || dropQ,
+            latLng: latLngToObj(dropLoc),
+            zone: dropZoneNum
+          }
+        },
+        pricing: {
+          pickupCharge: pickupCharge,
+          distanceTotal: distanceTotal,
+          addressFee: addressFee,
+          surchargeAmount: surchargeAmount,
+          discountAmount: discountAmount
+        }
+      };
       return;
     } catch(e){
-      if (qOut) setQuoteResultWithDebug(i18n('quoteCouldNotEstimate') || 'Could not estimate route — please check addresses and try again.', 'Error');
+      if (qOut) {
+        qOut.classList.remove('is-hidden');
+        setQuoteResultWithDebug(i18n('quoteCouldNotEstimate') || 'Could not estimate route — please check addresses and try again.', 'Error');
+      }
     }
   }
   // Trigger computation
   if (qEstimate) { qEstimate.addEventListener('click', runEstimate); }
+  if (qSubmit) { qSubmit.addEventListener('click', submitBooking); }
   
 
   if (editMode && google.maps.drawing) {
@@ -1737,5 +2673,3 @@ window.initZonesMap = function initZonesMap(){
     };
   }
 };
-
-// Diagnostics removed for simplicity during testing
