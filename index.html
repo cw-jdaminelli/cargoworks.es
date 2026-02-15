@@ -158,10 +158,8 @@
 						</details>
 						<div class="config-footer">
 							<button id="quoteEstimate" class="btn" type="button" title="Calculate" data-i18n="quoteEstimate">Calculate</button>
-							<button id="quoteRefresh" class="btn" type="button" title="Refresh calculator" data-i18n="quoteRefresh">Refresh</button>
 							<h2 id="quoteRate" class="quote-rate"></h2>
 							<span id="quoteResult" class="zones-result" aria-live="polite"></span>
-							<span id="quoteTraceInfo" class="quote-info" role="img" aria-label="" title="" tabindex="0">i</span>
 							<div id="pricingUiBlock" class="pricing-ui-block is-hidden">
 								<div id="pricingUiSummary" class="pricing-ui-copy__block"></div>
 								<details class="pricing-ui-copy">
@@ -169,7 +167,8 @@
 									<div id="pricingUiBreakdown" class="pricing-ui-copy__block"></div>
 								</details>
 							</div>
-							<button id="quoteSubmit" class="btn" type="button" title="Request booking">Request booking</button>
+							<button id="quoteSubmit" class="btn" type="button" title="Request booking" data-i18n="quoteSubmit">Request booking</button>
+							<span id="quoteTraceInfoIcon" class="quote-info" role="img" aria-label="" title="" tabindex="0">i</span>
 							<p id="quoteBookingStatus" class="discount-status" aria-live="polite"></p>
 							<!-- Testing controls (hidden unless debug/dev) -->
 							<div id="quoteTesting" class="quote-testing">
@@ -229,6 +228,9 @@
 			.sc-card__grid { grid-template-columns: 1fr; }
 			.sc-card__right { display:none; }
 			.sc-card__left { padding: 1.5rem; }
+		}
+		@media (min-width: 901px){
+			.sc-cards { display: none; }
 		}
 	</style>
 

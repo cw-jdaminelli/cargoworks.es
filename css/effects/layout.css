@@ -1035,6 +1035,7 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  margin-left: 0.5rem;
   width: 20px;
   height: 20px;
   border-radius: 999px;

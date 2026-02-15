@@ -183,6 +183,17 @@ if (langSelect) {
       quoteRefreshBtn.setAttribute('title', dict.quoteRefresh);
       quoteRefreshBtn.setAttribute('aria-label', dict.quoteRefresh);
     }
+    const quoteSubmitBtn = document.getElementById('quoteSubmit');
+    if (quoteSubmitBtn && dict.quoteSubmit) {
+      quoteSubmitBtn.textContent = dict.quoteSubmit;
+      quoteSubmitBtn.setAttribute('title', dict.quoteSubmit);
+      quoteSubmitBtn.setAttribute('aria-label', dict.quoteSubmit);
+    }
+    const quoteTraceInfo = document.getElementById('quoteTraceInfoIcon');
+    if (quoteTraceInfo && dict.quoteTraceInfo) {
+      quoteTraceInfo.setAttribute('aria-label', dict.quoteTraceInfo);
+      quoteTraceInfo.setAttribute('title', dict.quoteTraceInfo);
+    }
     const quoteAddStopBtn = document.getElementById('quoteAddStop');
     if (quoteAddStopBtn && dict.quoteAddStop) {
       quoteAddStopBtn.textContent = dict.quoteAddStop;

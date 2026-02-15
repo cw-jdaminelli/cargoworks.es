@@ -1759,11 +1759,11 @@ window.initZonesMap = function initZonesMap(){
       if (blockEl) blockEl.classList.add('is-hidden');
       if (qRate) qRate.classList.remove('is-hidden');
       if (qOut) qOut.classList.remove('is-hidden');
-      const traceInfo = document.getElementById('quoteTraceInfo');
+      const traceInfo = document.getElementById('quoteTraceInfoIcon');
       if (traceInfo) {
-        traceInfo.setAttribute('aria-label', '');
-        traceInfo.setAttribute('title', '');
-        traceInfo.removeAttribute('data-tooltip');
+        const infoText = i18n('quoteTraceInfo') || "Submitting a request doesn't charge you automatically, you will receive a payment link once you make your booking.";
+        traceInfo.setAttribute('aria-label', infoText);
+        traceInfo.setAttribute('title', infoText);
       }
       setBookingStatus('');
       window._lastQuoteContext = null;
@@ -2486,18 +2486,11 @@ window.initZonesMap = function initZonesMap(){
       const mm = String(now.getMinutes()).padStart(2, '0');
       const ss = String(now.getSeconds()).padStart(2, '0');
       const recalculated = i18n('quoteRecalculatedAt', { time: (hh + ':' + mm + ':' + ss) }) || ('Recalculated at ' + hh + ':' + mm + ':' + ss);
-      const traceInfo = document.getElementById('quoteTraceInfo');
+      const traceInfo = document.getElementById('quoteTraceInfoIcon');
       if (traceInfo) {
-        const tooltip = [
-          eurPerHourHeadline,
-          summary,
-          'Trace',
-          trace,
-          recalculated
-        ].join('\n');
-        traceInfo.setAttribute('aria-label', tooltip);
-        traceInfo.setAttribute('title', tooltip);
-        traceInfo.setAttribute('data-tooltip', tooltip);
+        const infoText = i18n('quoteTraceInfo') || "Submitting a request doesn't charge you automatically, you will receive a payment link once you make your booking.";
+        traceInfo.setAttribute('aria-label', infoText);
+        traceInfo.setAttribute('title', infoText);
       }
       window._lastQuoteContext = {
         createdAt: new Date().toISOString(),
