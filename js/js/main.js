@@ -67,7 +67,11 @@ if (langSelect) {
     setText('siteContact', dict.siteContact);
     setText('siteContactBlurb', dict.siteContactBlurb);
     setText('siteEmailLabel', dict.siteEmailLabel);
+    setText('siteEmailNote', dict.siteEmailNote);
     setText('sitePhoneLabel', dict.sitePhoneLabel);
+    setText('sitePhoneNote', dict.sitePhoneNote);
+    setText('siteWhatsappLabel', dict.siteWhatsappLabel);
+    setText('siteWhatsappNote', dict.siteWhatsappNote);
     setText('siteHoursLabel', dict.siteHoursLabel);
     setText('siteHoursText', dict.siteHoursText);
     setText('footerInstagram', dict.footerInstagram);

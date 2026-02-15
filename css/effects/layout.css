@@ -911,7 +911,11 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   font-size: 0.88rem;
   color: #2d1a4d;
 }
-.config-checkbox input { margin-top: 0.15rem; }
+.config-checkbox input {
+  width: 14px;
+  height: 14px;
+  margin-top: 0.2rem;
+}
 .config-help {
   margin: 0;
   font-size: 0.85rem;

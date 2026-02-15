@@ -1722,6 +1722,27 @@ window.initZonesMap = function initZonesMap(){
       try { if (typeof runEstimate === 'function') await runEstimate(); } catch(_){ }
     } catch(_){ }
   }
+  function resetBookingFieldsAfterSuccess(){
+    try {
+      const pickupEl = document.getElementById('quotePickup');
+      const dropEl = document.getElementById('quoteDropoff');
+      if (pickupEl) { pickupEl.value = ''; clearStoredLocation(pickupEl); }
+      if (dropEl) { dropEl.value = ''; clearStoredLocation(dropEl); }
+      if (qStopsWrap) {
+        Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).forEach(function(w){
+          const role = (w && w.dataset && w.dataset.role) || 'stop';
+          if (role === 'stop') w.remove();
+        });
+      }
+      if (qDate) qDate.value = '';
+      if (qTime) qTime.value = '';
+      if (qOut) qOut.textContent = '';
+      if (qRate) qRate.textContent = '';
+      window._lastQuoteContext = null;
+      clearAllAddressMarkers();
+      clearRouteOverlays();
+    } catch(_) {}
+  }
   function resetEstimator(){
     try {
       const pickupEl = document.getElementById('quotePickup');
@@ -2281,6 +2302,7 @@ window.initZonesMap = function initZonesMap(){
       }
       if (mailNote) parts.push(mailNote);
       setBookingStatusHtml(parts);
+      resetBookingFieldsAfterSuccess();
     } catch(e) {
       setBookingStatus('Could not send booking request. Please try again.', true);
     } finally {
