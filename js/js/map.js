@@ -11,6 +11,8 @@ window.initZonesMap = function initZonesMap(){
   const CALENDAR_ID = '';
   const CALENDAR_TIMEZONE = 'Europe/Madrid';
   const AVAILABILITY_SLOT_MINUTES = 15;
+  const AVAILABILITY_BUFFER_MINUTES = 5;
+  const AVAILABILITY_DEFAULT_DURATION_MINUTES = 60;
   const RETURN_SPEED_KMH = 18;
   const BOOKING_API_BASE = (function(){
     try { return String((window && window.CARGOWORKS_BOOKING_API) || '').trim(); } catch(_) { return ''; }
@@ -585,7 +587,7 @@ window.initZonesMap = function initZonesMap(){
   }
   function basePriceForZone(num){
     const p = num && window._zonePrices && window._zonePrices[num] && window._zonePrices[num].base;
-    return Number(p||0);
+    return Number(p||0) * 0.88;
   }
 
   const qPickup = document.getElementById('quotePickup');
@@ -635,18 +637,18 @@ window.initZonesMap = function initZonesMap(){
       if (stored && stored === val && hasCoords) return;
       geocodeOne(val).then(function(loc){
         if (!loc) return;
-        inputEl.dataset.lat = String(loc.lat());
-        inputEl.dataset.lng = String(loc.lng());
-        inputEl.dataset.address = val;
-        setAddressMarker(inputEl, loc);
+        const currentVal = String(inputEl.value || '').trim();
+        setInputLocationData(inputEl, loc, currentVal || val);
         updateAddressMarkers();
         autoEstimateIfReady();
+        updateDeliverySummary();
       });
     } catch(_) {}
   }
   function attachAddressInputHandlers(inputEl){
     try {
       if (!inputEl) return;
+      let geocodeTimer = null;
       inputEl.addEventListener('input', function(){
         const val = String(inputEl.value || '').trim();
         if (!val) {
@@ -676,6 +678,12 @@ window.initZonesMap = function initZonesMap(){
           e.preventDefault();
           requestGeocodeForInput(inputEl);
         }
+      });
+      inputEl.addEventListener('input', function(){
+        if (geocodeTimer) clearTimeout(geocodeTimer);
+        geocodeTimer = setTimeout(function(){
+          requestGeocodeForInput(inputEl);
+        }, 250);
       });
       inputEl.addEventListener('input', function(){
         if (document.activeElement === inputEl) scheduleLocationOptionRefresh();
@@ -808,6 +816,8 @@ window.initZonesMap = function initZonesMap(){
   const qUpdates = document.getElementById('quoteUpdates');
   const qConsent = document.getElementById('quoteConsent');
   const qSubmit = document.getElementById('quoteSubmit');
+  const qTraceInfoIcon = document.getElementById('quoteTraceInfoIcon');
+  const qDeliverySummary = document.getElementById('quoteDeliverySummary');
   const qBookingStatus = document.getElementById('quoteBookingStatus');
   const DEFAULT_DISCOUNT_CODE = 'SELF5';
   // const qByDistance = document.getElementById('quoteByDistance'); // removed toggle
@@ -846,9 +856,15 @@ window.initZonesMap = function initZonesMap(){
     } catch(_) {}
   }
   if (qDiscount && !qDiscount.value) qDiscount.value = DEFAULT_DISCOUNT_CODE;
-  if (qDate) qDate.addEventListener('change', function(){ try { autoEstimateIfReady(); refreshAvailability(); } catch(_) {} });
-  if (qTime) qTime.addEventListener('change', function(){ try { autoEstimateIfReady(); refreshAvailability(); } catch(_) {} });
-  if (qCargo) qCargo.addEventListener('change', function(){ try { autoEstimateIfReady(); } catch(_) {} });
+  if (qDate) qDate.addEventListener('change', function(){
+    try { autoEstimateIfReady(); refreshAvailability(); updateDeliverySummary(); } catch(_) {}
+  });
+  if (qTime) qTime.addEventListener('change', function(){
+    try { autoEstimateIfReady(); refreshAvailability(); updateDeliverySummary(); } catch(_) {}
+  });
+  if (qCargo) qCargo.addEventListener('change', function(){
+    try { autoEstimateIfReady(); updateDeliverySummary(); } catch(_) {}
+  });
   let activeDiscountCodes = [];
   function setDiscountStatus(msg, isError){
     if (!qDiscountStatus) return;
@@ -883,6 +899,73 @@ window.initZonesMap = function initZonesMap(){
   function normalizeDiscountCode(code){
     return String(code || '').trim().toUpperCase();
   }
+  function isValidEmail(value){
+    const v = String(value || '').trim();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  }
+  function isValidPhone(value){
+    const v = String(value || '').trim();
+    if (!/^\+\d{6,15}$/.test(v)) return false;
+    const spain = v.startsWith('+34');
+    if (spain) {
+      const rest = v.slice(3).replace(/\D/g, '');
+      return rest.length === 9;
+    }
+    return true;
+  }
+  function abbreviateAddress(label){
+    const raw = String(label || '').trim();
+    if (!raw) return '';
+    const head = raw.split(',')[0].trim();
+    if (!head) return raw;
+    return head.length > 28 ? head.slice(0, 26) + '…' : head;
+  }
+  function formatSummaryDateTime(dateVal, timeVal){
+    try {
+      if (!dateVal) return '';
+      const dt = new Date(String(dateVal) + 'T00:00:00');
+      const lang = document.documentElement.lang || 'en';
+      const dateText = new Intl.DateTimeFormat(lang, { weekday: 'short', day: '2-digit', month: 'long' }).format(dt);
+      const timeText = timeVal ? String(timeVal) : '';
+      return timeText ? (dateText + ' · ' + timeText) : dateText;
+    } catch(_) {
+      return String(dateVal || '').trim();
+    }
+  }
+  function updateDeliverySummary(){
+    if (!qDeliverySummary) return;
+    const ctx = window._lastQuoteContext || null;
+    const pickupReady = !!(qPickup && qPickup.dataset && qPickup.dataset.lat && qPickup.dataset.lng);
+    const dropReady = !!(qDrop && qDrop.dataset && qDrop.dataset.lat && qDrop.dataset.lng);
+    if (!ctx || !pickupReady || !dropReady) {
+      qDeliverySummary.classList.add('is-hidden');
+      qDeliverySummary.innerHTML = '';
+      return;
+    }
+    const pickupLabel = abbreviateAddress(addressLabelForInput(qPickup));
+    const dropLabel = abbreviateAddress(addressLabelForInput(qDrop));
+    const stopCount = Math.max(0, (qStopsWrap ? qStopsWrap.querySelectorAll('.quote-stop-item[data-role="stop"]').length : 0));
+    const dropCount = stopCount + 1;
+    const dropLabelText = dropCount === 1
+      ? (i18n('summaryDropSingle') || 'drop')
+      : (i18n('summaryDropPlural') || 'drops');
+    const dropLine = (pickupLabel && dropLabel)
+      ? (pickupLabel + ' → ' + dropLabel + ' · ' + dropCount + ' ' + dropLabelText)
+      : (dropCount + ' ' + dropLabelText);
+    const dateVal = qDate && qDate.value ? String(qDate.value) : '';
+    const timeVal = qTime && qTime.value ? String(qTime.value) : '';
+    const dateLine = formatSummaryDateTime(dateVal, timeVal);
+    const totalLine = (i18n('summaryTotalLabel') || 'Total') + ' ' + formatMoneyLocalized(ctx.total || 0, ctx.cur || '€');
+    const title = i18n('deliverySummaryTitle') || 'Delivery Summary';
+    const lines = [];
+    lines.push('<div class="summary-title">' + title + '</div>');
+    if (dropLine) lines.push('<div>' + dropLine + '</div>');
+    if (dateLine) lines.push('<div>' + dateLine + '</div>');
+    lines.push('<div class="summary-total">' + totalLine + '</div>');
+    qDeliverySummary.innerHTML = lines.join('');
+    qDeliverySummary.classList.remove('is-hidden');
+  }
+  try { window.updateDeliverySummary = updateDeliverySummary; } catch(_) {}
   function getDiscountCodes(){
     return Array.isArray(window._discountCodes) ? window._discountCodes : [];
   }
@@ -973,6 +1056,24 @@ window.initZonesMap = function initZonesMap(){
       if (!code || !activeDiscountCodes.includes(code)) setDiscountStatus('');
     });
   }
+
+  function updateSubmitVisibility(){
+    if (!qSubmit) return;
+    const pickupReady = !!(qPickup && qPickup.dataset && qPickup.dataset.lat && qPickup.dataset.lng);
+    const dropReady = !!(qDrop && qDrop.dataset && qDrop.dataset.lat && qDrop.dataset.lng);
+    const ready = pickupReady && dropReady;
+    qSubmit.classList.toggle('is-hidden', !ready);
+    if (qTraceInfoIcon) qTraceInfoIcon.classList.toggle('is-hidden', !ready);
+    updateDeliverySummary();
+  }
+  if (qPickup) qPickup.addEventListener('input', updateSubmitVisibility);
+  if (qDrop) qDrop.addEventListener('input', updateSubmitVisibility);
+  if (qStopsWrap) qStopsWrap.addEventListener('input', updateSubmitVisibility);
+  if (qName) qName.addEventListener('input', updateSubmitVisibility);
+  if (qEmail) qEmail.addEventListener('input', updateSubmitVisibility);
+  if (qPhone) qPhone.addEventListener('input', updateSubmitVisibility);
+  if (qConsent) qConsent.addEventListener('change', updateSubmitVisibility);
+  updateSubmitVisibility();
 
   function parseTimeToMinutes(str){
     const s = String(str || '').trim();
@@ -1101,8 +1202,32 @@ window.initZonesMap = function initZonesMap(){
     availabilityCache.set(dateKey, result);
     return result;
   }
-  function isTimeBlocked(min, blocked){
-    return blocked.some(b => min >= b.start && min < b.end);
+  function getEstimatedDurationMinutes(){
+    const ctx = window._lastQuoteContext || null;
+    const eta = Number(ctx && ctx.etaMins || 0) || 0;
+    return eta > 0 ? eta : AVAILABILITY_DEFAULT_DURATION_MINUTES;
+  }
+  function getAvailabilityFlagMessage(surchargeInfo){
+    if (!surchargeInfo) return '';
+    if (surchargeInfo.isWeekendHoliday) {
+      return i18n('availabilityFlagWeekend') || 'Weekend time slot selected - Message us to discuss this order.';
+    }
+    if (surchargeInfo.afterHours) {
+      return i18n('availabilityFlagAfterHours') || 'After hours time slot selected - Message us to discuss this order.';
+    }
+    return '';
+  }
+  function isTimeBlocked(min, blocked, duration){
+    const endMin = min + Math.max(0, Number(duration || 0) || 0);
+    return blocked.some(b => min < b.end && endMin > b.start);
+  }
+  function extendBlockedWithBuffer(blocked, buffer){
+    const bump = Math.max(0, Number(buffer || 0) || 0);
+    return (blocked || []).map(function(item){
+      const start = Math.max(0, Number(item.start || 0) || 0);
+      const end = Math.min(1440, Math.max(start, Number(item.end || 0) || 0) + bump);
+      return { start, end };
+    });
   }
   function isWeekendHolidayKey(dateKey){
     const holidays = window._holidaysSet instanceof Set ? window._holidaysSet : new Set();
@@ -1113,13 +1238,16 @@ window.initZonesMap = function initZonesMap(){
     const day = dt.getDay();
     return day === 0 || day === 6;
   }
-  function findNextAvailableMinute(startMin, blocked, dateKey){
+  function findNextAvailableMinute(startMin, blocked, dateKey, durationMin){
     const hours = getBusinessHours(isWeekendHolidayKey(dateKey));
     const startHours = parseTimeToMinutes(hours && hours.start) ?? 0;
     const endHours = parseTimeToMinutes(hours && hours.end) ?? (24 * 60);
     const start = Math.max(startMin, startHours);
-    for (let m = start; m < endHours; m += AVAILABILITY_SLOT_MINUTES){
-      if (!isTimeBlocked(m, blocked)) return m;
+    const duration = Math.max(0, Number(durationMin || 0) || 0);
+    const lastStart = endHours - duration;
+    if (lastStart < start) return null;
+    for (let m = start; m <= lastStart; m += AVAILABILITY_SLOT_MINUTES){
+      if (!isTimeBlocked(m, blocked, duration)) return m;
     }
     return null;
   }
@@ -1129,17 +1257,63 @@ window.initZonesMap = function initZonesMap(){
     const m = min % 60;
     qTime.value = pad2(h) + ':' + pad2(m);
   }
+  function setDateInputValue(dateKey){
+    if (!qDate || !dateKey) return;
+    qDate.value = String(dateKey);
+  }
+  function addDays(date, days){
+    const dt = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    dt.setDate(dt.getDate() + days);
+    return dt;
+  }
+  async function findNextAvailableSlotFrom(date, maxDays){
+    const base = date instanceof Date ? date : new Date();
+    const limit = Number(maxDays || 0) || 14;
+    const now = new Date();
+    const durationMin = getEstimatedDurationMinutes() + AVAILABILITY_BUFFER_MINUTES;
+    for (let i = 0; i <= limit; i++) {
+      const day = addDays(base, i);
+      const dateKey = formatDateKeyLocal(day);
+      const data = await fetchAvailabilityForDate(dateKey);
+      const blockedRaw = (data && data.blocked) || [];
+      const blocked = extendBlockedWithBuffer(blockedRaw, AVAILABILITY_BUFFER_MINUTES);
+      const startMin = (i === 0 && formatDateKeyLocal(now) === dateKey)
+        ? ((now.getHours() * 60) + now.getMinutes())
+        : 0;
+      const nextMin = findNextAvailableMinute(startMin, blocked, dateKey, durationMin);
+      if (nextMin != null) return { dateKey, minute: nextMin };
+    }
+    return null;
+  }
+  async function initAvailabilityDefaults(){
+    if (!calendarConfigured()) return;
+    try {
+      const slot = await findNextAvailableSlotFrom(new Date(), 14);
+      if (!slot) return;
+      setDateInputValue(slot.dateKey);
+      setTimeInputMinutes(slot.minute);
+      const slotLabel = pad2(Math.floor(slot.minute / 60)) + ':' + pad2(slot.minute % 60);
+      setAvailabilityStatus(i18n('availabilityNextSlot', { time: slotLabel }) || ('Next available slot: ' + slotLabel));
+    } catch(_) {}
+  }
   async function refreshAvailability(){
     if (!calendarConfigured()) { setAvailabilityStatus(''); return; }
     const dateKey = qDate && qDate.value ? String(qDate.value) : formatDateKeyLocal(new Date());
+    const flagMsg = getAvailabilityFlagMessage(computeSurchargeInfo());
+    if (flagMsg) {
+      setAvailabilityStatus(flagMsg);
+      return;
+    }
     const seq = ++availabilitySeq;
     setAvailabilityStatus(i18n('availabilityChecking') || 'Checking availability...');
     try {
       const data = await fetchAvailabilityForDate(dateKey);
       if (seq !== availabilitySeq) return;
-      const blocked = (data && data.blocked) || [];
+      const blockedRaw = (data && data.blocked) || [];
+      const blocked = extendBlockedWithBuffer(blockedRaw, AVAILABILITY_BUFFER_MINUTES);
       const selectedMin = parseTimeToMinutes(qTime && qTime.value);
-      const nextMin = findNextAvailableMinute(selectedMin != null ? selectedMin : 0, blocked, dateKey);
+      const durationMin = getEstimatedDurationMinutes() + AVAILABILITY_BUFFER_MINUTES;
+      const nextMin = findNextAvailableMinute(selectedMin != null ? selectedMin : 0, blocked, dateKey, durationMin);
       if (nextMin == null) {
         setAvailabilityStatus(i18n('availabilityNone') || 'No availability on this date.', true);
         return;
@@ -1157,13 +1331,27 @@ window.initZonesMap = function initZonesMap(){
     }
   }
   if (qDate && qTime) {
-    try { refreshAvailability(); } catch(_) {}
+    try { initAvailabilityDefaults(); refreshAvailability(); } catch(_) {}
   }
   function getCargoAdjustment(){
     try {
-      const value = qCargo ? String(qCargo.value || 'regular') : 'regular';
+      const stopCount = qStopsWrap
+        ? qStopsWrap.querySelectorAll('.quote-stop-item[data-role="stop"]').length
+        : 0;
+      const autoLarge = stopCount >= 5;
+      if (qCargo) {
+        const wasAuto = qCargo.dataset && qCargo.dataset.autoLarge === '1';
+        if (autoLarge) {
+          qCargo.value = 'large';
+          qCargo.dataset.autoLarge = '1';
+        } else if (wasAuto) {
+          qCargo.value = 'regular';
+          delete qCargo.dataset.autoLarge;
+        }
+      }
+      const value = autoLarge ? 'large' : (qCargo ? String(qCargo.value || 'regular') : 'regular');
       if (value === 'small') return { key: 'small', label: 'Small parcel (shoebox)', rate: -0.15 };
-      if (value === 'large') return { key: 'large', label: 'Large or multiple regular', rate: 0.15 };
+      if (value === 'large') return { key: 'large', label: 'Large or multiple regular', rate: 0.2 };
       return { key: 'regular', label: 'Regular (60x40x30cm)', rate: 0 };
     } catch(_) { return { key: 'regular', label: 'Regular (60x40x30cm)', rate: 0 }; }
   }
@@ -1295,6 +1483,12 @@ window.initZonesMap = function initZonesMap(){
       const breakdownEl = document.getElementById('pricingUiBreakdown');
       const blockEl = document.getElementById('pricingUiBlock');
       if (!summaryEl && !breakdownEl) return;
+      try {
+        window._lastPricingUiContext = ctx;
+        window._refreshPricingUi = function(){
+          try { setPricingUiCopy(window._lastPricingUiContext); } catch(_) {}
+        };
+      } catch(_) {}
       const cur = ctx.cur || '€';
       const kmText = formatNumberLocalized(ctx.totalKm || 0, 1);
       const minsText = Math.round(Number(ctx.etaTotalMins || 0) || 0);
@@ -1313,7 +1507,10 @@ window.initZonesMap = function initZonesMap(){
         : (i18n('summaryServiceStandard') || 'Standard service');
       if (summaryEl) {
         const summaryParts = [];
-        summaryParts.push('<strong>' + (i18n('summaryTotalLabel') || 'Total') + '</strong><br>' + formatMoneyLocalized(ctx.total || 0, cur));
+        const helpPlain = i18n('quoteCalcHelpPlain') || 'How is this calculated? View pricing details or contact us.';
+        const helpHtml = i18n('quoteCalcHelp') || '<strong>How is this calculated?</strong> View pricing details or contact us.';
+        const helpIcon = '<span class="quote-info" role="img" aria-label="' + helpPlain + '" title="' + helpPlain + '" tabindex="0">?</span>';
+        summaryParts.push('<strong>' + (i18n('summaryTotalLabel') || 'Total') + '</strong><br>' + formatMoneyLocalized(ctx.total || 0, cur) + ' ' + helpIcon);
         summaryParts.push('<strong>' + (i18n('summaryRouteLabel') || 'Route') + '</strong><br>' + routeText);
         summaryParts.push('<strong>' + (i18n('summaryServiceLabel') || 'Service') + '</strong><br>' + serviceText);
         if (ctx.discountAmount) {
@@ -1324,28 +1521,34 @@ window.initZonesMap = function initZonesMap(){
         summaryEl.classList.remove('is-hidden');
       }
       if (breakdownEl) {
-        const zoneLabel = i18n('breakdownZoneLabel', { n: ctx.pickupZone }) || ('Zone ' + String(ctx.pickupZone || ''));
-        const dropZoneLabel = i18n('breakdownZoneLabel', { n: ctx.dropZone }) || ('Zone ' + String(ctx.dropZone || ''));
         const lines = [];
-        lines.push('<strong><u>' + (i18n('breakdownZonesLabel') || 'Zones') + '</u></strong>');
-        lines.push('- <strong>' + (i18n('breakdownPickupLabel') || 'Pickup') + ':</strong> ' + zoneLabel);
-        lines.push('- <strong>' + (i18n('breakdownDeliveryLabel') || 'Delivery') + ':</strong> ' + dropZoneLabel);
-        lines.push('');
         lines.push('<strong><u>' + (i18n('breakdownLineItemsLabel') || 'Line items') + '</u></strong>');
-        lines.push('- <strong>' + (i18n('breakdownBaseServiceLabel') || 'Base service') + ':</strong> ' + formatMoneyLocalized(ctx.pickupCharge || 0, cur));
+        lines.push('- <strong>' + (i18n('breakdownBaseServiceLabel') || 'Pickup fee') + ':</strong> ' + formatMoneyLocalized(ctx.pickupCharge || 0, cur));
         lines.push('- <strong>' + (i18n('breakdownDistanceLabel') || 'Distance') + ':</strong> ' + formatMoneyLocalized(ctx.distanceTotal || 0, cur));
+        let deliveriesAdded = false;
         if (ctx.addressFeeCount) {
-          const perUnitValue = (ctx.addressFeePer != null)
-            ? Number(ctx.addressFeePer || 0)
-            : (ctx.addressFeeCount ? (Number(ctx.addressFee || 0) / Number(ctx.addressFeeCount || 1)) : 0);
-          const perUnit = formatMoneyLocalized(perUnitValue || 0, cur);
-          const deliveryLine = (i18n('breakdownDeliveryFeeLine', {
-            count: ctx.addressFeeCount,
-            unit: perUnit,
-            total: formatMoneyLocalized(ctx.addressFee || 0, cur)
-          }) || ('Deliveries: ' + ctx.addressFeeCount + ' x ' + perUnit + ' = ' + formatMoneyLocalized(ctx.addressFee || 0, cur)));
-          lines.push('- <strong>' + (i18n('breakdownDeliveriesLabel') || 'Deliveries') + ':</strong> ' + deliveryLine);
+          lines.push('<strong>' + (i18n('breakdownDeliveriesLabel') || 'Deliveries') + ':</strong>');
+          const legKms = Array.isArray(ctx.legKms) ? ctx.legKms : [];
+          const legPrices = Array.isArray(ctx.legPrices) ? ctx.legPrices : [];
+          const stopCount = Math.max(0, Number(ctx.addressFeeCount || 0) - 1);
+          for (let i = 0; i < stopCount; i++) {
+            const stopLabel = i18n('quoteEtaLabelStop', { n: (i + 1) }) || ('Stop ' + (i + 1));
+            const km = Number(legKms[i] || 0) || 0;
+            const kmText = formatNumberLocalized(km, 2) + ' km';
+            const distPrice = formatMoneyLocalized(Number(legPrices[i] || 0) || 0, cur);
+            lines.push('- <strong>' + stopLabel + ':</strong> ' + kmText + ' / ' + distPrice);
+          }
+          const dropLabel = i18n('quoteEtaLabelDropoff') || 'Dropoff';
+          const dropKm = Number(legKms[stopCount] || 0) || 0;
+          const dropKmText = formatNumberLocalized(dropKm, 2) + ' km';
+          const dropPrice = formatMoneyLocalized(Number(legPrices[stopCount] || 0) || 0, cur);
+          lines.push('- <strong>' + dropLabel + ':</strong> ' + dropKmText + ' / ' + dropPrice);
+          if (Number(ctx.addressFeePer || 0) > 0 && ctx.addressFee) {
+            lines.push('- <strong>' + (i18n('breakdownDeliveryFeesLabel') || 'Delivery fees') + ':</strong> ' + formatMoneyLocalized(ctx.addressFee || 0, cur));
+          }
+          deliveriesAdded = true;
         }
+        if (deliveriesAdded) lines.push('');
         if (ctx.cargoKey === 'large' && ctx.cargoAmount) {
           lines.push('- <strong>' + (i18n('breakdownLargeCargoLabel') || 'Large cargo') + ':</strong> ' + formatMoneyLocalized(ctx.cargoAmount || 0, cur));
         }
@@ -1362,7 +1565,7 @@ window.initZonesMap = function initZonesMap(){
         if (discountItems.length) {
           discountItems.forEach(function(item){
             const promoLabel = i18n('breakdownPromoLabel', { code: item.code }) || ('Promo ' + item.code);
-            lines.push('- ' + promoLabel + ': ' + formatMoneySigned(-(Math.abs(item.amount || 0)), cur));
+            lines.push('- <strong>' + promoLabel + '</strong>: ' + formatMoneySigned(-(Math.abs(item.amount || 0)), cur));
           });
           lines.push('- <strong>' + (i18n('breakdownDiscountTotalLabel') || 'Discount total') + ':</strong> ' + formatMoneySigned(-(Math.abs(ctx.discountTotal || 0)), cur));
         }
@@ -1373,7 +1576,10 @@ window.initZonesMap = function initZonesMap(){
       }
       if (blockEl) blockEl.classList.remove('is-hidden');
       const breakdownToggle = document.querySelector('.pricing-ui-copy');
-      if (breakdownToggle) breakdownToggle.open = false;
+      if (breakdownToggle && !breakdownToggle.open) {
+        // Keep the breakdown open while editing; do not auto-collapse.
+        breakdownToggle.open = true;
+      }
     } catch(_) {}
   }
   function buildQuoteTrace(ctx){
@@ -1459,12 +1665,12 @@ window.initZonesMap = function initZonesMap(){
             const place = ac.getPlace();
             const loc = place && place.geometry && place.geometry.location;
             if (loc) {
-              inputEl.dataset.lat = String(loc.lat());
-              inputEl.dataset.lng = String(loc.lng());
-              inputEl.dataset.address = (place.formatted_address || inputEl.value);
-              setAddressMarker(inputEl, loc);
+              const label = place.formatted_address || inputEl.value;
+              if (label) inputEl.value = label;
+              setInputLocationData(inputEl, loc, label);
               updateAddressMarkers();
               autoEstimateIfReady();
+              updateDeliverySummary();
             }
           } catch(_) {}
         });
@@ -1535,6 +1741,15 @@ window.initZonesMap = function initZonesMap(){
       });
     } catch(_) {}
   }
+  function handleStopListChange(){
+    try {
+      normalizeStopOrder();
+      updateAddressMarkers();
+      updateSubmitVisibility();
+      updateDeliverySummary();
+      if (typeof runEstimate === 'function') runEstimate();
+    } catch(_) {}
+  }
   // Create a stop item and return its input element
   function createStopItem(){
     if (!qStopsWrap) return null;
@@ -1563,8 +1778,7 @@ window.initZonesMap = function initZonesMap(){
       try {
         clearAddressMarker(i);
         w.remove();
-        normalizeStopOrder();
-        if (typeof runEstimate === 'function') runEstimate();
+        handleStopListChange();
       } catch(_) {}
     });
     if (h) w.appendChild(h);
@@ -1574,7 +1788,7 @@ window.initZonesMap = function initZonesMap(){
     attachAutocomplete(i);
     attachStopDragHandlers(w);
     attachAddressInputHandlers(i);
-    normalizeStopOrder();
+      handleStopListChange();
     return i;
   }
   function pickTargetInputForMapClick(){
@@ -1739,6 +1953,11 @@ window.initZonesMap = function initZonesMap(){
       if (qOut) qOut.textContent = '';
       if (qRate) qRate.textContent = '';
       window._lastQuoteContext = null;
+      if (qDeliverySummary) {
+        qDeliverySummary.classList.add('is-hidden');
+        qDeliverySummary.innerHTML = '';
+      }
+      updateSubmitVisibility();
       clearAllAddressMarkers();
       clearRouteOverlays();
     } catch(_) {}
@@ -1788,6 +2007,11 @@ window.initZonesMap = function initZonesMap(){
       }
       setBookingStatus('');
       window._lastQuoteContext = null;
+      if (qDeliverySummary) {
+        qDeliverySummary.classList.add('is-hidden');
+        qDeliverySummary.innerHTML = '';
+      }
+      updateSubmitVisibility();
       clearAllAddressMarkers();
       clearRouteOverlays();
     } catch(_){}
@@ -2189,6 +2413,21 @@ window.initZonesMap = function initZonesMap(){
       return String((inputEl.dataset && inputEl.dataset.address) || inputEl.value || '').trim();
     } catch(_) { return ''; }
   }
+  function setInputLocationData(inputEl, loc, label){
+    try {
+      if (!inputEl || !loc) return;
+      const lat = (typeof loc.lat === 'function') ? loc.lat() : loc.lat;
+      const lng = (typeof loc.lng === 'function') ? loc.lng() : loc.lng;
+      if (lat == null || lng == null) return;
+      inputEl.dataset.lat = String(lat);
+      inputEl.dataset.lng = String(lng);
+      const addr = String(label || inputEl.value || '').trim();
+      if (addr) inputEl.dataset.address = addr;
+      const ll = (google.maps && google.maps.LatLng) ? new google.maps.LatLng(lat, lng) : { lat, lng };
+      setAddressMarker(inputEl, ll);
+      if (typeof updateSubmitVisibility === 'function') updateSubmitVisibility();
+    } catch(_) {}
+  }
   function buildBookingPayload(){
     const ctx = window._lastQuoteContext || null;
     if (!ctx) return { error: i18n('quoteEstimateFirst') || 'Please calculate a quote first.' };
@@ -2199,9 +2438,12 @@ window.initZonesMap = function initZonesMap(){
     const notes = String((qNotes && qNotes.value) || '').trim();
     const updatesPreference = String((qUpdates && qUpdates.value) || '').trim();
     const consent = !!(qConsent && qConsent.checked);
-    if (!name) return { error: 'Please enter your name.' };
-    if (!email && !phone) return { error: 'Please add an email or phone number.' };
-    if (!consent) return { error: 'Please confirm you agree to be contacted.' };
+    if (!name) return { error: i18n('bookingNameRequired') || 'Please enter your name.' };
+    if (!email) return { error: i18n('bookingEmailRequired') || 'Please enter your email.' };
+    if (!isValidEmail(email)) return { error: i18n('bookingEmailInvalid') || 'Please enter a valid email.' };
+    if (!phone) return { error: i18n('bookingPhoneRequired') || 'Please enter your phone number.' };
+    if (!isValidPhone(phone)) return { error: i18n('bookingPhoneInvalid') || 'Please enter a valid phone number with country code.' };
+    if (!consent) return { error: i18n('bookingConsentRequired') || 'Please confirm you agree to be contacted.' };
     const dateVal = (qDate && qDate.value) ? String(qDate.value) : '';
     const timeVal = (qTime && qTime.value) ? String(qTime.value) : '';
     if (!dateVal || !timeVal) return { error: 'Please choose a date and time.' };
@@ -2325,8 +2567,10 @@ window.initZonesMap = function initZonesMap(){
       const origin = getZoneCenterLatLng('1');
       const pickupLoc = getLocationForInput(pickupEl) || await geocodeOne(pickupQ);
       if (seq !== estimateSeq) return;
+      if (pickupLoc) setInputLocationData(pickupEl, pickupLoc, pickupQ);
       const dropLoc = getLocationForInput(dropEl) || await geocodeOne(dropQ);
       if (seq !== estimateSeq) return;
+      if (dropLoc) setInputLocationData(dropEl, dropLoc, dropQ);
       const stopLocs = [];
       const stopAddrs = [];
       for (let idx = 0; idx < stopInputs.length; idx++){
@@ -2335,8 +2579,13 @@ window.initZonesMap = function initZonesMap(){
         if (!val) continue;
         const loc = getLocationForInput(el) || await geocodeOne(val);
         if (seq !== estimateSeq) return;
-        if (loc) { stopLocs.push(loc); stopAddrs.push((el && el.dataset && el.dataset.address) || val); }
+        if (loc) {
+          stopLocs.push(loc);
+          stopAddrs.push((el && el.dataset && el.dataset.address) || val);
+          setInputLocationData(el, loc, val);
+        }
       }
+      updateAddressMarkers();
       if (!pickupLoc || !dropLoc) { if (qOut) qOut.textContent = i18n('quoteAddressNotFound') || 'Address not found'; return; }
       // Out-of-service validation: any point without a zone should block estimation
       const pickupZoneNum = zoneNumberForLatLng(pickupLoc);
@@ -2371,6 +2620,7 @@ window.initZonesMap = function initZonesMap(){
       }
       const minimum = Number(dp && dp.minimum) || 0;
       if (!perKm || perKm <= 0) perKm = 1.5;
+      perKm = Math.round((perKm * 1.1) * 100) / 100;
       // Exclude approach leg (Base → Pickup) from distance pricing
       const legs = (routeDetails.legs || []).slice(1);
       let totalMeters = 0;
@@ -2409,12 +2659,13 @@ window.initZonesMap = function initZonesMap(){
       // Pickup zone full base charge
       const base = basePriceForZone(pickupZone);
       const pickupCharge = Math.round((base) * 100) / 100;
-      const addressFeePer = 1.5;
       const addressFeeCount = stopLocs.length + 1; // dropoff + stops (exclude pickup)
+      const addressFeePer = addressFeeCount >= 3 ? 1.25 : 0;
       const addressFee = Math.round((addressFeePer * addressFeeCount) * 100) / 100;
-      const preMinSubtotal = Math.round((distanceTotal + pickupCharge + addressFee) * 100) / 100;
-      let subtotal = Math.round((distanceTotal + pickupCharge + addressFee) * 100) / 100;
+      const preMinSubtotal = Math.round((distanceTotal + pickupCharge) * 100) / 100;
+      let subtotal = Math.round((distanceTotal + pickupCharge) * 100) / 100;
       if (minimum && subtotal < minimum) subtotal = minimum;
+      subtotal = Math.round((subtotal + addressFee) * 100) / 100;
       const cargoInfo = getCargoAdjustment();
       const cargoAmount = Math.round((subtotal * (cargoInfo.rate || 0)) * 100) / 100;
       subtotal = Math.round((subtotal + cargoAmount) * 100) / 100;
@@ -2491,6 +2742,8 @@ window.initZonesMap = function initZonesMap(){
         addressFee,
         addressFeePer,
         addressFeeCount,
+        legKms: parts.map(function(part){ return Number(part && part.km || 0) || 0; }),
+        legPrices: parts.map(function(part){ return Number(part && part.price || 0) || 0; }),
         cargoKey: cargoInfo.key,
         cargoAmount,
         surchargeRate: surchargeInfo.rate || 0,
@@ -2562,6 +2815,9 @@ window.initZonesMap = function initZonesMap(){
           discountAmount: discountAmount
         }
       };
+      updateDeliverySummary();
+      updateSubmitVisibility();
+      try { refreshAvailability(); } catch(_) {}
       return;
     } catch(e){
       if (qOut) {

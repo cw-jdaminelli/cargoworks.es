@@ -409,35 +409,76 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
  /* Buttons */
  .btn {
    display: inline-block;
-   background-color: var(--accent-secondary);
+  background-color: #2b0f3a;
    color: #ffffff;
    border: none;
-   border-radius: 999px;
-   padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
    font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   text-decoration: none;
   font-family: 'Oswald', 'Inter', system-ui, sans-serif;
-   box-shadow: 0 8px 20px rgba(255, 111, 161, 0.35);
+  box-shadow: 0 8px 18px rgba(43, 15, 58, 0.35);
    transition: background-color 160ms ease, box-shadow 160ms ease, transform 120ms ease;
  }
- .btn:hover { background-color: #ff5f95; box-shadow: 0 10px 24px rgba(255, 111, 161, 0.42); transform: translateY(-1px); }
+.btn:hover { background-color: #220c2f; box-shadow: 0 10px 22px rgba(43, 15, 58, 0.45); transform: translateY(-1px); }
  .btn:focus { outline: none; box-shadow: 0 0 0 3px rgba(107, 44, 169, 0.18), 0 8px 20px rgba(255, 111, 161, 0.35); }
  .btn:active { transform: translateY(0); }
 
  .btn.btn--ghost {
    background: #ffffff;
-   color: var(--accent-primary);
-   border: 1px solid rgba(107, 44, 169, 0.2);
+  color: #2b0f3a;
+  border: 1px solid rgba(43, 15, 58, 0.3);
    box-shadow: none;
-   text-transform: none;
-   letter-spacing: 0.02em;
+  text-transform: none;
+  letter-spacing: 0.02em;
  }
  .btn.btn--ghost:hover {
-   background: rgba(107, 44, 169, 0.08);
+  background: rgba(43, 15, 58, 0.1);
    box-shadow: none;
  }
+#quoteRefresh {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.booking-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+.booking-actions .quote-info {
+  margin-left: 0;
+}
+.delivery-summary {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: #2d1a4d;
+  max-width: 260px;
+}
+.booking-actions .btn {
+  flex: 0 0 auto;
+}
+.delivery-summary {
+  flex: 0 1 auto;
+}
+@media (max-width: 720px) {
+  .booking-actions { flex-wrap: wrap; }
+}
+.delivery-summary .summary-title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.delivery-summary .summary-total {
+  font-weight: 700;
+}
+#quoteRefresh {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: 'Oswald', 'Inter', system-ui, sans-serif;
+}
  
  .btn.btn--whatsapp { background-color: #25D366; box-shadow: 0 8px 20px rgba(37, 211, 102, 0.28); }
  .btn.btn--whatsapp:hover { background-color: #1fb257; box-shadow: 0 10px 24px rgba(37, 211, 102, 0.34); }
@@ -790,7 +831,12 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   height: 40px;
 }
 .quote-estimator #quoteNotes {
-  min-height: 48px;
+  box-sizing: border-box;
+  min-height: 28px;
+  height: 28px;
+  padding: 0.35rem 0.6rem;
+  line-height: 1.1;
+  resize: none;
 }
 .quote-estimator .btn { margin-top: 0.1rem; }
 .quote-estimator--accordion {
@@ -981,7 +1027,7 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 .config-section--addresses #quoteAddStop {
   padding: 0.35rem 0.6rem;
   font-size: 0.75rem;
-  border-radius: 999px;
+  border-radius: 8px;
   letter-spacing: 0.02em;
 }
 .cw-location-option {
@@ -1014,7 +1060,7 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   margin-left: 6px;
   background: transparent;
   border: 1px solid rgba(0,0,0,0.12);
-  border-radius: 6px;
+  border-radius: 8px;
   width: 26px;
   height: 26px;
   line-height: 22px;
@@ -1049,6 +1095,25 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   color: #2d1a4d;
   background: #f5f6fb;
   cursor: help;
+}
+.quote-booking-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.6rem 1rem;
+  width: 100%;
+}
+.quote-delivery-summary {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  color: #2d1a4d;
+}
+.quote-delivery-summary__title {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.2rem;
 }
 .quote-info[data-tooltip]:hover::after,
 .quote-info[data-tooltip]:focus::after {

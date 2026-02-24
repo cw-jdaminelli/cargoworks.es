@@ -198,6 +198,11 @@ if (langSelect) {
       quoteTraceInfo.setAttribute('aria-label', dict.quoteTraceInfo);
       quoteTraceInfo.setAttribute('title', dict.quoteTraceInfo);
     }
+    const quoteCalcHelp = document.getElementById('quoteCalcHelp');
+    if (quoteCalcHelp && dict.quoteCalcHelpPlain) {
+      quoteCalcHelp.setAttribute('aria-label', dict.quoteCalcHelpPlain);
+      quoteCalcHelp.setAttribute('title', dict.quoteCalcHelpPlain);
+    }
     const quoteAddStopBtn = document.getElementById('quoteAddStop');
     if (quoteAddStopBtn && dict.quoteAddStop) {
       quoteAddStopBtn.textContent = dict.quoteAddStop;
@@ -233,9 +238,17 @@ if (langSelect) {
     // Generic pass: apply any additional keys present in the dictionary to matching elements
     // This lets new pages (e.g., About) use translations without modifying this file again.
     Object.keys(dict).forEach((key) => {
+      if (key === 'pricingUiBreakdown' || key === 'pricingUiSummary') return;
       const hasNode = document.querySelector(`[data-i18n="${key}"]`) || document.getElementById(key);
       if (hasNode) setText(key, dict[key]);
     });
+
+    if (window._refreshPricingUi && window._lastPricingUiContext) {
+      try { window._refreshPricingUi(); } catch(_) {}
+    }
+    if (window.updateDeliverySummary) {
+      try { window.updateDeliverySummary(); } catch(_) {}
+    }
   };
 
   const initialLang = (typeof localStorage !== 'undefined' && localStorage.getItem('lang')) || langSelect.value || 'en';
