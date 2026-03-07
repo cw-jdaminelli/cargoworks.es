@@ -801,8 +801,10 @@ window.initZonesMap = function initZonesMap(){
   const qOut = document.getElementById('quoteResult');
   const qRate = document.getElementById('quoteRate');
   const qDate = document.getElementById('quoteDate');
+  const qDateDisplay = document.getElementById('quoteDateDisplay');
   const qTime = document.getElementById('quoteTime');
   const qCargo = document.getElementById('quoteCargo');
+  const qCargoOptionChips = Array.from(document.querySelectorAll('.cargo-option-chip[data-cargo-option]'));
   const qLoadRandom = document.getElementById('quoteLoadRandom');
   const qRefresh = document.getElementById('quoteRefresh');
   const qDiscount = document.getElementById('quoteDiscount');
@@ -811,6 +813,9 @@ window.initZonesMap = function initZonesMap(){
   const qTimeStatus = document.getElementById('quoteTimeStatus');
   const qName = document.getElementById('quoteName');
   const qEmail = document.getElementById('quoteEmail');
+  const qEmailConfirm = document.getElementById('quoteEmailConfirm');
+  const qPhoneCountry = document.getElementById('quotePhoneCountry');
+  const qPhoneCountryOptions = document.getElementById('quotePhoneCountryOptions');
   const qPhone = document.getElementById('quotePhone');
   const qNotes = document.getElementById('quoteNotes');
   const qUpdates = document.getElementById('quoteUpdates');
@@ -819,6 +824,8 @@ window.initZonesMap = function initZonesMap(){
   const qTraceInfoIcon = document.getElementById('quoteTraceInfoIcon');
   const qDeliverySummary = document.getElementById('quoteDeliverySummary');
   const qBookingStatus = document.getElementById('quoteBookingStatus');
+  const qSummaryCard = document.querySelector('.quote-summary-card');
+  const qSummaryHeading = document.querySelector('.quote-summary-heading');
   const DEFAULT_DISCOUNT_CODE = 'SELF5';
   // const qByDistance = document.getElementById('quoteByDistance'); // removed toggle
   // Show simple API status near estimator
@@ -844,6 +851,30 @@ window.initZonesMap = function initZonesMap(){
     } catch(_) {}
   })();
   function pad2(n){ return String(n).padStart(2, '0'); }
+  function formatDateDisplayValue(isoDate){
+    const v = String(isoDate || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return '';
+    const parts = v.split('-');
+    return parts[2] + '/' + parts[1] + '/' + parts[0];
+  }
+  function syncDateDisplay(){
+    try {
+      if (!qDateDisplay) return;
+      const iso = qDate && qDate.value ? String(qDate.value) : '';
+      qDateDisplay.value = formatDateDisplayValue(iso);
+    } catch(_) {}
+  }
+  function openNativeDatePicker(){
+    try {
+      if (!qDate) return;
+      if (typeof qDate.showPicker === 'function') {
+        qDate.showPicker();
+      } else {
+        qDate.focus();
+        qDate.click();
+      }
+    } catch(_) {}
+  }
   function defaultDateTimeInputs(){
     try {
       const now = new Date();
@@ -853,18 +884,51 @@ window.initZonesMap = function initZonesMap(){
       if (qTime && !qTime.value) {
         qTime.value = pad2(now.getHours()) + ':' + pad2(now.getMinutes());
       }
+      syncDateDisplay();
     } catch(_) {}
   }
   if (qDiscount && !qDiscount.value) qDiscount.value = DEFAULT_DISCOUNT_CODE;
   if (qDate) qDate.addEventListener('change', function(){
+    syncDateDisplay();
     try { autoEstimateIfReady(); refreshAvailability(); updateDeliverySummary(); } catch(_) {}
   });
+  if (qDateDisplay) {
+    qDateDisplay.addEventListener('click', openNativeDatePicker);
+    qDateDisplay.addEventListener('focus', openNativeDatePicker);
+    qDateDisplay.addEventListener('keydown', function(e){
+      if (!e) return;
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        openNativeDatePicker();
+      }
+    });
+  }
+  syncDateDisplay();
   if (qTime) qTime.addEventListener('change', function(){
     try { autoEstimateIfReady(); refreshAvailability(); updateDeliverySummary(); } catch(_) {}
   });
   if (qCargo) qCargo.addEventListener('change', function(){
-    try { autoEstimateIfReady(); updateDeliverySummary(); } catch(_) {}
+    try { autoEstimateIfReady(); updateDeliverySummary(); syncCargoOptionChips(); } catch(_) {}
   });
+  if (qCargoOptionChips && qCargoOptionChips.length && qCargo) {
+    qCargoOptionChips.forEach(function(chip){
+      chip.addEventListener('click', function(){
+        const value = String((chip && chip.dataset && chip.dataset.cargoOption) || '').trim();
+        if (!value) return;
+        if (qCargo.value !== value) {
+          qCargo.value = value;
+          try {
+            qCargo.dispatchEvent(new Event('change', { bubbles: true }));
+          } catch(_) {
+            autoEstimateIfReady();
+            updateDeliverySummary();
+          }
+        }
+        syncCargoOptionChips();
+      });
+    });
+    syncCargoOptionChips();
+  }
   let activeDiscountCodes = [];
   function setDiscountStatus(msg, isError){
     if (!qDiscountStatus) return;
@@ -913,19 +977,145 @@ window.initZonesMap = function initZonesMap(){
     }
     return true;
   }
+  function composePhoneWithCountry(countryCode, localPhone){
+    const rawLocal = String(localPhone || '').trim();
+    if (!rawLocal) return '';
+    const compactLocal = rawLocal.replace(/\s+/g, '');
+    if (compactLocal.startsWith('+')) return compactLocal;
+
+    const source = String(countryCode || '').trim();
+    const plusMatch = source.match(/\+(\d{1,4})/);
+    const ccDigits = plusMatch ? String(plusMatch[1]) : String(source || '+34').replace(/[^\d]/g, '');
+    const localDigits = compactLocal.replace(/[^\d]/g, '');
+    if (!ccDigits || !localDigits) return '';
+
+    const localNoPrefixZero = localDigits.replace(/^0+/, '') || localDigits;
+    return '+' + ccDigits + localNoPrefixZero;
+  }
+  function dialCodeFromCountryValue(value){
+    const source = String(value || '').trim();
+    if (!source) return '';
+    const plusMatch = source.match(/\+(\d{1,4})/);
+    if (plusMatch) return '+' + plusMatch[1];
+    const digits = source.replace(/[^\d]/g, '');
+    return digits ? ('+' + digits) : '';
+  }
+  function countryNameFromCountryValue(value){
+    return String(value || '').replace(/\s*\(\+\d{1,4}\)\s*$/, '').trim();
+  }
+  function normalizePhoneCountryInput(strictMode){
+    try {
+      if (!qPhoneCountry || !qPhoneCountryOptions) return;
+      const raw = String(qPhoneCountry.value || '').trim();
+      if (!raw) return;
+      const options = Array.from(qPhoneCountryOptions.options || []).map(function(opt){
+        return String((opt && opt.value) || '').trim();
+      }).filter(Boolean);
+
+      const isCodeInput = /^\+?\d+$/.test(raw);
+      if (isCodeInput) {
+        const typedDigits = raw.replace(/[^\d]/g, '');
+        if (!typedDigits) return;
+        const exactCode = '+' + typedDigits;
+        const codeMatches = options.filter(function(item){ return dialCodeFromCountryValue(item) === exactCode; });
+        if (codeMatches.length) {
+          if (exactCode === '+55') {
+            const brazil = codeMatches.find(function(item){ return /brasil/i.test(item); });
+            qPhoneCountry.value = brazil || codeMatches[0];
+          } else {
+            qPhoneCountry.value = codeMatches[0];
+          }
+          return;
+        }
+        if (strictMode) return;
+        const codePrefixMatches = options.filter(function(item){
+          return dialCodeFromCountryValue(item).replace(/^\+/, '').startsWith(typedDigits);
+        });
+        if (codePrefixMatches.length === 1) {
+          qPhoneCountry.value = codePrefixMatches[0];
+        }
+        return;
+      }
+
+      const normalizedRaw = raw.toLowerCase();
+      const exactLabel = options.find(function(item){ return item.toLowerCase() === normalizedRaw; });
+      if (exactLabel) {
+        qPhoneCountry.value = exactLabel;
+        return;
+      }
+      if (strictMode) return;
+
+      const startsWithMatches = options.filter(function(item){
+        return countryNameFromCountryValue(item).toLowerCase().startsWith(normalizedRaw);
+      });
+      if (startsWithMatches.length) {
+        qPhoneCountry.value = startsWithMatches[0];
+        return;
+      }
+
+      const containsMatches = options.filter(function(item){
+        return countryNameFromCountryValue(item).toLowerCase().includes(normalizedRaw);
+      });
+      if (containsMatches.length === 1 || normalizedRaw.length >= 4) {
+        if (containsMatches.length) qPhoneCountry.value = containsMatches[0];
+      }
+    } catch(_) {}
+  }
+  function syncCargoOptionChips(){
+    try {
+      if (!qCargo || !qCargoOptionChips || !qCargoOptionChips.length) return;
+      const selectedValue = String(qCargo.value || 'regular');
+      qCargoOptionChips.forEach(function(chip){
+        const value = String((chip && chip.dataset && chip.dataset.cargoOption) || '');
+        const active = value === selectedValue;
+        chip.classList.toggle('is-active', active);
+        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    } catch(_) {}
+  }
   function abbreviateAddress(label){
     const raw = String(label || '').trim();
     if (!raw) return '';
-    const head = raw.split(',')[0].trim();
-    if (!head) return raw;
-    return head.length > 28 ? head.slice(0, 26) + '…' : head;
+    let text = raw.replace(/\s+/g, ' ').trim();
+    const replacements = [
+      [/\bCarrer\b/gi, 'Cr.'],
+      [/\bCalle\b/gi, 'C.'],
+      [/\bAvinguda\b/gi, 'Av.'],
+      [/\bAvenida\b/gi, 'Av.'],
+      [/\bPasseig\b/gi, 'Pg.'],
+      [/\bPaseo\b/gi, 'Pg.'],
+      [/\bPla[çc]a\b/gi, 'Pl.'],
+      [/\bPlaza\b/gi, 'Pl.'],
+      [/\bRonda\b/gi, 'Rda.'],
+      [/\bTravessera\b/gi, 'Trav.'],
+      [/\bTraves[ií]a\b/gi, 'Trav.'],
+      [/\bCam[ií]\b/gi, 'Cam.'],
+      [/\bCamino\b/gi, 'Cam.'],
+      [/\bGran\s+Via\b/gi, 'G.V.']
+    ];
+    replacements.forEach(function(rule){ text = text.replace(rule[0], rule[1]); });
+    const parts = text.split(',').map(function(item){ return String(item || '').trim(); }).filter(Boolean);
+    let compact = parts[0] || text;
+    if (parts.length > 1) {
+      const second = parts[1];
+      // Keep street number only; suppress neighborhood, postcode/city and country details.
+      if (/^(\d+[A-Za-z]?|s\/?n|sn)$/i.test(second)) compact += ', ' + second;
+    }
+    return compact.length > 52 ? (compact.slice(0, 49) + '…') : compact;
+  }
+  function escapeHtml(value){
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
   function formatSummaryDateTime(dateVal, timeVal){
     try {
       if (!dateVal) return '';
-      const dt = new Date(String(dateVal) + 'T00:00:00');
-      const lang = document.documentElement.lang || 'en';
-      const dateText = new Intl.DateTimeFormat(lang, { weekday: 'short', day: '2-digit', month: 'long' }).format(dt);
+      const fullDate = formatDateDisplayValue(String(dateVal)) || String(dateVal);
+      const dateText = fullDate.replace(/\/\d{4}$/, '');
       const timeText = timeVal ? String(timeVal) : '';
       return timeText ? (dateText + ' · ' + timeText) : dateText;
     } catch(_) {
@@ -942,26 +1132,27 @@ window.initZonesMap = function initZonesMap(){
       qDeliverySummary.innerHTML = '';
       return;
     }
-    const pickupLabel = abbreviateAddress(addressLabelForInput(qPickup));
-    const dropLabel = abbreviateAddress(addressLabelForInput(qDrop));
-    const stopCount = Math.max(0, (qStopsWrap ? qStopsWrap.querySelectorAll('.quote-stop-item[data-role="stop"]').length : 0));
-    const dropCount = stopCount + 1;
-    const dropLabelText = dropCount === 1
-      ? (i18n('summaryDropSingle') || 'drop')
-      : (i18n('summaryDropPlural') || 'drops');
-    const dropLine = (pickupLabel && dropLabel)
-      ? (pickupLabel + ' → ' + dropLabel + ' · ' + dropCount + ' ' + dropLabelText)
-      : (dropCount + ' ' + dropLabelText);
+    const orderedInputs = getOrderedInputs().filter(function(el){ return !!getLocationForInput(el); });
+    const addressList = orderedInputs
+      .map(function(el){ return abbreviateAddress(addressLabelForInput(el)); })
+      .filter(Boolean);
+    const addressCount = addressList.length;
     const dateVal = qDate && qDate.value ? String(qDate.value) : '';
     const timeVal = qTime && qTime.value ? String(qTime.value) : '';
     const dateLine = formatSummaryDateTime(dateVal, timeVal);
     const totalLine = (i18n('summaryTotalLabel') || 'Total') + ' ' + formatMoneyLocalized(ctx.total || 0, ctx.cur || '€');
     const title = i18n('deliverySummaryTitle') || 'Delivery Summary';
+    const addressesLabel = i18n('summaryAddressesLabel') || 'Addresses';
     const lines = [];
-    lines.push('<div class="summary-title">' + title + '</div>');
-    if (dropLine) lines.push('<div>' + dropLine + '</div>');
-    if (dateLine) lines.push('<div>' + dateLine + '</div>');
-    lines.push('<div class="summary-total">' + totalLine + '</div>');
+    lines.push('<div class="summary-title">' + escapeHtml(title) + '</div>');
+    if (addressCount) {
+      lines.push('<div><strong>' + escapeHtml(addressesLabel) + ' (' + addressCount + '):</strong></div>');
+      addressList.forEach(function(item, idx){
+        lines.push('<div>' + (idx + 1) + '. ' + escapeHtml(item) + '</div>');
+      });
+    }
+    if (dateLine) lines.push('<div>' + escapeHtml(dateLine) + '</div>');
+    lines.push('<div class="summary-total">' + escapeHtml(totalLine) + '</div>');
     qDeliverySummary.innerHTML = lines.join('');
     qDeliverySummary.classList.remove('is-hidden');
   }
@@ -1063,6 +1254,15 @@ window.initZonesMap = function initZonesMap(){
     const dropReady = !!(qDrop && qDrop.dataset && qDrop.dataset.lat && qDrop.dataset.lng);
     const ready = pickupReady && dropReady;
     qSubmit.classList.toggle('is-hidden', !ready);
+    const hasSummaryContent = !!(
+      (window._lastQuoteContext) ||
+      (qRate && String(qRate.textContent || '').trim()) ||
+      (qOut && String(qOut.textContent || '').trim())
+    );
+    const hasBookingStatus = !!(qBookingStatus && String(qBookingStatus.textContent || '').trim());
+    const showSummaryCard = (ready && hasSummaryContent) || hasBookingStatus;
+    if (qSummaryCard) qSummaryCard.classList.toggle('is-hidden', !showSummaryCard);
+    if (qSummaryHeading) qSummaryHeading.classList.toggle('is-hidden', !showSummaryCard);
     if (qTraceInfoIcon) qTraceInfoIcon.classList.toggle('is-hidden', !ready);
     updateDeliverySummary();
   }
@@ -1071,7 +1271,19 @@ window.initZonesMap = function initZonesMap(){
   if (qStopsWrap) qStopsWrap.addEventListener('input', updateSubmitVisibility);
   if (qName) qName.addEventListener('input', updateSubmitVisibility);
   if (qEmail) qEmail.addEventListener('input', updateSubmitVisibility);
+  if (qEmailConfirm) qEmailConfirm.addEventListener('input', updateSubmitVisibility);
   if (qPhone) qPhone.addEventListener('input', updateSubmitVisibility);
+  if (qPhoneCountry) {
+    qPhoneCountry.addEventListener('input', function(){
+      normalizePhoneCountryInput(true);
+      updateSubmitVisibility();
+    });
+    qPhoneCountry.addEventListener('change', function(){
+      normalizePhoneCountryInput(false);
+      updateSubmitVisibility();
+    });
+    qPhoneCountry.addEventListener('blur', function(){ normalizePhoneCountryInput(false); });
+  }
   if (qConsent) qConsent.addEventListener('change', updateSubmitVisibility);
   updateSubmitVisibility();
 
@@ -1260,6 +1472,7 @@ window.initZonesMap = function initZonesMap(){
   function setDateInputValue(dateKey){
     if (!qDate || !dateKey) return;
     qDate.value = String(dateKey);
+    syncDateDisplay();
   }
   function addDays(date, days){
     const dt = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -1510,24 +1723,35 @@ window.initZonesMap = function initZonesMap(){
         const helpPlain = i18n('quoteCalcHelpPlain') || 'How is this calculated? View pricing details or contact us.';
         const helpHtml = i18n('quoteCalcHelp') || '<strong>How is this calculated?</strong> View pricing details or contact us.';
         const helpIcon = '<span class="quote-info" role="img" aria-label="' + helpPlain + '" title="' + helpPlain + '" tabindex="0">?</span>';
-        summaryParts.push('<strong>' + (i18n('summaryTotalLabel') || 'Total') + '</strong><br>' + formatMoneyLocalized(ctx.total || 0, cur) + ' ' + helpIcon);
-        summaryParts.push('<strong>' + (i18n('summaryRouteLabel') || 'Route') + '</strong><br>' + routeText);
-        summaryParts.push('<strong>' + (i18n('summaryServiceLabel') || 'Service') + '</strong><br>' + serviceText);
+        summaryParts.push('<div class="pricing-ui-summary__item"><strong>' + (i18n('summaryTotalLabel') || 'Total') + '</strong><br>' + formatMoneyLocalized(ctx.total || 0, cur) + ' ' + helpIcon + '</div>');
+        summaryParts.push('<div class="pricing-ui-summary__item"><strong>' + (i18n('summaryRouteLabel') || 'Route') + '</strong><br>' + routeText + '</div>');
+        summaryParts.push('<div class="pricing-ui-summary__item"><strong>' + (i18n('summaryServiceLabel') || 'Service') + '</strong><br>' + serviceText + '</div>');
         if (ctx.discountAmount) {
           const discountText = i18n('summaryDiscountApplied') || 'Discount applied';
-          summaryParts.push('<strong>' + (i18n('summaryDiscountLabel') || 'Discount') + '</strong><br>' + discountText);
+          summaryParts.push('<div class="pricing-ui-summary__item"><strong>' + (i18n('summaryDiscountLabel') || 'Discount') + '</strong><br>' + discountText + '</div>');
         }
-        summaryEl.innerHTML = summaryParts.join('<br><br>');
+        summaryEl.innerHTML = summaryParts.join('');
         summaryEl.classList.remove('is-hidden');
       }
       if (breakdownEl) {
-        const lines = [];
-        lines.push('<strong><u>' + (i18n('breakdownLineItemsLabel') || 'Line items') + '</u></strong>');
-        lines.push('- <strong>' + (i18n('breakdownBaseServiceLabel') || 'Pickup fee') + ':</strong> ' + formatMoneyLocalized(ctx.pickupCharge || 0, cur));
-        lines.push('- <strong>' + (i18n('breakdownDistanceLabel') || 'Distance') + ':</strong> ' + formatMoneyLocalized(ctx.distanceTotal || 0, cur));
-        let deliveriesAdded = false;
+        const html = [];
+        const pushSectionTitle = function(title){
+          html.push('<div class="pricing-ui-breakdown__section-title">' + title + '</div>');
+        };
+        const pushLine = function(label, value, extraClass){
+          const cls = extraClass ? (' pricing-ui-breakdown__line--' + extraClass) : '';
+          html.push(
+            '<div class="pricing-ui-breakdown__line' + cls + '">' +
+              '<span class="pricing-ui-breakdown__line-label">' + label + '</span>' +
+              '<span class="pricing-ui-breakdown__line-value">' + value + '</span>' +
+            '</div>'
+          );
+        };
+        pushSectionTitle(i18n('breakdownLineItemsLabel') || 'Line items');
+        pushLine(i18n('breakdownBaseServiceLabel') || 'Pickup fee', formatMoneyLocalized(ctx.pickupCharge || 0, cur));
+        pushLine(i18n('breakdownDistanceLabel') || 'Distance', formatMoneyLocalized(ctx.distanceTotal || 0, cur));
         if (ctx.addressFeeCount) {
-          lines.push('<strong>' + (i18n('breakdownDeliveriesLabel') || 'Deliveries') + ':</strong>');
+          pushSectionTitle(i18n('breakdownDeliveriesLabel') || 'Deliveries');
           const legKms = Array.isArray(ctx.legKms) ? ctx.legKms : [];
           const legPrices = Array.isArray(ctx.legPrices) ? ctx.legPrices : [];
           const stopCount = Math.max(0, Number(ctx.addressFeeCount || 0) - 1);
@@ -1536,43 +1760,89 @@ window.initZonesMap = function initZonesMap(){
             const km = Number(legKms[i] || 0) || 0;
             const kmText = formatNumberLocalized(km, 2) + ' km';
             const distPrice = formatMoneyLocalized(Number(legPrices[i] || 0) || 0, cur);
-            lines.push('- <strong>' + stopLabel + ':</strong> ' + kmText + ' / ' + distPrice);
+            pushLine(stopLabel, kmText + ' / ' + distPrice);
           }
           const dropLabel = i18n('quoteEtaLabelDropoff') || 'Dropoff';
           const dropKm = Number(legKms[stopCount] || 0) || 0;
           const dropKmText = formatNumberLocalized(dropKm, 2) + ' km';
           const dropPrice = formatMoneyLocalized(Number(legPrices[stopCount] || 0) || 0, cur);
-          lines.push('- <strong>' + dropLabel + ':</strong> ' + dropKmText + ' / ' + dropPrice);
+          pushLine(dropLabel, dropKmText + ' / ' + dropPrice);
           if (Number(ctx.addressFeePer || 0) > 0 && ctx.addressFee) {
-            lines.push('- <strong>' + (i18n('breakdownDeliveryFeesLabel') || 'Delivery fees') + ':</strong> ' + formatMoneyLocalized(ctx.addressFee || 0, cur));
+            pushLine(i18n('breakdownDeliveryFeesLabel') || 'Delivery fees', formatMoneyLocalized(ctx.addressFee || 0, cur));
           }
-          deliveriesAdded = true;
         }
-        if (deliveriesAdded) lines.push('');
+
+        pushLine(
+          i18n('breakdownSubtotalLabel') || 'Subtotal',
+          formatMoneyLocalized(ctx.subtotal || 0, cur),
+          'subtotal'
+        );
+
+        const adjustmentLines = [];
+        let discountEntryCount = 0;
+        let discountAggregateAmount = 0;
+
         if (ctx.cargoKey === 'large' && ctx.cargoAmount) {
-          lines.push('- <strong>' + (i18n('breakdownLargeCargoLabel') || 'Large cargo') + ':</strong> ' + formatMoneyLocalized(ctx.cargoAmount || 0, cur));
+          adjustmentLines.push({
+            label: i18n('breakdownLargeCargoLabel') || 'Large cargo',
+            value: formatMoneyLocalized(ctx.cargoAmount || 0, cur)
+          });
         }
         if (ctx.cargoKey === 'small' && ctx.cargoAmount) {
-          lines.push('- <strong>' + (i18n('breakdownSmallCargoLabel') || 'Small cargo') + ':</strong> ' + formatMoneySigned(ctx.cargoAmount || 0, cur));
+          adjustmentLines.push({
+            label: i18n('breakdownSmallCargoLabel') || 'Small cargo',
+            value: formatMoneySigned(ctx.cargoAmount || 0, cur)
+          });
+          discountEntryCount += 1;
+          discountAggregateAmount += Math.abs(Number(ctx.cargoAmount || 0));
         }
+
         if (ctx.isWeekendHoliday && ctx.weekendSurchargeAmount) {
-          lines.push('- <strong>' + (i18n('breakdownSurchargeWeekendLabel') || 'Weekend/holiday surcharge') + ':</strong> ' + formatMoneyLocalized(ctx.weekendSurchargeAmount || 0, cur));
+          adjustmentLines.push({
+            label: i18n('breakdownSurchargeWeekendLabel') || 'Weekend/holiday surcharge',
+            value: formatMoneyLocalized(ctx.weekendSurchargeAmount || 0, cur)
+          });
         }
         if (ctx.afterHours && ctx.afterHoursSurchargeAmount) {
-          lines.push('- <strong>' + (i18n('breakdownSurchargeAfterLabel') || 'After-hours surcharge') + ':</strong> ' + formatMoneyLocalized(ctx.afterHoursSurchargeAmount || 0, cur));
+          adjustmentLines.push({
+            label: i18n('breakdownSurchargeAfterLabel') || 'After-hours surcharge',
+            value: formatMoneyLocalized(ctx.afterHoursSurchargeAmount || 0, cur)
+          });
         }
         const discountItems = Array.isArray(ctx.discountItems) ? ctx.discountItems : [];
         if (discountItems.length) {
           discountItems.forEach(function(item){
             const promoLabel = i18n('breakdownPromoLabel', { code: item.code }) || ('Promo ' + item.code);
-            lines.push('- <strong>' + promoLabel + '</strong>: ' + formatMoneySigned(-(Math.abs(item.amount || 0)), cur));
+            adjustmentLines.push({
+              label: promoLabel,
+              value: formatMoneySigned(-(Math.abs(item.amount || 0)), cur)
+            });
+            discountEntryCount += 1;
+            discountAggregateAmount += Math.abs(Number(item.amount || 0));
           });
-          lines.push('- <strong>' + (i18n('breakdownDiscountTotalLabel') || 'Discount total') + ':</strong> ' + formatMoneySigned(-(Math.abs(ctx.discountTotal || 0)), cur));
+          if (discountEntryCount > 1) {
+            adjustmentLines.push({
+              label: i18n('breakdownDiscountTotalLabel') || 'Discount total',
+              value: formatMoneySigned(-discountAggregateAmount, cur)
+            });
+          }
         }
-        lines.push('');
-        lines.push('<strong><u>' + (i18n('breakdownTotalLabel') || 'Total') + '</u></strong>');
-        lines.push(formatMoneyLocalized(ctx.total || 0, cur));
-        breakdownEl.innerHTML = lines.join('<br>');
+
+        pushSectionTitle(i18n('breakdownAdjustmentsLabel') || 'Discounts and surcharges');
+        if (adjustmentLines.length) {
+          adjustmentLines.forEach(function(item){
+            pushLine(item.label, item.value);
+          });
+        } else {
+          pushLine(i18n('breakdownNoAdjustmentsLabel') || 'No discounts or surcharges', '—');
+        }
+
+        pushLine(
+          i18n('breakdownTotalLabel') || 'Total',
+          formatMoneyLocalized(ctx.total || 0, cur),
+          'total'
+        );
+        breakdownEl.innerHTML = html.join('');
       }
       if (blockEl) blockEl.classList.remove('is-hidden');
       const breakdownToggle = document.querySelector('.pricing-ui-copy');
@@ -1949,7 +2219,9 @@ window.initZonesMap = function initZonesMap(){
         });
       }
       if (qDate) qDate.value = '';
+      syncDateDisplay();
       if (qTime) qTime.value = '';
+      if (qPhoneCountry) qPhoneCountry.value = 'Spain (+34)';
       if (qOut) qOut.textContent = '';
       if (qRate) qRate.textContent = '';
       window._lastQuoteContext = null;
@@ -1979,12 +2251,14 @@ window.initZonesMap = function initZonesMap(){
       if (container) {
         Array.from(container.querySelectorAll('input, textarea')).forEach(function(el){
           try {
-            if (el.id === 'quotePickup' || el.id === 'quoteDropoff') return;
+            if (el.id === 'quotePickup' || el.id === 'quoteDropoff' || el.id === 'quoteDateDisplay') return;
             if (el.type === 'checkbox' || el.type === 'radio') { el.checked = false; } else { el.value = ''; }
             if (el.dataset) { delete el.dataset.lat; delete el.dataset.lng; delete el.dataset.address; }
           } catch(_) {}
         });
+        syncDateDisplay();
         if (qCargo) qCargo.value = 'regular';
+        if (qPhoneCountry) qPhoneCountry.value = 'Spain (+34)';
         if (qDiscount) qDiscount.value = DEFAULT_DISCOUNT_CODE;
         activeDiscountCodes = [];
         setDiscountStatus('');
@@ -2434,14 +2708,18 @@ window.initZonesMap = function initZonesMap(){
     try { defaultDateTimeInputs(); } catch(_) {}
     const name = String((qName && qName.value) || '').trim();
     const email = String((qEmail && qEmail.value) || '').trim();
-    const phone = String((qPhone && qPhone.value) || '').trim();
+    const emailConfirm = String((qEmailConfirm && qEmailConfirm.value) || '').trim();
+    const phoneRaw = String((qPhone && qPhone.value) || '').trim();
+    const phone = composePhoneWithCountry((qPhoneCountry && qPhoneCountry.value) || 'Spain (+34)', phoneRaw);
     const notes = String((qNotes && qNotes.value) || '').trim();
     const updatesPreference = String((qUpdates && qUpdates.value) || '').trim();
     const consent = !!(qConsent && qConsent.checked);
     if (!name) return { error: i18n('bookingNameRequired') || 'Please enter your name.' };
     if (!email) return { error: i18n('bookingEmailRequired') || 'Please enter your email.' };
     if (!isValidEmail(email)) return { error: i18n('bookingEmailInvalid') || 'Please enter a valid email.' };
-    if (!phone) return { error: i18n('bookingPhoneRequired') || 'Please enter your phone number.' };
+    if (!emailConfirm) return { error: i18n('bookingEmailConfirmRequired') || 'Please confirm your email.' };
+    if (email.toLowerCase() !== emailConfirm.toLowerCase()) return { error: i18n('bookingEmailMismatch') || 'Email confirmation does not match.' };
+    if (!phoneRaw) return { error: i18n('bookingPhoneRequired') || 'Please enter your phone number.' };
     if (!isValidPhone(phone)) return { error: i18n('bookingPhoneInvalid') || 'Please enter a valid phone number with country code.' };
     if (!consent) return { error: i18n('bookingConsentRequired') || 'Please confirm you agree to be contacted.' };
     const dateVal = (qDate && qDate.value) ? String(qDate.value) : '';
@@ -2732,6 +3010,7 @@ window.initZonesMap = function initZonesMap(){
       setPricingUiCopy({
         cur,
         total,
+        subtotal,
         totalKm,
         etaTotalMins,
         dropCount: stopInputs.length + 1,

@@ -21,6 +21,27 @@
     .dispatcher-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
     .dispatcher-header h1 { font-family: 'Barlow Condensed', 'Oswald', sans-serif; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: 0.04em; text-transform: uppercase; }
     .dispatcher-filters { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+    .dispatcher-tools {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+    }
+    .dispatcher-tools input[type="text"],
+    .dispatcher-tools input[type="date"],
+    .dispatcher-tools select {
+      width: 100%;
+      padding: 0.5rem 0.6rem;
+      border-radius: 10px;
+      border: 1px solid var(--dispatch-border);
+      background: #fff;
+    }
+    .dispatcher-tools .dispatcher-controls-inline {
+      display: flex;
+      gap: 0.45rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
     .dispatcher-filters input[type="date"] { padding: 0.45rem 0.6rem; border-radius: 10px; border: 1px solid var(--dispatch-border); background: #fff; }
     .dispatcher-filters input[type="text"] { padding: 0.45rem 0.6rem; border-radius: 10px; border: 1px solid var(--dispatch-border); background: #fff; }
     .dispatcher-search { display: flex; align-items: center; gap: 0.35rem; background: #fff; border: 1px solid var(--dispatch-border); border-radius: 10px; padding: 0.2rem 0.5rem; }
@@ -106,13 +127,46 @@
       <div class="dispatcher-filters">
         <input id="dispatcherDate" type="date" aria-label="Date" />
         <button id="dispatcherLoad" class="btn" type="button">Load day</button>
+        <button id="dispatcherLoadAll" class="btn btn--ghost" type="button">Load all orders</button>
         <button id="dispatcherToday" class="btn btn--ghost" type="button">Today</button>
         <div class="dispatcher-search" aria-label="Search by reference">
           <span class="dispatcher-search-prefix">CW-</span>
           <input id="dispatcherSearchInput" type="text" placeholder="YYYYMMDD-XXXX" aria-label="Reference suffix" />
         </div>
         <button id="dispatcherSearchButton" class="btn btn--ghost" type="button">Search</button>
+        <button id="dispatcherLogSheet" class="btn btn--ghost" type="button">Orders log sheet</button>
         <span id="dispatcherStatus" class="dispatcher-status" aria-live="polite"></span>
+      </div>
+    </div>
+    <div class="dispatcher-tools" aria-label="Order filters">
+      <input id="dispatcherKeyword" type="text" placeholder="Keyword in any order field" aria-label="Keyword search" />
+      <select id="dispatcherFilterStatus" aria-label="Filter by status">
+        <option value="">Any status</option>
+      </select>
+      <select id="dispatcherFilterUpdates" aria-label="Filter by updates preference">
+        <option value="">Any updates preference</option>
+      </select>
+      <select id="dispatcherFilterPayment" aria-label="Filter by payment status">
+        <option value="">Any payment status</option>
+        <option value="pending">Payment pending</option>
+        <option value="paid">Payment paid</option>
+        <option value="failed">Payment failed</option>
+        <option value="none">Payment none</option>
+      </select>
+      <input id="dispatcherFromDate" type="date" aria-label="From date" />
+      <input id="dispatcherToDate" type="date" aria-label="To date" />
+      <select id="dispatcherSort" aria-label="Sort orders">
+        <option value="newest">Sort: Newest first</option>
+        <option value="oldest">Sort: Oldest first</option>
+        <option value="time-asc">Sort: Time ascending</option>
+        <option value="time-desc">Sort: Time descending</option>
+        <option value="status">Sort: Status A-Z</option>
+        <option value="customer">Sort: Customer A-Z</option>
+        <option value="reference">Sort: Reference A-Z</option>
+      </select>
+      <div class="dispatcher-controls-inline">
+        <button id="dispatcherApplyFilters" class="btn btn--ghost" type="button">Apply filters</button>
+        <button id="dispatcherClearFilters" class="btn btn--ghost" type="button">Clear filters</button>
       </div>
     </div>
     <div id="dispatcherOrders" class="dispatcher-orders"></div>

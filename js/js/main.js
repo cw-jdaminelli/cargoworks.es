@@ -131,6 +131,12 @@ if (langSelect) {
       quoteDate.setAttribute('aria-label', dict.quotePickupDate);
       quoteDate.setAttribute('title', dict.quotePickupDate);
     }
+    const quoteDateDisplay = document.getElementById('quoteDateDisplay');
+    if (quoteDateDisplay && dict.quotePickupDate) {
+      quoteDateDisplay.setAttribute('aria-label', dict.quotePickupDate);
+      quoteDateDisplay.setAttribute('title', dict.quotePickupDate);
+      if (!quoteDateDisplay.value) quoteDateDisplay.placeholder = 'DD/MM/YYYY';
+    }
     const quoteTime = document.getElementById('quoteTime');
     if (quoteTime && dict.quotePickupTime) {
       quoteTime.setAttribute('aria-label', dict.quotePickupTime);
@@ -160,6 +166,19 @@ if (langSelect) {
     if (quoteEmail && dict.quoteEmailPlaceholder) {
       quoteEmail.placeholder = dict.quoteEmailPlaceholder;
       quoteEmail.setAttribute('aria-label', dict.quoteEmailPlaceholder);
+    }
+    const quoteEmailConfirm = document.getElementById('quoteEmailConfirm');
+    if (quoteEmailConfirm && dict.quoteEmailConfirmPlaceholder) {
+      quoteEmailConfirm.placeholder = dict.quoteEmailConfirmPlaceholder;
+      quoteEmailConfirm.setAttribute('aria-label', dict.quoteEmailConfirmPlaceholder);
+    }
+    const quotePhoneCountry = document.getElementById('quotePhoneCountry');
+    if (quotePhoneCountry && dict.quotePhoneCountryLabel) {
+      quotePhoneCountry.setAttribute('aria-label', dict.quotePhoneCountryLabel);
+      quotePhoneCountry.setAttribute('title', dict.quotePhoneCountryLabel);
+    }
+    if (quotePhoneCountry && dict.quotePhoneCountryPlaceholder) {
+      quotePhoneCountry.placeholder = dict.quotePhoneCountryPlaceholder;
     }
     const quotePhone = document.getElementById('quotePhone');
     if (quotePhone && dict.quotePhonePlaceholder) {

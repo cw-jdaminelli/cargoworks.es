@@ -9,13 +9,30 @@
 
   const dateInput = document.getElementById('dispatcherDate');
   const loadBtn = document.getElementById('dispatcherLoad');
+  const loadAllBtn = document.getElementById('dispatcherLoadAll');
   const todayBtn = document.getElementById('dispatcherToday');
   const searchInput = document.getElementById('dispatcherSearchInput');
   const searchBtn = document.getElementById('dispatcherSearchButton');
+  const logSheetBtn = document.getElementById('dispatcherLogSheet');
+
+  const keywordInput = document.getElementById('dispatcherKeyword');
+  const filterStatus = document.getElementById('dispatcherFilterStatus');
+  const filterUpdates = document.getElementById('dispatcherFilterUpdates');
+  const filterPayment = document.getElementById('dispatcherFilterPayment');
+  const filterFromDate = document.getElementById('dispatcherFromDate');
+  const filterToDate = document.getElementById('dispatcherToDate');
+  const sortSelect = document.getElementById('dispatcherSort');
+  const applyFiltersBtn = document.getElementById('dispatcherApplyFilters');
+  const clearFiltersBtn = document.getElementById('dispatcherClearFilters');
+
   const statusEl = document.getElementById('dispatcherStatus');
   const summaryEl = document.getElementById('dispatcherSummary');
   const ordersWrap = document.getElementById('dispatcherOrders');
+
   let toastTimer = null;
+  let allOrders = [];
+  let loadMode = 'none';
+  let loadLabel = '';
 
   function setStatus(msg){
     if (statusEl) statusEl.textContent = msg || '';
@@ -93,7 +110,7 @@
 
   function buildSelect(options, value){
     const sel = document.createElement('select');
-    options.forEach(opt => {
+    options.forEach(function(opt){
       const o = document.createElement('option');
       o.value = opt.value;
       o.textContent = opt.label;
@@ -113,14 +130,32 @@
     return a;
   }
 
-  async function fetchOrders(dateKey){
+  async function fetchOrders(params){
     const token = currentToken();
     if (!API_BASE) throw new Error('Booking API is not configured.');
-    const url = API_BASE + '?action=adminList&date=' + encodeURIComponent(dateKey) + '&token=' + encodeURIComponent(token);
+    const query = new URLSearchParams();
+    query.set('action', 'adminList');
+    query.set('token', token);
+    if (params && params.date) query.set('date', String(params.date));
+    if (params && params.scope) query.set('scope', String(params.scope));
+    if (params && params.from) query.set('from', String(params.from));
+    if (params && params.to) query.set('to', String(params.to));
+    const url = API_BASE + '?' + query.toString();
     const res = await fetch(url);
     const json = await res.json();
     if (!res.ok || json.error) throw new Error(json.error || 'Request failed');
     return Array.isArray(json.orders) ? json.orders : [];
+  }
+
+  async function fetchLogSheetInfo(){
+    const token = currentToken();
+    const query = new URLSearchParams();
+    query.set('action', 'adminSheetInfo');
+    query.set('token', token);
+    const res = await fetch(API_BASE + '?' + query.toString());
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || 'Could not load sheet info');
+    return json;
   }
 
   async function postAdmin(payload){
@@ -139,7 +174,7 @@
     if (!Array.isArray(items) || !items.length) return el('div', 'dispatcher-status', 'No updates yet.');
     const ul = document.createElement('ul');
     ul.className = 'dispatcher-timeline';
-    items.slice().reverse().slice(0, 6).forEach(item => {
+    items.slice().reverse().slice(0, 6).forEach(function(item){
       const li = document.createElement('li');
       const ts = item && item.ts ? String(item.ts).replace('T', ' ').replace('Z', '') : '';
       const status = item && item.status ? String(item.status) : '';
@@ -150,18 +185,33 @@
     return ul;
   }
 
+  function setLink(anchor, url){
+    if (!anchor) return;
+    const clean = String(url || '').trim();
+    if (!clean) {
+      anchor.href = '#';
+      anchor.style.pointerEvents = 'none';
+      anchor.style.opacity = '0.5';
+      return;
+    }
+    anchor.href = clean;
+    anchor.style.pointerEvents = 'auto';
+    anchor.style.opacity = '1';
+  }
+
   function orderCard(order){
     const card = el('div', 'dispatcher-card');
     const header = el('h3', '', (order.reference || 'Order') + ' - ' + (order.status || ''));
     card.appendChild(header);
 
     const meta = el('div', 'dispatcher-meta');
+    meta.appendChild(el('span', '', 'Date: ' + (order.schedule && order.schedule.date ? order.schedule.date : '-')));
     meta.appendChild(el('span', '', 'Time: ' + (order.schedule && order.schedule.time ? order.schedule.time : '-')));
     meta.appendChild(el('span', '', 'Customer: ' + (order.customer && order.customer.name ? order.customer.name : '-')));
     meta.appendChild(el('span', '', 'Email: ' + (order.customer && order.customer.email ? order.customer.email : '-')));
     meta.appendChild(el('span', '', 'Phone: ' + (order.customer && order.customer.phone ? order.customer.phone : '-')));
-    meta.appendChild(el('span', '', 'Preference: ' + (order.updatesPreference || '')));
-    meta.appendChild(el('span', '', 'Payment: ' + (order.paymentStatus || '')));
+    meta.appendChild(el('span', '', 'Preference: ' + (order.updatesPreference || '-')));
+    meta.appendChild(el('span', '', 'Payment: ' + (order.paymentStatus || '-')));
     card.appendChild(meta);
 
     const links = el('div', 'dispatcher-links');
@@ -266,7 +316,7 @@
           paymentStatus: paymentSelect.value
         });
         setStatus('Status updated.');
-      } catch(err) {
+      } catch(_) {
         setStatus('Update failed.');
       }
     });
@@ -292,7 +342,7 @@
         }
         if (message) message.value = '';
         setStatus('Update sent.');
-      } catch(err) {
+      } catch(_) {
         setStatus('Update failed.');
       }
     });
@@ -330,7 +380,7 @@
           } else {
             setStatus('POD upload complete.');
           }
-        } catch(err) {
+        } catch(_) {
           setStatus('POD upload failed.');
         } finally {
           podInput.value = '';
@@ -344,34 +394,195 @@
     return card;
   }
 
-  function setLink(anchor, url){
-    if (!anchor) return;
-    const clean = String(url || '').trim();
-    if (!clean) {
-      anchor.href = '#';
-      anchor.style.pointerEvents = 'none';
-      anchor.style.opacity = '0.5';
-      return;
+  function orderDateKey(order){
+    return String(order && order.schedule && order.schedule.date || '').trim();
+  }
+
+  function orderTimeLabel(order){
+    return String(order && order.schedule && order.schedule.time || '').trim();
+  }
+
+  function orderDateTimeMs(order){
+    const iso = String(order && order.schedule && order.schedule.startIso || '').trim();
+    if (iso) {
+      const ms = Date.parse(iso);
+      if (!Number.isNaN(ms)) return ms;
     }
-    anchor.href = clean;
-    anchor.style.pointerEvents = 'auto';
-    anchor.style.opacity = '1';
+    const dateKey = orderDateKey(order);
+    const time = orderTimeLabel(order) || '00:00';
+    const ms = Date.parse(dateKey + 'T' + time + ':00');
+    return Number.isNaN(ms) ? 0 : ms;
+  }
+
+  function orderSearchText(order){
+    const bits = [];
+    bits.push(order.reference || '');
+    bits.push(order.title || '');
+    bits.push(order.status || '');
+    bits.push(order.paymentStatus || '');
+    bits.push(order.updatesPreference || '');
+    bits.push(order.notes || '');
+    bits.push(orderDateKey(order));
+    bits.push(orderTimeLabel(order));
+    const customer = order.customer || {};
+    bits.push(customer.name || '');
+    bits.push(customer.email || '');
+    bits.push(customer.phone || '');
+    const route = order.route || {};
+    if (route.pickup && route.pickup.address) bits.push(route.pickup.address);
+    if (route.dropoff && route.dropoff.address) bits.push(route.dropoff.address);
+    if (Array.isArray(route.stops)) {
+      route.stops.forEach(function(stop){
+        if (stop && stop.address) bits.push(stop.address);
+      });
+    }
+    if (Array.isArray(order.timeline)) {
+      order.timeline.forEach(function(item){
+        bits.push(item && item.status ? String(item.status) : '');
+        bits.push(item && item.message ? String(item.message) : '');
+      });
+    }
+    return bits.join(' | ').toLowerCase();
+  }
+
+  function compareByString(a, b){
+    return String(a || '').localeCompare(String(b || ''));
+  }
+
+  function sortOrders(orders, mode){
+    const list = orders.slice();
+    if (mode === 'oldest') {
+      list.sort(function(a, b){ return orderDateTimeMs(a) - orderDateTimeMs(b); });
+      return list;
+    }
+    if (mode === 'time-asc') {
+      list.sort(function(a, b){ return compareByString(orderTimeLabel(a), orderTimeLabel(b)); });
+      return list;
+    }
+    if (mode === 'time-desc') {
+      list.sort(function(a, b){ return compareByString(orderTimeLabel(b), orderTimeLabel(a)); });
+      return list;
+    }
+    if (mode === 'status') {
+      list.sort(function(a, b){ return compareByString(a.status, b.status); });
+      return list;
+    }
+    if (mode === 'customer') {
+      list.sort(function(a, b){
+        return compareByString(a && a.customer && a.customer.name, b && b.customer && b.customer.name);
+      });
+      return list;
+    }
+    if (mode === 'reference') {
+      list.sort(function(a, b){ return compareByString(a.reference, b.reference); });
+      return list;
+    }
+    list.sort(function(a, b){ return orderDateTimeMs(b) - orderDateTimeMs(a); });
+    return list;
+  }
+
+  function renderOrders(orders){
+    if (!ordersWrap) return;
+    ordersWrap.innerHTML = '';
+    orders.forEach(function(order){ ordersWrap.appendChild(orderCard(order)); });
+  }
+
+  function setSelectOptions(selectEl, values, defaultLabel){
+    if (!selectEl) return;
+    const prev = String(selectEl.value || '');
+    selectEl.innerHTML = '';
+    const head = document.createElement('option');
+    head.value = '';
+    head.textContent = defaultLabel;
+    selectEl.appendChild(head);
+    values.forEach(function(value){
+      const clean = String(value || '').trim();
+      if (!clean) return;
+      const opt = document.createElement('option');
+      opt.value = clean;
+      opt.textContent = clean;
+      selectEl.appendChild(opt);
+    });
+    if (prev && Array.from(selectEl.options).some(function(o){ return o.value === prev; })) {
+      selectEl.value = prev;
+    }
+  }
+
+  function refreshFilterOptions(){
+    const statuses = Array.from(new Set(allOrders.map(function(order){ return order && order.status ? String(order.status).trim() : ''; }).filter(Boolean))).sort();
+    const updates = Array.from(new Set(allOrders.map(function(order){ return order && order.updatesPreference ? String(order.updatesPreference).trim() : ''; }).filter(Boolean))).sort();
+    setSelectOptions(filterStatus, statuses, 'Any status');
+    setSelectOptions(filterUpdates, updates, 'Any updates preference');
+  }
+
+  function filterOrders(){
+    const keyword = String(keywordInput && keywordInput.value || '').trim().toLowerCase();
+    const status = String(filterStatus && filterStatus.value || '').trim();
+    const updates = String(filterUpdates && filterUpdates.value || '').trim();
+    const payment = String(filterPayment && filterPayment.value || '').trim();
+    const fromDate = String(filterFromDate && filterFromDate.value || '').trim();
+    const toDate = String(filterToDate && filterToDate.value || '').trim();
+    const sortMode = String(sortSelect && sortSelect.value || 'newest').trim();
+
+    const filtered = allOrders.filter(function(order){
+      if (status && String(order.status || '') !== status) return false;
+      if (updates && String(order.updatesPreference || '') !== updates) return false;
+      if (payment && String(order.paymentStatus || '') !== payment) return false;
+      const dateKey = orderDateKey(order);
+      if (fromDate && dateKey && dateKey < fromDate) return false;
+      if (toDate && dateKey && dateKey > toDate) return false;
+      if (keyword) {
+        const hay = orderSearchText(order);
+        if (hay.indexOf(keyword) === -1) return false;
+      }
+      return true;
+    });
+    return sortOrders(filtered, sortMode);
+  }
+
+  function applyFilters(){
+    const visible = filterOrders();
+    renderOrders(visible);
+    const scope = loadMode === 'day'
+      ? ('for ' + loadLabel)
+      : (loadMode === 'all' ? 'from all loaded orders' : (loadMode === 'reference' ? 'for reference search' : ''));
+    setSummary('Showing ' + visible.length + ' of ' + allOrders.length + ' order(s)' + (scope ? (' ' + scope) : '') + '.');
   }
 
   async function loadDay(dateKey){
     try {
-      setStatus('Loading...');
-      const orders = await fetchOrders(dateKey);
-      if (ordersWrap) ordersWrap.innerHTML = '';
-      orders.sort((a, b) => String(a.schedule && a.schedule.time || '').localeCompare(String(b.schedule && b.schedule.time || '')));
-      orders.forEach(order => {
-        if (ordersWrap) ordersWrap.appendChild(orderCard(order));
-      });
+      setStatus('Loading day...');
+      const orders = await fetchOrders({ date: dateKey });
+      allOrders = orders;
+      loadMode = 'day';
+      loadLabel = dateKey;
+      refreshFilterOptions();
+      applyFilters();
       setStatus('Loaded ' + orders.length + ' order(s).');
-      setSummary('Showing ' + orders.length + ' booking(s) for ' + dateKey + '.');
     } catch(err) {
-      if (ordersWrap) ordersWrap.innerHTML = '';
+      allOrders = [];
+      renderOrders([]);
       setStatus(err && err.message ? err.message : 'Could not load orders.');
+      setSummary('No data yet.');
+    }
+  }
+
+  async function loadAll(){
+    try {
+      setStatus('Loading all orders...');
+      const from = String(filterFromDate && filterFromDate.value || '').trim();
+      const to = String(filterToDate && filterToDate.value || '').trim();
+      const orders = await fetchOrders({ scope: 'all', from: from, to: to });
+      allOrders = orders;
+      loadMode = 'all';
+      loadLabel = from || to ? (from + ' .. ' + to) : 'all';
+      refreshFilterOptions();
+      applyFilters();
+      setStatus('Loaded ' + orders.length + ' total order(s).');
+    } catch(err) {
+      allOrders = [];
+      renderOrders([]);
+      setStatus(err && err.message ? err.message : 'Could not load all orders.');
       setSummary('No data yet.');
     }
   }
@@ -386,19 +597,44 @@
     }
     try {
       setStatus('Searching...');
-      const orders = await fetchOrders(dateKey);
-      const matches = orders.filter(order => String(order.reference || '').toUpperCase() === cleanRef);
-      if (ordersWrap) ordersWrap.innerHTML = '';
-      matches.forEach(order => {
-        if (ordersWrap) ordersWrap.appendChild(orderCard(order));
-      });
+      const orders = await fetchOrders({ date: dateKey });
+      allOrders = orders.filter(function(order){ return String(order.reference || '').toUpperCase() === cleanRef; });
+      loadMode = 'reference';
+      loadLabel = cleanRef;
+      refreshFilterOptions();
+      applyFilters();
       if (dateInput) dateInput.value = dateKey;
-      setSummary(matches.length ? ('Found ' + matches.length + ' matching order(s).') : 'No matching orders found.');
-      setStatus(matches.length ? 'Search complete.' : 'No matches.');
+      setStatus(allOrders.length ? 'Search complete.' : 'No matches.');
     } catch(err) {
-      if (ordersWrap) ordersWrap.innerHTML = '';
+      allOrders = [];
+      renderOrders([]);
       setStatus(err && err.message ? err.message : 'Search failed.');
+      setSummary('No data yet.');
     }
+  }
+
+  async function openLogSheet(){
+    try {
+      setStatus('Loading log sheet...');
+      const info = await fetchLogSheetInfo();
+      const url = String(info && info.url || '').trim();
+      if (!url) throw new Error('Log sheet URL is unavailable');
+      window.open(url, '_blank');
+      setStatus('Log sheet opened.');
+    } catch (err) {
+      setStatus(err && err.message ? err.message : 'Could not open log sheet.');
+    }
+  }
+
+  function clearFilters(){
+    if (keywordInput) keywordInput.value = '';
+    if (filterStatus) filterStatus.value = '';
+    if (filterUpdates) filterUpdates.value = '';
+    if (filterPayment) filterPayment.value = '';
+    if (filterFromDate) filterFromDate.value = '';
+    if (filterToDate) filterToDate.value = '';
+    if (sortSelect) sortSelect.value = 'newest';
+    applyFilters();
   }
 
   function handleGate(){
@@ -420,6 +656,8 @@
     loadDay(value);
   });
 
+  if (loadAllBtn) loadAllBtn.addEventListener('click', loadAll);
+
   if (todayBtn) todayBtn.addEventListener('click', function(){
     const today = formatDateKey(new Date());
     if (dateInput) dateInput.value = today;
@@ -437,6 +675,23 @@
       const ref = buildReferenceFromSuffix(searchInput.value);
       loadByReference(ref);
     }
+  });
+
+  if (logSheetBtn) logSheetBtn.addEventListener('click', openLogSheet);
+  if (applyFiltersBtn) applyFiltersBtn.addEventListener('click', applyFilters);
+  if (clearFiltersBtn) clearFiltersBtn.addEventListener('click', clearFilters);
+
+  [keywordInput, filterStatus, filterUpdates, filterPayment, filterFromDate, filterToDate, sortSelect].forEach(function(control){
+    if (!control) return;
+    const eventName = control.tagName === 'INPUT' ? 'input' : 'change';
+    control.addEventListener(eventName, function(){
+      if (eventName === 'input') {
+        if (window._dispatcherFilterTimer) window.clearTimeout(window._dispatcherFilterTimer);
+        window._dispatcherFilterTimer = window.setTimeout(applyFilters, 150);
+      } else {
+        applyFilters();
+      }
+    });
   });
 
   (function init(){

@@ -11,6 +11,9 @@ const LAST_ERROR_PROPERTY = 'LAST_ERROR';
 const LAST_PAYLOAD_PROPERTY = 'LAST_PAYLOAD';
 const ADMIN_TOKEN_PROPERTY = 'ADMIN_TOKEN';
 const POD_FOLDER_PROPERTY = 'POD_FOLDER_ID';
+const ORDERS_LOG_SHEET_PROPERTY = 'ORDERS_LOG_SHEET_ID';
+const ORDERS_LOG_SPREADSHEET_NAME = 'Cargoworks Orders Log';
+const ORDERS_LOG_TAB_NAME = 'OrdersLog';
 const ADMIN_DATA_START = '--- ADMIN DATA ---';
 const ADMIN_DATA_END = '--- END ADMIN DATA ---';
 const DEFAULT_STATUS_LABEL = 'Pending payment';
@@ -33,6 +36,9 @@ function doGet(e){
     }
     if (action === 'adminList') {
       return handleAdminList(params);
+    }
+    if (action === 'adminSheetInfo') {
+      return handleAdminSheetInfo(params);
     }
     const dateKey = String(params.date || '').trim();
     if (!dateKey) return jsonResponse({ error: 'Missing date parameter' }, 400);
@@ -97,8 +103,18 @@ function doPost(e){
       location: location
     });
 
-    const ref = event.getId();
+    const eventId = event.getId();
     const mailStatus = sendEmails(enrichedPayload, shortRef, payment && payment.url, whatsappUrl, '');
+    appendOrderLogEntry({
+      action: 'booking_created',
+      eventId: eventId,
+      payload: enrichedPayload,
+      adminData: adminData,
+      status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: 'Booking created via web app',
+      build: BUILD_ID
+    });
     const link = '';
     clearLastError();
     return jsonResponse({
@@ -505,17 +521,58 @@ function handleAdminList(params){
     if (!isAdminAuthorized(String(params.token || '').trim())) {
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
+    const scope = String(params.scope || '').trim().toLowerCase();
     const dateKey = String(params.date || '').trim();
-    if (!dateKey) return jsonResponse({ error: 'Missing date parameter' }, 400);
-    const range = dayRangeFromKey(dateKey, TIMEZONE);
-    if (!range) return jsonResponse({ error: 'Invalid date parameter' }, 400);
+    const fromKey = String(params.from || '').trim();
+    const toKey = String(params.to || '').trim();
+
+    let range = null;
+    if (dateKey && scope !== 'all') {
+      range = dayRangeFromKey(dateKey, TIMEZONE);
+      if (!range) return jsonResponse({ error: 'Invalid date parameter' }, 400);
+    } else {
+      const fallbackFrom = '2020-01-01';
+      const fallbackTo = formatDateKey(new Date(new Date().getTime() + (3650 * 24 * 60 * 60 * 1000)));
+      const finalFrom = fromKey || fallbackFrom;
+      const finalTo = toKey || fallbackTo;
+      const fromRange = dayRangeFromKey(finalFrom, TIMEZONE);
+      const toRange = dayRangeFromKey(finalTo, TIMEZONE);
+      if (!fromRange || !toRange) return jsonResponse({ error: 'Invalid from/to date parameter' }, 400);
+      range = {
+        start: fromRange.start,
+        end: toRange.end
+      };
+    }
+
     const cal = CalendarApp.getCalendarById(CALENDAR_ID);
     if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
     const events = cal.getEvents(range.start, range.end);
     const orders = events.map(function(event){
       return buildOrderSummary(event);
-    }).filter(Boolean);
+    }).filter(Boolean).sort(function(a, b){
+      const aIso = String(a && a.schedule && a.schedule.startIso || '');
+      const bIso = String(b && b.schedule && b.schedule.startIso || '');
+      return aIso < bIso ? 1 : -1;
+    });
     return jsonResponse({ orders: orders }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+function handleAdminSheetInfo(params){
+  try {
+    if (!isAdminAuthorized(String(params.token || '').trim())) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
+    }
+    const sheet = ensureOrdersLogSheet();
+    const ss = sheet.getParent();
+    return jsonResponse({
+      id: ss.getId(),
+      url: ss.getUrl(),
+      tab: sheet.getName()
+    }, 200);
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
@@ -571,6 +628,16 @@ function handleAdminUpdate(payload){
     const updatedDesc = upsertAdminData(desc, adminData);
     event.setDescription(updatedDesc);
     if (status) setEventStatusTitle(event, status);
+    appendOrderLogEntry({
+      action: 'admin_update',
+      eventId: event.getId(),
+      payload: payloadData,
+      adminData: adminData,
+      status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: message || 'Admin status update',
+      build: BUILD_ID
+    });
     return jsonResponse({ ok: true, adminData: adminData, send: updateResult }, 200);
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
@@ -604,6 +671,16 @@ function handleAdminPod(payload){
     adminData.timeline.push({ ts: new Date().toISOString(), status: adminData.status || '', message: 'POD uploaded', via: 'system' });
     const updatedDesc = upsertAdminData(desc, adminData);
     event.setDescription(updatedDesc);
+    appendOrderLogEntry({
+      action: 'pod_uploaded',
+      eventId: event.getId(),
+      payload: payloadData,
+      adminData: adminData,
+      status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: 'POD uploaded',
+      build: BUILD_ID
+    });
     return jsonResponse({ ok: true, podUrl: podUrl, adminData: adminData }, 200);
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
@@ -947,6 +1024,118 @@ function getLastPayload(){
     const props = PropertiesService.getScriptProperties();
     return String(props.getProperty(LAST_PAYLOAD_PROPERTY) || '').trim();
   } catch (err) {
+    return '';
+  }
+}
+
+function ensureOrdersLogSheet(){
+  const props = PropertiesService.getScriptProperties();
+  const existingId = String(props.getProperty(ORDERS_LOG_SHEET_PROPERTY) || '').trim();
+  let ss = null;
+
+  if (existingId) {
+    try { ss = SpreadsheetApp.openById(existingId); } catch (_) { ss = null; }
+  }
+  if (!ss) {
+    ss = SpreadsheetApp.create(ORDERS_LOG_SPREADSHEET_NAME);
+    props.setProperty(ORDERS_LOG_SHEET_PROPERTY, ss.getId());
+  }
+
+  let sheet = ss.getSheetByName(ORDERS_LOG_TAB_NAME);
+  if (!sheet) sheet = ss.insertSheet(ORDERS_LOG_TAB_NAME);
+
+  const headers = [
+    'LoggedAt',
+    'Action',
+    'EventId',
+    'Reference',
+    'Status',
+    'PaymentStatus',
+    'CustomerName',
+    'CustomerEmail',
+    'CustomerPhone',
+    'ScheduleDate',
+    'ScheduleTime',
+    'UpdatesPreference',
+    'Currency',
+    'Total',
+    'PickupAddress',
+    'DropoffAddress',
+    'StopsCount',
+    'TrackingUrl',
+    'PaymentUrl',
+    'PodUrl',
+    'Message',
+    'Build',
+    'PayloadJson',
+    'AdminDataJson'
+  ];
+
+  if (sheet.getLastRow() < 1) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+  } else {
+    const currentHeader = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+    const mismatch = headers.some(function(h, idx){ return String(currentHeader[idx] || '') !== h; });
+    if (mismatch) {
+      sheet.insertRows(1, 1);
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.setFrozenRows(1);
+    }
+  }
+  return sheet;
+}
+
+function appendOrderLogEntry(entry){
+  try {
+    const data = entry || {};
+    const payload = data.payload || {};
+    const adminData = data.adminData || {};
+    const customer = payload.customer || {};
+    const quote = payload.quote || {};
+    const schedule = quote.schedule || {};
+    const route = quote.route || {};
+    const stops = Array.isArray(route.stops) ? route.stops : [];
+
+    const row = [
+      new Date().toISOString(),
+      String(data.action || ''),
+      String(data.eventId || ''),
+      String(payload.reference || ''),
+      String(data.status || adminData.status || ''),
+      String(data.paymentStatus || adminData.paymentStatus || ''),
+      String(customer.name || ''),
+      String(customer.email || ''),
+      String(customer.phone || ''),
+      String(schedule.date || ''),
+      String(schedule.time || ''),
+      String(adminData.updatesPreference || payload.updatesPreference || ''),
+      String(quote.currency || payload.currency || ''),
+      Number(quote.total || payload.total || 0) || 0,
+      String(route.pickup && route.pickup.address || ''),
+      String(route.dropoff && route.dropoff.address || ''),
+      stops.length,
+      String(adminData.trackingUrl || payload.trackingUrl || ''),
+      String(adminData.paymentUrl || payload.paymentUrl || ''),
+      String(adminData.podUrl || ''),
+      String(data.message || ''),
+      String(data.build || BUILD_ID),
+      safeJsonStringify(payload),
+      safeJsonStringify(adminData)
+    ];
+
+    const sheet = ensureOrdersLogSheet();
+    sheet.appendRow(row);
+  } catch (_) {
+    // Keep booking/update flows resilient if logging fails.
+  }
+}
+
+function safeJsonStringify(value){
+  try {
+    const text = JSON.stringify(value || {});
+    return text.length > 49000 ? (text.slice(0, 49000) + '...') : text;
+  } catch (_) {
     return '';
   }
 }
