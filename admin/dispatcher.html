@@ -54,6 +54,15 @@
     .dispatcher-card h3 { font-family: 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.4rem; }
     .dispatcher-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.4rem 1rem; font-size: 0.92rem; }
     .dispatcher-meta span { display: block; }
+    .dispatcher-notes {
+      margin-top: 0.7rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: 12px;
+      border: 1px solid var(--dispatch-border);
+      background: rgba(23, 33, 50, 0.03);
+      font-size: 0.9rem;
+      color: #2f3f52;
+    }
     .dispatcher-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem; margin-top: 1rem; }
     .dispatcher-actions select, .dispatcher-actions textarea, .dispatcher-actions input[type="text"] { width: 100%; padding: 0.5rem 0.6rem; border-radius: 10px; border: 1px solid var(--dispatch-border); }
     .dispatcher-actions textarea { min-height: 86px; resize: vertical; }
@@ -95,6 +104,32 @@
     @media (max-width: 720px) {
       .dispatcher-header { flex-direction: column; align-items: flex-start; }
     }
+    @media (min-width: 721px) {
+      :root {
+        --dispatch-bg: #e7e4ee;
+      }
+      .dispatcher-shell {
+        display: grid;
+        gap: 1.4rem;
+      }
+      .dispatcher-header {
+        margin-bottom: 0;
+      }
+      .dispatcher-tools {
+        margin-bottom: 0;
+        gap: 0.8rem;
+        padding: 0.9rem;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.58);
+        border: 1px solid rgba(74, 86, 114, 0.14);
+      }
+      .dispatcher-orders {
+        gap: 1.5rem;
+      }
+      .dispatcher-card {
+        padding: 1.35rem 1.55rem;
+      }
+    }
   </style>
 </head>
 <body>
@@ -131,7 +166,7 @@
         <button id="dispatcherToday" class="btn btn--ghost" type="button">Today</button>
         <div class="dispatcher-search" aria-label="Search by reference">
           <span class="dispatcher-search-prefix">CW-</span>
-          <input id="dispatcherSearchInput" type="text" placeholder="YYYYMMDD-XXXX" aria-label="Reference suffix" />
+          <input id="dispatcherSearchInput" type="text" placeholder="DDMMYYYY-XXXX" aria-label="Reference suffix" />
         </div>
         <button id="dispatcherSearchButton" class="btn btn--ghost" type="button">Search</button>
         <button id="dispatcherLogSheet" class="btn btn--ghost" type="button">Orders log sheet</button>

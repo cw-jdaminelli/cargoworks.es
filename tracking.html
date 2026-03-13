@@ -26,6 +26,45 @@
     .tracking-summary span { display: block; font-size: 0.95rem; }
     .tracking-links a { color: var(--track-accent); text-decoration: none; font-weight: 600; }
     .tracking-links a:hover { text-decoration: underline; }
+    .tracking-delivery-note {
+      margin-top: 0.85rem;
+      padding: 0.75rem 0.85rem;
+      border: 1px solid rgba(43, 138, 62, 0.35);
+      border-radius: 12px;
+      background: rgba(43, 138, 62, 0.08);
+    }
+    .tracking-delivery-note h3 {
+      margin: 0 0 0.35rem;
+      font-family: 'Oswald', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      font-size: 1rem;
+      color: #1e5d2a;
+    }
+    .tracking-delivery-note-text {
+      margin: 0;
+      font-size: 0.94rem;
+      color: #234534;
+    }
+    .tracking-notes {
+      margin-top: 0.85rem;
+      padding: 0.75rem 0.85rem;
+      border: 1px solid var(--track-border);
+      border-radius: 12px;
+      background: rgba(17, 28, 43, 0.03);
+    }
+    .tracking-notes h3 {
+      margin: 0 0 0.35rem;
+      font-family: 'Oswald', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      font-size: 1rem;
+    }
+    .tracking-notes-item {
+      margin: 0.15rem 0;
+      font-size: 0.92rem;
+      color: #2f3f52;
+    }
     .tracking-timeline { margin-top: 1rem; padding-left: 1.2rem; font-size: 0.92rem; color: #2f3f52; }
     .tracking-timeline li { margin-bottom: 0.35rem; }
   </style>
@@ -44,7 +83,7 @@
       <h1>Order Tracking</h1>
       <p>Enter your reference to see status, updates, and POD.</p>
       <div class="tracking-form">
-        <input id="trackingRef" type="text" placeholder="Reference (CW-YYYYMMDD-XXXX)" aria-label="Reference" />
+        <input id="trackingRef" type="text" placeholder="Reference (CW-DDMMYYYY-XXXX)" aria-label="Reference" />
         <button id="trackingLoad" class="btn" type="button">Track</button>
         <span id="trackingStatus" class="zones-result" aria-live="polite"></span>
       </div>

@@ -3,6 +3,7 @@
 <head>
 	<script>
 	window.CARGOWORKS_BOOKING_API = "https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec";
+	window.CARGOWORKS_STRIPE_PUBLISHABLE_KEY = "";
 	</script>
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/>
@@ -70,12 +71,11 @@
 								<h2 class="quote-panel-heading" data-i18n="quoteDetailsTitle">Order details</h2>
 							</div>
 						</div>
-						<details class="config-section config-section--addresses">
-							<summary class="config-summary">
+						<section class="config-section config-section--addresses config-section--static">
+							<div class="config-summary">
 								<span class="config-title" data-i18n="quoteSectionAddresses">Addresses</span>
 								<span class="config-note" data-i18n="quoteAddressesHint">Fill in addresses or tap map below to add stops. Hit refresh to start over.</span>
-								<span class="config-chevron" aria-hidden="true"></span>
-							</summary>
+							</div>
 								<div class="config-body">
 									<div class="config-row config-row--split">
 										<div class="config-field">
@@ -91,12 +91,11 @@
 										<button id="quoteRefresh" class="btn btn--ghost" type="button" title="Refresh" data-i18n="quoteRefresh">Refresh</button>
 									</div>
 								</div>
-						</details>
-						<details class="config-section config-section--datetime">
-							<summary class="config-summary">
+						</section>
+						<section class="config-section config-section--datetime config-section--static">
+							<div class="config-summary">
 								<span class="config-title" data-i18n="quoteSectionDateTime">Date and time</span>
-								<span class="config-chevron" aria-hidden="true"></span>
-							</summary>
+							</div>
 								<div class="config-body">
 									<div class="config-row config-row--split">
 										<div class="config-field quote-date-field">
@@ -111,12 +110,11 @@
 									</div>
 									<p id="quoteTimeStatus" class="availability-status" aria-live="polite"></p>
 								</div>
-						</details>
-						<details class="config-section config-section--cargo">
-							<summary class="config-summary">
+						</section>
+						<section class="config-section config-section--cargo config-section--static">
+							<div class="config-summary">
 								<span class="config-title" data-i18n="quoteSectionCargo">Type of cargo</span>
-								<span class="config-chevron" aria-hidden="true"></span>
-							</summary>
+							</div>
 								<div class="config-body">
 									<div class="config-row config-row--stack">
 										<select id="quoteCargo" aria-label="Cargo size">
@@ -143,12 +141,11 @@
 										</div>
 									</div>
 								</div>
-						</details>
-						<details class="config-section config-section--booking">
-							<summary class="config-summary">
+						</section>
+						<section id="quoteBookingSection" class="config-section config-section--booking config-section--static is-hidden">
+							<div class="config-summary">
 								<span class="config-title" data-i18n="quoteSectionBooking">Booking details</span>
-								<span class="config-chevron" aria-hidden="true"></span>
-							</summary>
+							</div>
 								<div class="config-body">
 									<div class="config-row config-row--stack">
 										<input id="quoteName" type="text" placeholder="Your name" aria-label="Your name" />
@@ -416,25 +413,12 @@
 										<input id="quoteConsent" type="checkbox" />
 										<span data-i18n="quoteConsentLabel">I agree to be contacted regarding this booking and its updates.</span>
 									</label>
-								</div>
-						</details>
-						<details class="config-section config-section--discount">
-							<summary class="config-summary">
-								<span class="config-title" data-i18n="quoteSectionDiscount">Discount code</span>
-								<span class="config-chevron" aria-hidden="true"></span>
-							</summary>
-								<div class="config-body">
-									<div class="config-row">
-										<div class="config-field config-field--grow">
-											<label class="field-label" for="quoteDiscount" data-i18n="quotePromoLabel">Promo code</label>
-											<input id="quoteDiscount" type="text" placeholder="Add discount code" aria-label="Discount code" value="SELF5" />
-										</div>
-										<button id="quoteDiscountApply" class="btn btn--ghost" type="button" title="Apply discount code" data-i18n="quoteDiscountApply">Apply</button>
+									<div class="quote-pay-cta-wrap">
+										<button id="quotePayNow" class="btn is-hidden" type="button">Pay €0.00 to confirm booking</button>
+										<div id="quotePaymentMount" class="quote-payment-mount is-hidden" aria-live="polite"></div>
 									</div>
-									<p id="quoteDiscountHelper" class="discount-helper" data-i18n="quoteDiscountHelper">Apply <strong>SELF5</strong> code (5 percent off for booking through this app), plus any other codes you have. Hit apply for each code. Done deal ;)</p>
-									<p id="quoteDiscountStatus" class="discount-status" aria-live="polite"></p>
 								</div>
-						</details>
+						</section>
 						<div class="config-footer quote-summary-card is-hidden">
 							<h3 class="quote-summary-heading is-hidden" data-i18n="quoteSummaryTitle">Order summary</h3>
 							<div class="quote-summary-row">
@@ -447,6 +431,20 @@
 									<summary data-i18n="pricingUiBreakdownTitle">Breakdown</summary>
 									<div id="pricingUiBreakdown" class="pricing-ui-copy__block"></div>
 								</details>
+								<div class="quote-promo-inline">
+									<div class="config-row quote-promo-inline__row">
+										<div class="config-field config-field--grow">
+											<label class="field-label" for="quoteDiscount" data-i18n="quotePromoLabel">Promo code</label>
+											<input id="quoteDiscount" type="text" placeholder="Add discount code" aria-label="Discount code" value="SELF5" />
+										</div>
+										<button id="quoteDiscountApply" class="btn btn--ghost" type="button" title="Apply discount code" data-i18n="quoteDiscountApply">Apply</button>
+									</div>
+									<p id="quoteDiscountHelper" class="discount-helper" data-i18n="quoteDiscountHelper">Apply <strong>SELF5</strong> code (5 percent off for booking through this app), plus any other codes you have. Hit apply for each code. Done deal ;)</p>
+									<p id="quoteDiscountStatus" class="discount-status" aria-live="polite"></p>
+								</div>
+								<div class="quote-proceed-wrap">
+									<button id="quoteProceedBooking" class="btn is-hidden" type="button" data-i18n="quoteProceedBooking">Everything looks good? Complete your booking.</button>
+								</div>
 							</div>
 							<div class="quote-booking-row">
 								<div class="booking-actions">
@@ -604,6 +602,7 @@
 	<!-- GSAP + init -->
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.1/gsap.min.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.1/ScrollTrigger.min.js"></script>
+	<script src="https://js.stripe.com/v3/"></script>
 	<script>
 		// Motion-safe, responsive pinning
 		gsap.registerPlugin(ScrollTrigger);
@@ -639,7 +638,7 @@
 	</footer>
 
 	<!-- JS -->
-	<script src="js/js/map.js?v=2026-03-08-3"></script>
+	<script src="js/js/map.js?v=2026-03-13-3"></script>
 	<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB2-lL3jKtVa6ijgLs38NP2ag6fc4YoAE0&libraries=geometry,drawing,places&language=es&region=ES&loading=async&callback=initZonesMap"></script>
 	<script src="js/js/translations.js?v=2026-02-15-1"></script>
 	<script src="js/js/main.js?v=2026-02-15-1"></script>

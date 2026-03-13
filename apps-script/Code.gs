@@ -7,6 +7,7 @@ const DEFAULT_DURATION_MIN = 60;
 const OWNER_EMAIL = 'info@cargoworks.es';
 const REPLY_TO = 'info@cargoworks.es';
 const STRIPE_SECRET_PROPERTY = 'STRIPE_SECRET';
+const STRIPE_PUBLISHABLE_PROPERTY = 'STRIPE_PUBLISHABLE';
 const LAST_ERROR_PROPERTY = 'LAST_ERROR';
 const LAST_PAYLOAD_PROPERTY = 'LAST_PAYLOAD';
 const ADMIN_TOKEN_PROPERTY = 'ADMIN_TOKEN';
@@ -39,6 +40,9 @@ function doGet(e){
     }
     if (action === 'adminSheetInfo') {
       return handleAdminSheetInfo(params);
+    }
+    if (action === 'adminBackfillLog') {
+      return handleAdminBackfill(params);
     }
     const dateKey = String(params.date || '').trim();
     if (!dateKey) return jsonResponse({ error: 'Missing date parameter' }, 400);
@@ -77,7 +81,7 @@ function doPost(e){
 
     const customer = payload.customer || {};
     const name = String(customer.name || '').trim() || 'Customer';
-    const shortRef = buildShortRef();
+    const shortRef = buildShortRef(dateKey);
     const title = 'Pending payment - Cargoworks booking - ' + name + ' - ' + shortRef;
 
     const cal = CalendarApp.getCalendarById(CALENDAR_ID);
@@ -85,12 +89,16 @@ function doPost(e){
 
     const location = getPickupAddress(quote);
     const payment = createStripeSession(payload, shortRef);
+    const publishableKey = getStripePublishableKey();
     const whatsappUrl = buildWhatsAppUrl(shortRef);
     const trackingUrl = buildTrackingUrl(payload, shortRef);
     const updatesPreference = String(payload.updatesPreference || '').trim();
     const enrichedPayload = Object.assign({}, payload, {
       reference: shortRef,
       paymentUrl: payment && payment.url ? payment.url : '',
+      paymentClientSecret: payment && payment.clientSecret ? payment.clientSecret : '',
+      paymentMode: payment && payment.mode ? payment.mode : '',
+      paymentPublishableKey: publishableKey,
       whatsappUrl: whatsappUrl,
       trackingUrl: trackingUrl,
       updatesPreference: updatesPreference
@@ -121,9 +129,13 @@ function doPost(e){
       reference: shortRef,
       link: link,
       paymentUrl: payment && payment.url,
+      paymentClientSecret: payment && payment.clientSecret,
+      paymentMode: payment && payment.mode,
+      paymentPublishableKey: publishableKey,
       whatsappUrl: whatsappUrl,
       trackingUrl: trackingUrl,
       paymentError: payment && payment.error ? payment.error : '',
+      paymentEmbeddedError: payment && payment.embeddedError ? payment.embeddedError : '',
       mail: mailStatus
     }, 200);
   } catch (err) {
@@ -136,7 +148,8 @@ function doPost(e){
 function parseJsonBody(e){
   try {
     if (!e || !e.postData || !e.postData.contents) return null;
-    if (e.postData.type === 'application/x-www-form-urlencoded') {
+    const contentType = String((e.postData && e.postData.type) || '').toLowerCase();
+    if (contentType.indexOf('application/x-www-form-urlencoded') >= 0) {
       const data = parseFormEncoded(e.postData.contents || '');
       if (data && data.payload) return JSON.parse(String(data.payload));
     }
@@ -316,7 +329,12 @@ function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference)
     updatesPreference: updatesPreference || '',
     trackingUrl: trackingUrl || '',
     podUrl: '',
-    timeline: []
+    timeline: [{
+      ts: new Date().toISOString(),
+      status: DEFAULT_STATUS_LABEL,
+      message: 'Booking created',
+      via: 'system'
+    }]
   };
 }
 
@@ -343,13 +361,23 @@ function buildWhatsAppUrl(shortRef){
   }
 }
 
-function buildShortRef(){
-  const now = new Date();
-  const y = String(now.getFullYear());
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
+function buildShortRef(scheduleDateKey){
+  let y = '';
+  let m = '';
+  let d = '';
+  const match = String(scheduleDateKey || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match && isValidDateParts(Number(match[1]), Number(match[2]), Number(match[3]))) {
+    y = match[1];
+    m = match[2];
+    d = match[3];
+  } else {
+    const now = new Date();
+    d = String(now.getDate()).padStart(2, '0');
+    m = String(now.getMonth() + 1).padStart(2, '0');
+    y = String(now.getFullYear());
+  }
   const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return 'CW-' + y + m + d + '-' + rand;
+  return 'CW-' + d + m + y + '-' + rand;
 }
 
 function createStripeSession(payload, shortRef){
@@ -365,19 +393,62 @@ function createStripeSession(payload, shortRef){
     const origin = sourceUrl ? sourceUrl.replace(/\/#.*$/, '').replace(/\?.*$/, '') : '';
     const successUrl = origin ? (origin + '?booking=success&ref=' + encodeURIComponent(shortRef)) : 'https://cargoworks.es/?booking=success';
     const cancelUrl = origin ? (origin + '?booking=cancel&ref=' + encodeURIComponent(shortRef)) : 'https://cargoworks.es/?booking=cancel';
+    const returnUrl = origin ? (origin + '?booking=return&ref=' + encodeURIComponent(shortRef)) : 'https://cargoworks.es/?booking=return';
     const name = (payload.customer && payload.customer.name) ? String(payload.customer.name) : 'Cargoworks booking';
     const email = (payload.customer && payload.customer.email) ? String(payload.customer.email) : '';
-    const body = {
+    const baseBody = {
       mode: 'payment',
-      success_url: successUrl,
-      cancel_url: cancelUrl,
       'line_items[0][price_data][currency]': currency,
       'line_items[0][price_data][unit_amount]': String(amount),
       'line_items[0][price_data][product_data][name]': 'Cargoworks booking - ' + name,
       'line_items[0][quantity]': '1',
       'metadata[reference]': shortRef
     };
-    if (email) body.customer_email = email;
+    if (email) baseBody.customer_email = email;
+
+    // Preferred flow: Embedded Checkout so the card UI can render inside the site.
+    const embeddedBody = Object.assign({}, baseBody, {
+      ui_mode: 'embedded',
+      return_url: returnUrl,
+      redirect_on_completion: 'if_required'
+    });
+    const embeddedAttempt = createStripeCheckoutSession(secret, embeddedBody);
+    if (embeddedAttempt.ok && embeddedAttempt.session) {
+      const embeddedSession = embeddedAttempt.session;
+      return {
+        id: embeddedSession.id || '',
+        url: embeddedSession.url || '',
+        clientSecret: embeddedSession.client_secret || '',
+        mode: 'embedded'
+      };
+    }
+
+    // Fallback: hosted Checkout URL.
+    const hostedBody = Object.assign({}, baseBody, {
+      success_url: successUrl,
+      cancel_url: cancelUrl
+    });
+    const hostedAttempt = createStripeCheckoutSession(secret, hostedBody);
+    if (hostedAttempt.ok && hostedAttempt.session) {
+      const hostedSession = hostedAttempt.session;
+      return {
+        id: hostedSession.id || '',
+        url: hostedSession.url || '',
+        clientSecret: hostedSession.client_secret || '',
+        mode: 'hosted',
+        error: embeddedAttempt.error || '',
+        embeddedError: embeddedAttempt.error || ''
+      };
+    }
+    return { error: hostedAttempt.error || embeddedAttempt.error || 'Stripe session could not be created' };
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return { error: 'Stripe request failed: ' + msg };
+  }
+}
+
+function createStripeCheckoutSession(secret, body){
+  try {
     const resp = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions', {
       method: 'post',
       payload: body,
@@ -390,13 +461,13 @@ function createStripeSession(payload, shortRef){
     try { json = JSON.parse(text); } catch(_) { json = null; }
     if (status < 200 || status >= 300) {
       const errMsg = (json && json.error && json.error.message) ? json.error.message : text;
-      return { error: 'Stripe error ' + status + ': ' + String(errMsg || '').slice(0, 200) };
+      return { ok: false, error: 'Stripe error ' + status + ': ' + String(errMsg || '').slice(0, 200) };
     }
-    if (!json || !json.url) return { error: 'Stripe session missing URL' };
-    return { url: json.url, id: json.id };
+    if (!json || !json.id) return { ok: false, error: 'Stripe session missing ID' };
+    return { ok: true, session: json };
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
-    return { error: 'Stripe request failed: ' + msg };
+    return { ok: false, error: 'Stripe request failed: ' + msg };
   }
 }
 
@@ -404,6 +475,15 @@ function getStripeSecret(){
   try {
     const props = PropertiesService.getScriptProperties();
     return String(props.getProperty(STRIPE_SECRET_PROPERTY) || '').trim();
+  } catch (err) {
+    return '';
+  }
+}
+
+function getStripePublishableKey(){
+  try {
+    const props = PropertiesService.getScriptProperties();
+    return String(props.getProperty(STRIPE_PUBLISHABLE_PROPERTY) || '').trim();
   } catch (err) {
     return '';
   }
@@ -523,6 +603,7 @@ function handleAdminList(params){
     }
     const scope = String(params.scope || '').trim().toLowerCase();
     const dateKey = String(params.date || '').trim();
+    const refFilter = normalizeReference(String(params.ref || ''));
     const fromKey = String(params.from || '').trim();
     const toKey = String(params.to || '').trim();
 
@@ -547,13 +628,18 @@ function handleAdminList(params){
     const cal = CalendarApp.getCalendarById(CALENDAR_ID);
     if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
     const events = cal.getEvents(range.start, range.end);
-    const orders = events.map(function(event){
+    let orders = events.map(function(event){
       return buildOrderSummary(event);
     }).filter(Boolean).sort(function(a, b){
       const aIso = String(a && a.schedule && a.schedule.startIso || '');
       const bIso = String(b && b.schedule && b.schedule.startIso || '');
       return aIso < bIso ? 1 : -1;
     });
+    if (refFilter) {
+      orders = orders.filter(function(order){
+        return normalizeReference(order && order.reference) === refFilter;
+      });
+    }
     return jsonResponse({ orders: orders }, 200);
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
@@ -573,6 +659,21 @@ function handleAdminSheetInfo(params){
       url: ss.getUrl(),
       tab: sheet.getName()
     }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+function handleAdminBackfill(params){
+  try {
+    if (!isAdminAuthorized(String(params.token || '').trim())) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
+    }
+    const fromKey = String(params.from || '').trim();
+    const toKey = String(params.to || '').trim();
+    const result = runOrdersLogBackfill(fromKey, toKey);
+    return jsonResponse(result, 200);
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
@@ -600,29 +701,63 @@ function handleAdminUpdate(payload){
     const desc = String(event.getDescription() || '');
     const payloadData = extractPayloadFromDescription(desc) || {};
     const adminData = ensureAdminData(desc, payloadData);
+    const prevStatus = String(adminData.status || '');
+    const prevPaymentStatus = String(adminData.paymentStatus || '');
     const status = String(payload.status || '').trim();
     const paymentStatus = String(payload.paymentStatus || '').trim();
     if (status) adminData.status = status;
     if (paymentStatus) adminData.paymentStatus = paymentStatus;
-    const message = String(payload.message || '').trim();
+    const message = String(payload.message || payload.note || '').trim();
     const send = payload.send || {};
     const sendEmail = !!send.email;
     const sendWhatsApp = !!send.whatsapp;
     const now = new Date();
     const ts = now.toISOString();
     const updateResult = { emailSent: false, whatsappUrl: '' };
+    adminData.timeline = Array.isArray(adminData.timeline) ? adminData.timeline : [];
+    if (status && status !== prevStatus) {
+      adminData.timeline.push({
+        ts: ts,
+        status: adminData.status || '',
+        message: 'Status changed from ' + (prevStatus || '-') + ' to ' + status,
+        via: 'dispatcher'
+      });
+      adminData.lastUpdateAt = ts;
+    }
+    if (paymentStatus && paymentStatus !== prevPaymentStatus) {
+      adminData.timeline.push({
+        ts: ts,
+        status: adminData.status || '',
+        message: 'Payment status changed from ' + (prevPaymentStatus || '-') + ' to ' + paymentStatus,
+        via: 'dispatcher'
+      });
+      adminData.lastUpdateAt = ts;
+    }
     if (message) {
-      const via = [];
+      const via = ['dispatcher'];
       if (sendEmail) via.push('email');
       if (sendWhatsApp) via.push('whatsapp');
-      adminData.timeline = Array.isArray(adminData.timeline) ? adminData.timeline : [];
-      adminData.timeline.push({ ts: ts, status: adminData.status || '', message: message, via: via.join('+') });
+      const noteEntry = { ts: ts, status: adminData.status || '', message: message, via: via.join('+') };
+      adminData.timeline.push(noteEntry);
+      ensureDispatcherNotes(adminData).push(noteEntry);
       adminData.lastUpdateAt = ts;
       if (sendEmail && canSendChannel('email', adminData, payloadData)) {
         updateResult.emailSent = sendProgressEmail(payloadData, adminData, message);
+        adminData.timeline.push({
+          ts: ts,
+          status: adminData.status || '',
+          message: updateResult.emailSent ? 'Update sent via email' : 'Update email could not be sent',
+          via: 'system'
+        });
       }
       if (sendWhatsApp && canSendChannel('whatsapp', adminData, payloadData)) {
         updateResult.whatsappUrl = buildCustomerWhatsAppUrl(payloadData, adminData, message);
+        adminData.timeline.push({
+          ts: ts,
+          status: adminData.status || '',
+          message: updateResult.whatsappUrl ? 'WhatsApp update prepared' : 'WhatsApp update could not be prepared',
+          via: 'system'
+        });
       }
     }
     const updatedDesc = upsertAdminData(desc, adminData);
@@ -766,6 +901,17 @@ function ensureAdminData(desc, payload){
     adminData.trackingUrl = ref ? buildTrackingUrl(payload || {}, ref) : '';
   }
   if (!Array.isArray(adminData.timeline)) adminData.timeline = [];
+  if (!adminData.timeline.length) {
+    adminData.timeline.push({
+      ts: bookingSeedIso(payload),
+      status: adminData.status || DEFAULT_STATUS_LABEL,
+      message: 'Booking created',
+      via: 'system'
+    });
+  }
+  if (!Array.isArray(adminData.dispatcherNotes)) {
+    adminData.dispatcherNotes = extractDispatcherNotes(adminData.timeline || []);
+  }
   return adminData;
 }
 
@@ -791,9 +937,16 @@ function buildOrderSummary(event){
     const desc = String(event.getDescription() || '');
     const payload = extractPayloadFromDescription(desc) || {};
     const adminData = ensureAdminData(desc, payload);
-    const reference = payload.reference || extractReferenceFromText(event.getTitle() || '') || '';
+    const reference = payload.reference
+      || extractReferenceFromText(event.getTitle() || '')
+      || extractReferenceFromText(desc)
+      || '';
     const start = event.getStartTime();
     const end = event.getEndTime();
+    const timeline = normalizeTimelineEntries(adminData.timeline || []);
+    const dispatcherNotes = normalizeDispatcherNotes((adminData.dispatcherNotes && adminData.dispatcherNotes.length)
+      ? adminData.dispatcherNotes
+      : extractDispatcherNotes(timeline));
     const schedule = {
       date: formatDateKey(start),
       time: formatTimeLabel(start),
@@ -811,7 +964,9 @@ function buildOrderSummary(event){
       trackingUrl: adminData.trackingUrl || payload.trackingUrl || '',
       updatesPreference: adminData.updatesPreference || payload.updatesPreference || '',
       podUrl: adminData.podUrl || '',
-      timeline: adminData.timeline || [],
+      timeline: timeline,
+      dispatcherNotes: dispatcherNotes,
+      deliveryNote: latestDispatcherNoteText(dispatcherNotes),
       schedule: schedule,
       customer: {
         name: String(customer.name || ''),
@@ -836,8 +991,114 @@ function buildTrackingPayload(summary){
     podUrl: summary.podUrl,
     schedule: summary.schedule,
     timeline: summary.timeline || [],
+    notes: summary.notes || '',
+    dispatcherNotes: summary.dispatcherNotes || [],
+    deliveryNote: summary.deliveryNote || '',
     customerName: summary.customer && summary.customer.name ? summary.customer.name : ''
   };
+}
+
+function normalizeReference(ref){
+  return String(ref || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function bookingSeedIso(payload){
+  try {
+    const schedule = payload && payload.quote && payload.quote.schedule ? payload.quote.schedule : {};
+    const dateKey = String(schedule.date || '').trim();
+    const timeLabel = String(schedule.time || '').trim();
+    if (dateKey && timeLabel) {
+      const dt = dateTimeFromKey(dateKey, timeLabel, TIMEZONE);
+      if (dt) return dt.toISOString();
+    }
+  } catch (_) {
+    // Fall through to now.
+  }
+  return new Date().toISOString();
+}
+
+function normalizeTimelineEntries(items){
+  const list = Array.isArray(items) ? items : [];
+  return list.map(function(item, idx){
+    const ts = item && item.ts ? String(item.ts) : '';
+    const stamp = Date.parse(ts);
+    return {
+      ts: ts,
+      status: item && item.status ? String(item.status) : '',
+      message: item && item.message ? String(item.message) : '',
+      via: item && item.via ? String(item.via) : '',
+      _sortKey: Number.isNaN(stamp) ? Number.MAX_SAFE_INTEGER : stamp,
+      _idx: idx
+    };
+  }).sort(function(a, b){
+    if (a._sortKey === b._sortKey) return a._idx - b._idx;
+    return a._sortKey - b._sortKey;
+  }).map(function(item){
+    return {
+      ts: item.ts,
+      status: item.status,
+      message: item.message,
+      via: item.via
+    };
+  });
+}
+
+function normalizeDispatcherNotes(items){
+  const list = Array.isArray(items) ? items : [];
+  return list.map(function(item, idx){
+    const ts = item && item.ts ? String(item.ts) : '';
+    const stamp = Date.parse(ts);
+    return {
+      ts: ts,
+      status: item && item.status ? String(item.status) : '',
+      message: item && item.message ? String(item.message) : '',
+      via: item && item.via ? String(item.via) : '',
+      _sortKey: Number.isNaN(stamp) ? Number.MAX_SAFE_INTEGER : stamp,
+      _idx: idx
+    };
+  }).sort(function(a, b){
+    if (a._sortKey === b._sortKey) return a._idx - b._idx;
+    return a._sortKey - b._sortKey;
+  }).map(function(item){
+    return {
+      ts: item.ts,
+      status: item.status,
+      message: item.message,
+      via: item.via
+    };
+  });
+}
+
+function latestDispatcherNoteText(items){
+  const notes = normalizeDispatcherNotes(items);
+  for (let i = notes.length - 1; i >= 0; i--) {
+    const msg = String(notes[i] && notes[i].message || '').trim();
+    if (msg) return msg;
+  }
+  return '';
+}
+
+function ensureDispatcherNotes(adminData){
+  if (!adminData || typeof adminData !== 'object') return [];
+  if (!Array.isArray(adminData.dispatcherNotes)) adminData.dispatcherNotes = [];
+  return adminData.dispatcherNotes;
+}
+
+function extractDispatcherNotes(timeline){
+  const items = Array.isArray(timeline) ? timeline : [];
+  return items.filter(function(item){
+    const msg = String(item && item.message || '').trim();
+    if (!msg) return false;
+    const via = String(item && item.via || '').toLowerCase();
+    return via.indexOf('dispatcher') >= 0 || via.indexOf('email') >= 0 || via.indexOf('whatsapp') >= 0;
+  }).map(function(item){
+    return {
+      ts: String(item && item.ts || ''),
+      status: String(item && item.status || ''),
+      message: String(item && item.message || ''),
+      via: String(item && item.via || '')
+    };
+  });
 }
 
 function extractReferenceFromText(text){
@@ -874,16 +1135,46 @@ function findEventByReference(ref){
 
 function dateFromRef(ref){
   try {
-    const match = String(ref || '').match(/CW-(\d{4})(\d{2})(\d{2})-/i);
+    const match = String(ref || '').match(/CW-(\d{8})-/i);
     if (!match) return null;
-    const year = Number(match[1]);
-    const month = Number(match[2]) - 1;
-    const day = Number(match[3]);
-    if ([year, month, day].some(Number.isNaN)) return null;
-    return new Date(year, month, day, 0, 0, 0);
+    return dateFromReferenceDigits(match[1]);
   } catch (err) {
     return null;
   }
+}
+
+function dateFromReferenceDigits(digits){
+  const clean = String(digits || '').trim();
+  if (!/^\d{8}$/.test(clean)) return null;
+
+  // New standard: DDMMYYYY.
+  const dd = Number(clean.slice(0, 2));
+  const mm = Number(clean.slice(2, 4));
+  const yyyy = Number(clean.slice(4, 8));
+  if (isValidDateParts(yyyy, mm, dd)) {
+    return new Date(yyyy, mm - 1, dd, 0, 0, 0);
+  }
+
+  // Legacy fallback: YYYYMMDD.
+  const legacyY = Number(clean.slice(0, 4));
+  const legacyM = Number(clean.slice(4, 6));
+  const legacyD = Number(clean.slice(6, 8));
+  if (isValidDateParts(legacyY, legacyM, legacyD)) {
+    return new Date(legacyY, legacyM - 1, legacyD, 0, 0, 0);
+  }
+
+  return null;
+}
+
+function isValidDateParts(year, month, day){
+  if ([year, month, day].some(Number.isNaN)) return false;
+  if (year < 2000 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  const test = new Date(year, month - 1, day);
+  return test.getFullYear() === year
+    && (test.getMonth() + 1) === month
+    && test.getDate() === day;
 }
 
 function formatDateKey(date){
@@ -930,10 +1221,11 @@ function sendProgressEmail(payload, adminData, message){
     if (!email) return false;
     const reference = String(payload.reference || '').trim();
     const subject = 'Cargoworks update (' + reference + ')';
+    const updateMessage = String(message || '').trim() || latestDispatcherNoteText(adminData && adminData.dispatcherNotes);
     const lines = [];
     if (customer.name) lines.push('Hola ' + String(customer.name || '') + ',');
     lines.push('');
-    lines.push('Update: ' + message);
+    if (updateMessage) lines.push('Update: ' + updateMessage);
     if (adminData && adminData.status) lines.push('Status: ' + adminData.status);
     if (adminData && adminData.paymentStatus) lines.push('Payment: ' + adminData.paymentStatus);
     if (payload.paymentUrl && adminData && adminData.paymentStatus === 'pending') lines.push('Payment link: ' + payload.paymentUrl);
@@ -959,8 +1251,9 @@ function buildCustomerWhatsAppUrl(payload, adminData, message){
     const phone = normalizePhone(String(customer.phone || ''));
     if (!phone) return '';
     const reference = String(payload.reference || '').trim();
+    const updateMessage = String(message || '').trim() || latestDispatcherNoteText(adminData && adminData.dispatcherNotes);
     const parts = [];
-    parts.push('Cargoworks update ' + reference + ': ' + message);
+    parts.push('Cargoworks update ' + reference + (updateMessage ? (': ' + updateMessage) : ''));
     if (adminData && adminData.status) parts.push('Status: ' + adminData.status);
     if (adminData && adminData.trackingUrl) parts.push('Tracking: ' + adminData.trackingUrl);
     if (adminData && adminData.podUrl) parts.push('POD: ' + adminData.podUrl);
@@ -1088,47 +1381,131 @@ function ensureOrdersLogSheet(){
 
 function appendOrderLogEntry(entry){
   try {
-    const data = entry || {};
-    const payload = data.payload || {};
-    const adminData = data.adminData || {};
-    const customer = payload.customer || {};
-    const quote = payload.quote || {};
-    const schedule = quote.schedule || {};
-    const route = quote.route || {};
-    const stops = Array.isArray(route.stops) ? route.stops : [];
-
-    const row = [
-      new Date().toISOString(),
-      String(data.action || ''),
-      String(data.eventId || ''),
-      String(payload.reference || ''),
-      String(data.status || adminData.status || ''),
-      String(data.paymentStatus || adminData.paymentStatus || ''),
-      String(customer.name || ''),
-      String(customer.email || ''),
-      String(customer.phone || ''),
-      String(schedule.date || ''),
-      String(schedule.time || ''),
-      String(adminData.updatesPreference || payload.updatesPreference || ''),
-      String(quote.currency || payload.currency || ''),
-      Number(quote.total || payload.total || 0) || 0,
-      String(route.pickup && route.pickup.address || ''),
-      String(route.dropoff && route.dropoff.address || ''),
-      stops.length,
-      String(adminData.trackingUrl || payload.trackingUrl || ''),
-      String(adminData.paymentUrl || payload.paymentUrl || ''),
-      String(adminData.podUrl || ''),
-      String(data.message || ''),
-      String(data.build || BUILD_ID),
-      safeJsonStringify(payload),
-      safeJsonStringify(adminData)
-    ];
-
+    const row = buildOrderLogRow(entry || {});
     const sheet = ensureOrdersLogSheet();
     sheet.appendRow(row);
   } catch (_) {
     // Keep booking/update flows resilient if logging fails.
   }
+}
+
+function buildOrderLogRow(entry){
+  const data = entry || {};
+  const payload = data.payload || {};
+  const adminData = data.adminData || {};
+  const customer = payload.customer || {};
+  const quote = payload.quote || {};
+  const schedule = quote.schedule || {};
+  const route = quote.route || {};
+  const stops = Array.isArray(route.stops) ? route.stops : [];
+
+  return [
+    new Date().toISOString(),
+    String(data.action || ''),
+    String(data.eventId || ''),
+    String(payload.reference || ''),
+    String(data.status || adminData.status || ''),
+    String(data.paymentStatus || adminData.paymentStatus || ''),
+    String(customer.name || ''),
+    String(customer.email || ''),
+    String(customer.phone || ''),
+    String(schedule.date || ''),
+    String(schedule.time || ''),
+    String(adminData.updatesPreference || payload.updatesPreference || ''),
+    String(quote.currency || payload.currency || ''),
+    Number(quote.total || payload.total || 0) || 0,
+    String(route.pickup && route.pickup.address || ''),
+    String(route.dropoff && route.dropoff.address || ''),
+    stops.length,
+    String(adminData.trackingUrl || payload.trackingUrl || ''),
+    String(adminData.paymentUrl || payload.paymentUrl || ''),
+    String(adminData.podUrl || ''),
+    String(data.message || ''),
+    String(data.build || BUILD_ID),
+    safeJsonStringify(payload),
+    safeJsonStringify(adminData)
+  ];
+}
+
+function runOrdersLogBackfill(fromKey, toKey){
+  const fallbackFrom = '2020-01-01';
+  const fallbackTo = formatDateKey(new Date());
+  const finalFrom = String(fromKey || '').trim() || fallbackFrom;
+  const finalTo = String(toKey || '').trim() || fallbackTo;
+  const fromRange = dayRangeFromKey(finalFrom, TIMEZONE);
+  const toRange = dayRangeFromKey(finalTo, TIMEZONE);
+  if (!fromRange || !toRange) throw new Error('Invalid from/to date parameter');
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) throw new Error('Calendar not found');
+
+  const sheet = ensureOrdersLogSheet();
+  const existingKeys = getOrdersLogExistingKeys(sheet);
+  const events = cal.getEvents(fromRange.start, toRange.end);
+  let imported = 0;
+  let skipped = 0;
+
+  events.forEach(function(event){
+    const eventId = String(event && event.getId && event.getId() || '').trim();
+    if (!eventId) {
+      skipped += 1;
+      return;
+    }
+    const key = makeOrdersLogKey(eventId, 'booking_created');
+    if (existingKeys[key]) {
+      skipped += 1;
+      return;
+    }
+    const desc = String(event.getDescription() || '');
+    const payload = extractPayloadFromDescription(desc) || {};
+    const adminData = ensureAdminData(desc, payload);
+    const row = buildOrderLogRow({
+      action: 'booking_created',
+      eventId: eventId,
+      payload: payload,
+      adminData: adminData,
+      status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: 'Backfill import',
+      build: BUILD_ID
+    });
+    sheet.appendRow(row);
+    existingKeys[key] = true;
+    imported += 1;
+  });
+
+  return {
+    ok: true,
+    from: finalFrom,
+    to: finalTo,
+    scannedEvents: events.length,
+    imported: imported,
+    skipped: skipped
+  };
+}
+
+function backfillOrdersLogLast365Days(){
+  const to = formatDateKey(new Date());
+  const from = formatDateKey(new Date(Date.now() - (365 * 24 * 60 * 60 * 1000)));
+  return runOrdersLogBackfill(from, to);
+}
+
+function getOrdersLogExistingKeys(sheet){
+  const keys = {};
+  const rowCount = sheet.getLastRow();
+  if (rowCount < 2) return keys;
+  const rows = sheet.getRange(2, 1, rowCount - 1, 3).getValues();
+  rows.forEach(function(row){
+    const action = String(row[1] || '').trim();
+    const eventId = String(row[2] || '').trim();
+    if (!action || !eventId) return;
+    keys[makeOrdersLogKey(eventId, action)] = true;
+  });
+  return keys;
+}
+
+function makeOrdersLogKey(eventId, action){
+  return String(eventId || '').trim() + '::' + String(action || '').trim();
 }
 
 function safeJsonStringify(value){

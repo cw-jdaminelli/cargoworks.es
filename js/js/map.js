@@ -263,8 +263,12 @@ window.initZonesMap = function initZonesMap(){
       .then(text => {
         const matches = String(text || '').match(/\d{4}-\d{2}-\d{2}/g) || [];
         window._holidaysSet = new Set(matches);
+        try { refreshAvailability(); updateDeliverySummary(); } catch(_) {}
       })
-      .catch(() => { window._holidaysSet = new Set(); });
+      .catch(() => {
+        window._holidaysSet = new Set();
+        try { refreshAvailability(); updateDeliverySummary(); } catch(_) {}
+      });
   })();
 
   let _discountsReady = false;
@@ -460,23 +464,95 @@ window.initZonesMap = function initZonesMap(){
       return Math.round(hours * 3600);
     } catch(_) { return 0; }
   }
-  async function computeRouteDuration(origin, waypoints, destination){
-    // Use DirectionsService in production; fallback to estimate in dev or on error
-    if (devHost) {
-      return estimateDurationFallback(origin, waypoints, destination);
+  function legDistanceMeters(leg){
+    return (leg && leg.distance && Number(leg.distance.value)) || 0;
+  }
+  function legDurationSeconds(leg){
+    return (leg && leg.duration && Number(leg.duration.value)) || 0;
+  }
+  function routeDistanceMeters(route){
+    const legs = route && Array.isArray(route.legs) ? route.legs : [];
+    let total = 0;
+    for (let i = 0; i < legs.length; i++) total += legDistanceMeters(legs[i]);
+    return total;
+  }
+  function routeDurationSeconds(route){
+    const legs = route && Array.isArray(route.legs) ? route.legs : [];
+    let total = 0;
+    for (let i = 0; i < legs.length; i++) total += legDurationSeconds(legs[i]);
+    return total;
+  }
+  function routePolylineKey(route){
+    const ov = route && route.overview_polyline;
+    if (!ov) return '';
+    if (typeof ov === 'string') return ov;
+    if (ov.points) return String(ov.points);
+    if (typeof ov.toString === 'function') return String(ov.toString());
+    return '';
+  }
+  function pickShortestLegalBikeRoute(routes){
+    const list = Array.isArray(routes) ? routes.filter(function(route){
+      return route && Array.isArray(route.legs) && route.legs.length;
+    }) : [];
+    if (!list.length) return null;
+    list.sort(function(a, b){
+      const distDiff = routeDistanceMeters(a) - routeDistanceMeters(b);
+      if (distDiff !== 0) return distDiff;
+      const durDiff = routeDurationSeconds(a) - routeDurationSeconds(b);
+      if (durDiff !== 0) return durDiff;
+      const aKey = routePolylineKey(a);
+      const bKey = routePolylineKey(b);
+      if (aKey < bKey) return -1;
+      if (aKey > bKey) return 1;
+      return 0;
+    });
+    return list[0];
+  }
+  function collectLegPathPoints(leg){
+    const out = [];
+    if (!leg || !Array.isArray(leg.steps)) return out;
+    for (let s = 0; s < leg.steps.length; s++) {
+      const step = leg.steps[s];
+      const path = step && step.path;
+      if (Array.isArray(path) && path.length) {
+        for (let k = 0; k < path.length; k++) out.push(path[k]);
+      } else {
+        if (step && step.start_location) out.push(step.start_location);
+        if (step && step.end_location) out.push(step.end_location);
+      }
     }
+    return out;
+  }
+  async function requestBikeLegRoute(from, to){
+    const req = {
+      origin: from,
+      destination: to,
+      travelMode: google.maps.TravelMode.BICYCLING,
+      provideRouteAlternatives: true,
+      optimizeWaypoints: false
+    };
+    const res = await directions.route(req);
+    const route = pickShortestLegalBikeRoute(res && res.routes);
+    if (!route || !Array.isArray(route.legs) || !route.legs.length) return null;
+    const leg = route.legs[0];
+    if (!leg) return null;
+    return {
+      sec: legDurationSeconds(leg),
+      meters: legDistanceMeters(leg),
+      pathPoints: collectLegPathPoints(leg)
+    };
+  }
+  async function computeRouteDuration(origin, waypoints, destination){
+    // Prefer routed bike legs everywhere; fallback only on API failures.
     try {
-      const req = {
-        origin,
-        destination,
-        travelMode: google.maps.TravelMode.BICYCLING,
-        waypoints: (waypoints||[]).map(loc => ({ location: loc, stopover: true }))
-      };
-      const res = await directions.route(req);
-      const route = res && res.routes && res.routes[0];
-      if (!route || !route.legs) return estimateDurationFallback(origin, waypoints, destination);
+      const pts = [origin].concat(waypoints||[]).concat([destination]).filter(Boolean);
+      if (pts.length < 2) return 0;
       let total = 0;
-      route.legs.forEach(leg => { total += (leg.duration && leg.duration.value) || 0; });
+      for (let i = 0; i < pts.length - 1; i++) {
+        const leg = await requestBikeLegRoute(pts[i], pts[i + 1]);
+        if (!leg) return estimateDurationFallback(origin, waypoints, destination);
+        total += Number(leg.sec || 0) || 0;
+      }
       return total;
     } catch(e) {
       return estimateDurationFallback(origin, waypoints, destination);
@@ -487,45 +563,23 @@ window.initZonesMap = function initZonesMap(){
     const pts = [origin].concat(waypoints||[]).concat([destination]).filter(Boolean);
     const legs = [];
     if (!pts || pts.length < 2) return { totalSec: 0, legs };
-    if (!devHost) {
-      try {
-        const req = {
-          origin,
-          destination,
-          travelMode: google.maps.TravelMode.BICYCLING,
-          waypoints: (waypoints||[]).map(loc => ({ location: loc, stopover: true }))
-        };
-        const res = await directions.route(req);
-        const route = res && res.routes && res.routes[0];
-        if (route && route.legs && route.legs.length) {
-          let totalSec = 0;
-          const pathPoints = [];
-          for (let i = 0; i < route.legs.length; i++) {
-            const leg = route.legs[i];
-            const sec = (leg.duration && leg.duration.value) || 0;
-            const meters = (leg.distance && leg.distance.value) || 0;
-            totalSec += sec;
-            legs.push({ sec, meters, from: pts[i], to: pts[i+1] });
-            // Collect detailed path points for legs after pickup (exclude base→pickup leg at index 0)
-            if (i >= 1 && leg.steps) {
-              for (let s = 0; s < leg.steps.length; s++) {
-                const step = leg.steps[s];
-                const path = step && step.path;
-                if (Array.isArray(path)) {
-                  for (let k = 0; k < path.length; k++) {
-                    pathPoints.push(path[k]);
-                  }
-                } else {
-                  if (step && step.start_location) pathPoints.push(step.start_location);
-                  if (step && step.end_location) pathPoints.push(step.end_location);
-                }
-              }
-            }
-          }
-          return { totalSec, legs, pathPoints };
+    try {
+      let totalSec = 0;
+      const pathPoints = [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const leg = await requestBikeLegRoute(pts[i], pts[i + 1]);
+        if (!leg) throw new Error('Leg routing unavailable');
+        const sec = Number(leg.sec || 0) || 0;
+        const meters = Number(leg.meters || 0) || 0;
+        totalSec += sec;
+        legs.push({ sec, meters, from: pts[i], to: pts[i + 1] });
+        // Exclude base->pickup leg path (index 0) to keep rendered route focused on service leg.
+        if (i >= 1 && Array.isArray(leg.pathPoints) && leg.pathPoints.length) {
+          for (let k = 0; k < leg.pathPoints.length; k++) pathPoints.push(leg.pathPoints[k]);
         }
-      } catch(_) {}
-    }
+      }
+      return { totalSec, legs, pathPoints };
+    } catch(_) {}
     // Fallback: estimate per-leg using spherical distances
     try {
       let totalSec = 0;
@@ -821,12 +875,22 @@ window.initZonesMap = function initZonesMap(){
   const qUpdates = document.getElementById('quoteUpdates');
   const qConsent = document.getElementById('quoteConsent');
   const qSubmit = document.getElementById('quoteSubmit');
+  const qProceedBooking = document.getElementById('quoteProceedBooking');
+  const qBookingSection = document.getElementById('quoteBookingSection');
+  const qPayNow = document.getElementById('quotePayNow');
+  const qPaymentMount = document.getElementById('quotePaymentMount');
   const qTraceInfoIcon = document.getElementById('quoteTraceInfoIcon');
   const qDeliverySummary = document.getElementById('quoteDeliverySummary');
   const qBookingStatus = document.getElementById('quoteBookingStatus');
   const qSummaryCard = document.querySelector('.quote-summary-card');
   const qSummaryHeading = document.querySelector('.quote-summary-heading');
   const DEFAULT_DISCOUNT_CODE = 'SELF5';
+  const VAT_RATE = 0.21;
+  let bookingDetailsRevealed = false;
+  let paymentFrameVisible = false;
+  let quoteSummaryAutoScrolled = false;
+  let activeEmbeddedCheckout = null;
+  let lastEmbeddedMountError = '';
   // const qByDistance = document.getElementById('quoteByDistance'); // removed toggle
   // Show simple API status near estimator
   (function showApiStatus(){
@@ -888,9 +952,16 @@ window.initZonesMap = function initZonesMap(){
     } catch(_) {}
   }
   if (qDiscount && !qDiscount.value) qDiscount.value = DEFAULT_DISCOUNT_CODE;
+  function onDateTimeSelectionChange(){
+    try { autoEstimateIfReady(); refreshAvailability(); updateDeliverySummary(); } catch(_) {}
+  }
   if (qDate) qDate.addEventListener('change', function(){
     syncDateDisplay();
-    try { autoEstimateIfReady(); refreshAvailability(); updateDeliverySummary(); } catch(_) {}
+    onDateTimeSelectionChange();
+  });
+  if (qDate) qDate.addEventListener('input', function(){
+    syncDateDisplay();
+    onDateTimeSelectionChange();
   });
   if (qDateDisplay) {
     qDateDisplay.addEventListener('click', openNativeDatePicker);
@@ -904,9 +975,8 @@ window.initZonesMap = function initZonesMap(){
     });
   }
   syncDateDisplay();
-  if (qTime) qTime.addEventListener('change', function(){
-    try { autoEstimateIfReady(); refreshAvailability(); updateDeliverySummary(); } catch(_) {}
-  });
+  if (qTime) qTime.addEventListener('change', onDateTimeSelectionChange);
+  if (qTime) qTime.addEventListener('input', onDateTimeSelectionChange);
   if (qCargo) qCargo.addEventListener('change', function(){
     try { autoEstimateIfReady(); updateDeliverySummary(); syncCargoOptionChips(); } catch(_) {}
   });
@@ -939,6 +1009,52 @@ window.initZonesMap = function initZonesMap(){
     if (!qBookingStatus) return;
     qBookingStatus.textContent = msg || '';
     qBookingStatus.classList.toggle('is-error', !!isError);
+  }
+  function getEstimatorPanel(){
+    return document.querySelector('.zones-home-panel');
+  }
+  function scrollPanelToCenter(targetEl){
+    try {
+      if (!targetEl) return;
+      const panel = getEstimatorPanel();
+      if (!panel) return;
+      const panelRect = panel.getBoundingClientRect();
+      const targetRect = targetEl.getBoundingClientRect();
+      const delta = (targetRect.top - panelRect.top) - ((panelRect.height - targetRect.height) / 2);
+      const nextTop = Math.max(0, panel.scrollTop + delta);
+      panel.scrollTo({ top: nextTop, behavior: 'smooth' });
+    } catch(_) {}
+  }
+  function scrollPanelToTop(targetEl, topPadding){
+    try {
+      if (!targetEl) return;
+      const panel = getEstimatorPanel();
+      if (!panel) return;
+      const panelRect = panel.getBoundingClientRect();
+      const targetRect = targetEl.getBoundingClientRect();
+      const pad = Math.max(0, Number(topPadding || 0) || 0);
+      const delta = (targetRect.top - panelRect.top) - pad;
+      const nextTop = Math.max(0, panel.scrollTop + delta);
+      panel.scrollTo({ top: nextTop, behavior: 'smooth' });
+    } catch(_) {}
+  }
+  function ensureBookingSectionPlacement(){
+    try {
+      if (!qBookingSection || !qSummaryCard) return;
+      const anchor = qSummaryCard.querySelector('.quote-booking-row');
+      if (!anchor) return;
+      if (qBookingSection.parentElement !== qSummaryCard) {
+        qSummaryCard.insertBefore(qBookingSection, anchor);
+      }
+    } catch(_) {}
+  }
+  function updatePayButtonLabel(){
+    if (!qPayNow) return;
+    const ctx = window._lastQuoteContext || null;
+    const currency = String((ctx && ctx.currency) || '€');
+    const amount = Number((ctx && ctx.total) || 0) || 0;
+    const label = (i18n('quotePayToConfirm', { amount: formatMoneyLocalized(amount, currency) }) || ('Pay ' + formatMoneyLocalized(amount, currency) + ' to confirm booking'));
+    qPayNow.textContent = label;
   }
   function setBookingStatusHtml(parts, isError){
     if (!qBookingStatus) return;
@@ -1248,14 +1364,50 @@ window.initZonesMap = function initZonesMap(){
     });
   }
 
+  function getBookingValidationError(){
+    const hasQuote = !!(window._lastQuoteContext);
+    if (!hasQuote) return i18n('quoteEstimateFirst') || 'Please calculate a quote first.';
+    const name = String((qName && qName.value) || '').trim();
+    const email = String((qEmail && qEmail.value) || '').trim();
+    const emailConfirm = String((qEmailConfirm && qEmailConfirm.value) || '').trim();
+    const phoneRaw = String((qPhone && qPhone.value) || '').trim();
+    const phone = composePhoneWithCountry((qPhoneCountry && qPhoneCountry.value) || 'Spain (+34)', phoneRaw);
+    const consent = !!(qConsent && qConsent.checked);
+    const dateVal = (qDate && qDate.value) ? String(qDate.value) : '';
+    const timeVal = (qTime && qTime.value) ? String(qTime.value) : '';
+    if (!name) return i18n('bookingNameRequired') || 'Please enter your name.';
+    if (!email) return i18n('bookingEmailRequired') || 'Please enter your email.';
+    if (!isValidEmail(email)) return i18n('bookingEmailInvalid') || 'Please enter a valid email.';
+    if (!emailConfirm) return i18n('bookingEmailConfirmRequired') || 'Please confirm your email.';
+    if (email.toLowerCase() !== emailConfirm.toLowerCase()) return i18n('bookingEmailMismatch') || 'Email confirmation does not match.';
+    if (!phoneRaw) return i18n('bookingPhoneRequired') || 'Please enter your phone number.';
+    if (!isValidPhone(phone)) return i18n('bookingPhoneInvalid') || 'Please enter a valid phone number with country code.';
+    if (!consent) return i18n('bookingConsentRequired') || 'Please confirm you agree to be contacted.';
+    if (!dateVal || !timeVal) return 'Please choose a date and time.';
+    return '';
+  }
+  function hidePaymentMount(){
+    try {
+      if (activeEmbeddedCheckout && typeof activeEmbeddedCheckout.unmount === 'function') {
+        activeEmbeddedCheckout.unmount();
+      }
+      if (activeEmbeddedCheckout && typeof activeEmbeddedCheckout.destroy === 'function') {
+        activeEmbeddedCheckout.destroy();
+      }
+    } catch(_) {}
+    activeEmbeddedCheckout = null;
+    if (!qPaymentMount) return;
+    qPaymentMount.classList.add('is-hidden');
+    qPaymentMount.innerHTML = '';
+    paymentFrameVisible = false;
+  }
   function updateSubmitVisibility(){
-    if (!qSubmit) return;
     const pickupReady = !!(qPickup && qPickup.dataset && qPickup.dataset.lat && qPickup.dataset.lng);
     const dropReady = !!(qDrop && qDrop.dataset && qDrop.dataset.lat && qDrop.dataset.lng);
     const ready = pickupReady && dropReady;
-    qSubmit.classList.toggle('is-hidden', !ready);
+    const hasQuote = !!(window._lastQuoteContext);
     const hasSummaryContent = !!(
-      (window._lastQuoteContext) ||
+      hasQuote ||
       (qRate && String(qRate.textContent || '').trim()) ||
       (qOut && String(qOut.textContent || '').trim())
     );
@@ -1264,6 +1416,21 @@ window.initZonesMap = function initZonesMap(){
     if (qSummaryCard) qSummaryCard.classList.toggle('is-hidden', !showSummaryCard);
     if (qSummaryHeading) qSummaryHeading.classList.toggle('is-hidden', !showSummaryCard);
     if (qTraceInfoIcon) qTraceInfoIcon.classList.toggle('is-hidden', !ready);
+    if (qSubmit) qSubmit.classList.add('is-hidden');
+
+    if (!hasQuote) {
+      bookingDetailsRevealed = false;
+      hidePaymentMount();
+    }
+    if (qProceedBooking) qProceedBooking.classList.toggle('is-hidden', !hasQuote);
+    if (qBookingSection) qBookingSection.classList.toggle('is-hidden', !bookingDetailsRevealed);
+
+    const showPay = bookingDetailsRevealed && hasQuote;
+    if (qPayNow) {
+      qPayNow.classList.toggle('is-hidden', !showPay);
+      updatePayButtonLabel();
+      qPayNow.disabled = false;
+    }
     updateDeliverySummary();
   }
   if (qPickup) qPickup.addEventListener('input', updateSubmitVisibility);
@@ -1273,6 +1440,8 @@ window.initZonesMap = function initZonesMap(){
   if (qEmail) qEmail.addEventListener('input', updateSubmitVisibility);
   if (qEmailConfirm) qEmailConfirm.addEventListener('input', updateSubmitVisibility);
   if (qPhone) qPhone.addEventListener('input', updateSubmitVisibility);
+  if (qNotes) qNotes.addEventListener('input', updateSubmitVisibility);
+  if (qUpdates) qUpdates.addEventListener('change', updateSubmitVisibility);
   if (qPhoneCountry) {
     qPhoneCountry.addEventListener('input', function(){
       normalizePhoneCountryInput(true);
@@ -1285,6 +1454,17 @@ window.initZonesMap = function initZonesMap(){
     qPhoneCountry.addEventListener('blur', function(){ normalizePhoneCountryInput(false); });
   }
   if (qConsent) qConsent.addEventListener('change', updateSubmitVisibility);
+  if (qProceedBooking) {
+    qProceedBooking.addEventListener('click', function(){
+      if (!window._lastQuoteContext) return;
+      ensureBookingSectionPlacement();
+      bookingDetailsRevealed = true;
+      setBookingStatus('');
+      updateSubmitVisibility();
+      if (qBookingSection) scrollPanelToCenter(qBookingSection);
+    });
+  }
+  ensureBookingSectionPlacement();
   updateSubmitVisibility();
 
   function parseTimeToMinutes(str){
@@ -1421,13 +1601,14 @@ window.initZonesMap = function initZonesMap(){
   }
   function getAvailabilityFlagMessage(surchargeInfo){
     if (!surchargeInfo) return '';
-    if (surchargeInfo.isWeekendHoliday) {
-      return i18n('availabilityFlagWeekend') || 'Weekend time slot selected - Message us to discuss this order.';
-    }
-    if (surchargeInfo.afterHours) {
-      return i18n('availabilityFlagAfterHours') || 'After hours time slot selected - Message us to discuss this order.';
-    }
-    return '';
+    const weekendMsg = surchargeInfo.isWeekendHoliday
+      ? (i18n('availabilityFlagWeekend') || 'Weekend/holiday date/time selected. Weekend/holiday surcharges apply.')
+      : '';
+    const afterHoursMsg = surchargeInfo.afterHours
+      ? (i18n('availabilityFlagAfterHours') || 'After-hours date/time selected. After-hours surcharge applies.')
+      : '';
+    if (weekendMsg && afterHoursMsg) return weekendMsg + ' ' + afterHoursMsg;
+    return weekendMsg || afterHoursMsg || '';
   }
   function isTimeBlocked(min, blocked, duration){
     const endMin = min + Math.max(0, Number(duration || 0) || 0);
@@ -1772,16 +1953,7 @@ window.initZonesMap = function initZonesMap(){
           }
         }
 
-        pushLine(
-          i18n('breakdownSubtotalLabel') || 'Subtotal',
-          formatMoneyLocalized(ctx.subtotal || 0, cur),
-          'subtotal'
-        );
-
         const adjustmentLines = [];
-        let discountEntryCount = 0;
-        let discountAggregateAmount = 0;
-
         if (ctx.cargoKey === 'large' && ctx.cargoAmount) {
           adjustmentLines.push({
             label: i18n('breakdownLargeCargoLabel') || 'Large cargo',
@@ -1793,10 +1965,7 @@ window.initZonesMap = function initZonesMap(){
             label: i18n('breakdownSmallCargoLabel') || 'Small cargo',
             value: formatMoneySigned(ctx.cargoAmount || 0, cur)
           });
-          discountEntryCount += 1;
-          discountAggregateAmount += Math.abs(Number(ctx.cargoAmount || 0));
         }
-
         if (ctx.isWeekendHoliday && ctx.weekendSurchargeAmount) {
           adjustmentLines.push({
             label: i18n('breakdownSurchargeWeekendLabel') || 'Weekend/holiday surcharge',
@@ -1809,33 +1978,37 @@ window.initZonesMap = function initZonesMap(){
             value: formatMoneyLocalized(ctx.afterHoursSurchargeAmount || 0, cur)
           });
         }
-        const discountItems = Array.isArray(ctx.discountItems) ? ctx.discountItems : [];
-        if (discountItems.length) {
-          discountItems.forEach(function(item){
-            const promoLabel = i18n('breakdownPromoLabel', { code: item.code }) || ('Promo ' + item.code);
-            adjustmentLines.push({
-              label: promoLabel,
-              value: formatMoneySigned(-(Math.abs(item.amount || 0)), cur)
-            });
-            discountEntryCount += 1;
-            discountAggregateAmount += Math.abs(Number(item.amount || 0));
-          });
-          if (discountEntryCount > 1) {
-            adjustmentLines.push({
-              label: i18n('breakdownDiscountTotalLabel') || 'Discount total',
-              value: formatMoneySigned(-discountAggregateAmount, cur)
-            });
-          }
-        }
-
-        pushSectionTitle(i18n('breakdownAdjustmentsLabel') || 'Discounts and surcharges');
         if (adjustmentLines.length) {
+          pushSectionTitle(i18n('breakdownAdjustmentsLabel') || 'Discounts and surcharges');
           adjustmentLines.forEach(function(item){
             pushLine(item.label, item.value);
           });
-        } else {
-          pushLine(i18n('breakdownNoAdjustmentsLabel') || 'No discounts or surcharges', '—');
         }
+
+        pushLine(
+          i18n('breakdownSubtotalLabel') || 'Subtotal',
+          formatMoneyLocalized(ctx.subtotal || 0, cur),
+          'subtotal'
+        );
+
+        const discountItems = Array.isArray(ctx.discountItems) ? ctx.discountItems : [];
+        let discountAggregateAmount = 0;
+        if (discountItems.length) {
+          pushSectionTitle(i18n('breakdownPromoSectionLabel') || 'Promo');
+          discountItems.forEach(function(item){
+            const promoLabel = i18n('breakdownPromoLabel', { code: item.code }) || ('Promo ' + item.code);
+            const amount = Math.abs(Number(item.amount || 0));
+            discountAggregateAmount += amount;
+            pushLine(promoLabel, formatMoneySigned(-amount, cur));
+          });
+          if (discountItems.length > 1) {
+            pushLine(i18n('breakdownDiscountTotalLabel') || 'Discount total', formatMoneySigned(-discountAggregateAmount, cur));
+          }
+        }
+
+        const vatRatePct = Math.round((Number(ctx.vatRate || 0.21) || 0.21) * 100);
+        const vatLabel = i18n('breakdownVatLabel', { rate: vatRatePct }) || ('VAT (' + vatRatePct + '%)');
+        pushLine(vatLabel, formatMoneyLocalized(ctx.vatAmount || 0, cur));
 
         pushLine(
           i18n('breakdownTotalLabel') || 'Total',
@@ -1904,6 +2077,8 @@ window.initZonesMap = function initZonesMap(){
         'sub=' + money(ctx.subtotal),
         'surTot=' + money(ctx.surchargeAmount),
         'discTot=' + money(ctx.discountAmount),
+        'preVat=' + money(ctx.preVatTotal),
+        'vat=' + pct(ctx.vatRate) + '/' + money(ctx.vatAmount),
         'total=' + money(ctx.total)
       ].join(' ');
 
@@ -2706,25 +2881,16 @@ window.initZonesMap = function initZonesMap(){
     const ctx = window._lastQuoteContext || null;
     if (!ctx) return { error: i18n('quoteEstimateFirst') || 'Please calculate a quote first.' };
     try { defaultDateTimeInputs(); } catch(_) {}
+    const validationError = getBookingValidationError();
+    if (validationError) return { error: validationError };
     const name = String((qName && qName.value) || '').trim();
     const email = String((qEmail && qEmail.value) || '').trim();
-    const emailConfirm = String((qEmailConfirm && qEmailConfirm.value) || '').trim();
     const phoneRaw = String((qPhone && qPhone.value) || '').trim();
     const phone = composePhoneWithCountry((qPhoneCountry && qPhoneCountry.value) || 'Spain (+34)', phoneRaw);
     const notes = String((qNotes && qNotes.value) || '').trim();
     const updatesPreference = String((qUpdates && qUpdates.value) || '').trim();
-    const consent = !!(qConsent && qConsent.checked);
-    if (!name) return { error: i18n('bookingNameRequired') || 'Please enter your name.' };
-    if (!email) return { error: i18n('bookingEmailRequired') || 'Please enter your email.' };
-    if (!isValidEmail(email)) return { error: i18n('bookingEmailInvalid') || 'Please enter a valid email.' };
-    if (!emailConfirm) return { error: i18n('bookingEmailConfirmRequired') || 'Please confirm your email.' };
-    if (email.toLowerCase() !== emailConfirm.toLowerCase()) return { error: i18n('bookingEmailMismatch') || 'Email confirmation does not match.' };
-    if (!phoneRaw) return { error: i18n('bookingPhoneRequired') || 'Please enter your phone number.' };
-    if (!isValidPhone(phone)) return { error: i18n('bookingPhoneInvalid') || 'Please enter a valid phone number with country code.' };
-    if (!consent) return { error: i18n('bookingConsentRequired') || 'Please confirm you agree to be contacted.' };
     const dateVal = (qDate && qDate.value) ? String(qDate.value) : '';
     const timeVal = (qTime && qTime.value) ? String(qTime.value) : '';
-    if (!dateVal || !timeVal) return { error: 'Please choose a date and time.' };
     const mergedQuote = Object.assign({}, ctx, {
       schedule: { date: dateVal, time: timeVal }
     });
@@ -2749,7 +2915,89 @@ window.initZonesMap = function initZonesMap(){
       return '';
     }
   }
-  async function submitBooking(){
+  function renderInlinePayment(paymentUrl, trackingUrl, reference){
+    if (!qPaymentMount) return;
+    qPaymentMount.innerHTML = '';
+    const intro = document.createElement('p');
+    intro.className = 'quote-payment-intro';
+    intro.textContent = i18n('quotePaymentFallback') || 'If the secure card form does not appear, open payment in a new tab:';
+    qPaymentMount.appendChild(intro);
+
+    const fallback = document.createElement('p');
+    fallback.className = 'quote-payment-fallback';
+    fallback.textContent = '';
+    fallback.appendChild(document.createTextNode(' '));
+    fallback.appendChild(buildStatusLink(paymentUrl, i18n('quotePaymentOpenTab') || 'Open payment'));
+    if (trackingUrl) {
+      fallback.appendChild(document.createTextNode(' · '));
+      fallback.appendChild(buildStatusLink(trackingUrl, i18n('bookingTrackingLink') || 'Tracking link'));
+    }
+    if (reference) {
+      const refNode = document.createElement('span');
+      refNode.textContent = ' · ' + (i18n('bookingRefLabel', { ref: reference }) || ('Ref: ' + reference));
+      fallback.appendChild(refNode);
+    }
+    qPaymentMount.appendChild(fallback);
+    qPaymentMount.classList.remove('is-hidden');
+    paymentFrameVisible = true;
+    scrollPanelToCenter(qPaymentMount);
+  }
+  async function renderEmbeddedPayment(clientSecret, trackingUrl, reference, paymentUrl, publishableKey){
+    if (!qPaymentMount) return false;
+    const stripePublishableKey = String(publishableKey || window.CARGOWORKS_STRIPE_PUBLISHABLE_KEY || '').trim();
+    if (!stripePublishableKey || !window.Stripe || !clientSecret) return false;
+    lastEmbeddedMountError = '';
+
+    hidePaymentMount();
+    qPaymentMount.innerHTML = '';
+
+    const intro = document.createElement('p');
+    intro.className = 'quote-payment-intro';
+    intro.textContent = i18n('quotePaymentInlineIntro') || 'Complete your payment below to confirm your booking.';
+    qPaymentMount.appendChild(intro);
+
+    const host = document.createElement('div');
+    host.className = 'quote-payment-frame';
+    host.style.border = '0';
+    host.style.background = 'transparent';
+    host.style.minHeight = '540px';
+    qPaymentMount.appendChild(host);
+
+    const footer = document.createElement('p');
+    footer.className = 'quote-payment-fallback';
+    if (trackingUrl) {
+      footer.appendChild(buildStatusLink(trackingUrl, i18n('bookingTrackingLink') || 'Tracking link'));
+    }
+    if (paymentUrl) {
+      if (footer.childNodes.length) footer.appendChild(document.createTextNode(' · '));
+      footer.appendChild(buildStatusLink(paymentUrl, i18n('quotePaymentOpenTab') || 'Open payment'));
+    }
+    if (reference) {
+      const refNode = document.createElement('span');
+      refNode.textContent = ' · ' + (i18n('bookingRefLabel', { ref: reference }) || ('Ref: ' + reference));
+      footer.appendChild(refNode);
+    }
+    qPaymentMount.appendChild(footer);
+
+    const stripe = window.Stripe(stripePublishableKey);
+    if (!stripe) return false;
+    try {
+      activeEmbeddedCheckout = await stripe.initEmbeddedCheckout({
+        fetchClientSecret: function(){ return Promise.resolve(clientSecret); }
+      });
+      activeEmbeddedCheckout.mount(host);
+      qPaymentMount.classList.remove('is-hidden');
+      paymentFrameVisible = true;
+      scrollPanelToCenter(qPaymentMount);
+      return true;
+    } catch(err) {
+      lastEmbeddedMountError = (err && err.message) ? String(err.message) : 'Embedded checkout initialization failed';
+      try { console.error('[Cargoworks payment] Embedded mount failed', err); } catch(_) {}
+      hidePaymentMount();
+      return false;
+    }
+  }
+  async function startInlinePayment(){
     try {
       if (!BOOKING_API_BASE) {
         setBookingStatus('Booking is not configured yet.', true);
@@ -2761,8 +3009,9 @@ window.initZonesMap = function initZonesMap(){
         return;
       }
       const base = BOOKING_API_BASE.replace(/\/$/, '');
+      if (qPayNow) qPayNow.disabled = true;
       if (qSubmit) qSubmit.disabled = true;
-      setBookingStatus('Sending booking request...');
+      setBookingStatus(i18n('quotePaymentPreparing') || 'Preparing secure payment...');
       const form = new URLSearchParams();
       form.set('payload', JSON.stringify(payload));
       const res = await fetch(base, {
@@ -2778,59 +3027,74 @@ window.initZonesMap = function initZonesMap(){
         return;
       }
       const ref = (json && (json.reference || json.id)) ? String(json.reference || json.id) : '';
-      const hasPay = !!(json && json.paymentUrl);
       const paymentUrl = json && json.paymentUrl ? String(json.paymentUrl) : '';
-      const whatsappUrl = json && json.whatsappUrl ? String(json.whatsappUrl) : '';
+      const paymentClientSecret = json && json.paymentClientSecret ? String(json.paymentClientSecret) : '';
+      const paymentMode = json && json.paymentMode ? String(json.paymentMode) : '';
+      const responsePublishableKey = json && json.paymentPublishableKey ? String(json.paymentPublishableKey) : '';
+      const publishableKey = String(window.CARGOWORKS_STRIPE_PUBLISHABLE_KEY || responsePublishableKey || '').trim();
+      const hasPublishableKey = !!publishableKey;
       const trackingUrl = json && json.trackingUrl ? String(json.trackingUrl) : (ref ? buildTrackingUrlFromRef(ref) : '');
       const paymentError = json && json.paymentError ? String(json.paymentError) : '';
-      const mail = json && json.mail ? json.mail : null;
-      let mailNote = '';
-      if (mail && mail.clientSent === false) mailNote = ' Email could not be sent.';
-      const parts = [];
-      const requestReceived = i18n('bookingRequestReceived') || 'Request received - I\'ll take it from here.';
-      const refLine = ref ? (i18n('bookingRefLabel', { ref }) || ('Ref: ' + ref)) : '';
-      const payHere = i18n('bookingPayHere') || 'Pay here: ';
-      const trackHere = i18n('bookingTrackHere') || 'Track it here: ';
-      const paymentLabel = i18n('bookingPaymentLink') || 'Payment link';
-      const trackingLabel = i18n('bookingTrackingLink') || 'Tracking link';
-      const whatsappLabel = i18n('bookingWhatsAppMe') || 'WhatsApp me';
-      const helpNote = i18n('bookingHelpNote') || ' if you need anything :)';
+      const paymentEmbeddedError = json && json.paymentEmbeddedError ? String(json.paymentEmbeddedError) : '';
 
-      parts.push(requestReceived);
-      parts.push(document.createElement('br'));
-      parts.push(document.createElement('br'));
-      if (refLine) {
-        parts.push(refLine);
-        parts.push(document.createElement('br'));
+      try {
+        console.info('[Cargoworks payment]', {
+          reference: ref,
+          paymentMode: paymentMode || 'unknown',
+          hasPaymentUrl: !!paymentUrl,
+          hasClientSecret: !!paymentClientSecret,
+          hasPublishableKey: hasPublishableKey,
+          paymentError: paymentError || '',
+          paymentEmbeddedError: paymentEmbeddedError || ''
+        });
+      } catch(_) {}
+
+      if (paymentClientSecret && !hasPublishableKey) {
+        setBookingStatus('Missing Stripe publishable key. Set window.CARGOWORKS_STRIPE_PUBLISHABLE_KEY or STRIPE_PUBLISHABLE in Apps Script properties.', true);
       }
-      if (hasPay && paymentUrl) {
-        parts.push(payHere);
-        parts.push(buildStatusLink(paymentUrl, paymentLabel));
-        parts.push(document.createElement('br'));
-      } else if (paymentError) {
-        parts.push(String(paymentError || 'Payment link could not be created.'));
-        parts.push(document.createElement('br'));
+      if (paymentMode === 'embedded' && paymentClientSecret) {
+        const mounted = await renderEmbeddedPayment(paymentClientSecret, trackingUrl, ref, paymentUrl, publishableKey);
+        if (mounted) {
+          setBookingStatus(i18n('quotePaymentReady') || 'Payment session ready. Complete payment to confirm your booking.');
+          return;
+        }
       }
-      if (trackingUrl) {
-        parts.push(trackHere);
-        parts.push(buildStatusLink(trackingUrl, trackingLabel));
-        parts.push(document.createElement('br'));
+      if (paymentClientSecret && paymentMode !== 'hosted') {
+        const mounted = await renderEmbeddedPayment(paymentClientSecret, trackingUrl, ref, paymentUrl, publishableKey);
+        if (mounted) {
+          setBookingStatus(i18n('quotePaymentReady') || 'Payment session ready. Complete payment to confirm your booking.');
+          return;
+        }
       }
-      if (whatsappUrl) {
-        parts.push(buildStatusLink(whatsappUrl, whatsappLabel));
-        parts.push(document.createTextNode(helpNote));
+      if (paymentUrl) {
+        renderInlinePayment(paymentUrl, trackingUrl, ref);
+        const reason = paymentEmbeddedError || lastEmbeddedMountError || paymentError;
+        const fallbackBase = i18n('quotePaymentFallback') || 'If the secure card form does not appear, open payment in a new tab:';
+        setBookingStatus(reason ? (fallbackBase + ' (' + reason + ')') : fallbackBase);
+        return;
       }
-      if (mailNote) parts.push(mailNote);
-      setBookingStatusHtml(parts);
-      resetBookingFieldsAfterSuccess();
+      if (paymentError || lastEmbeddedMountError) {
+        const errLabel = paymentError || lastEmbeddedMountError;
+        setBookingStatus(errLabel, true);
+      } else {
+        setBookingStatus(i18n('quotePaymentUnavailable') || 'Payment could not be initialized. Please try again.', true);
+      }
     } catch(e) {
-      setBookingStatus('Could not send booking request. Please try again.', true);
+      setBookingStatus(i18n('quotePaymentStartError') || 'Could not start payment. Please try again.', true);
     } finally {
+      if (qPayNow) qPayNow.disabled = false;
       if (qSubmit) qSubmit.disabled = false;
     }
   }
   let estimateSeq = 0;
-  function invalidateEstimate(){ estimateSeq++; }
+  function invalidateEstimate(){
+    estimateSeq++;
+    window._lastQuoteContext = null;
+    bookingDetailsRevealed = false;
+    quoteSummaryAutoScrolled = false;
+    hidePaymentMount();
+    updateSubmitVisibility();
+  }
   async function runEstimate(){
     const seq = ++estimateSeq;
     const orderedInputs = getOrderedInputs();
@@ -2951,17 +3215,19 @@ window.initZonesMap = function initZonesMap(){
       const surchargeAmount = Math.round((subtotal * (surchargeInfo.rate || 0)) * 100) / 100;
       const weekendSurchargeAmount = Math.round((subtotal * (surchargeInfo.isWeekendHoliday ? surchargeInfo.weekendRate : 0)) * 100) / 100;
       const afterHoursSurchargeAmount = Math.round((subtotal * (surchargeInfo.afterHours ? surchargeInfo.afterRate : 0)) * 100) / 100;
-      let total = Math.round((subtotal + surchargeAmount) * 100) / 100;
-      const totalBeforeDiscount = total;
-      const discountInfo = resolveDiscountsForEstimate(totalBeforeDiscount, surchargeInfo.dateKey, cur);
+      const subtotalBeforeDiscount = Math.round((subtotal + surchargeAmount) * 100) / 100;
+      const discountInfo = resolveDiscountsForEstimate(subtotalBeforeDiscount, surchargeInfo.dateKey, cur);
       const discountAmount = Math.round((discountInfo.totalDiscount || 0) * 100) / 100;
       const discountItems = Array.isArray(discountInfo.applied) ? discountInfo.applied : [];
-      if (discountAmount) total = Math.max(0, Math.round((totalBeforeDiscount - discountAmount) * 100) / 100);
+      const preVatTotal = Math.max(0, Math.round((subtotalBeforeDiscount - discountAmount) * 100) / 100);
+      const vatAmount = Math.round((preVatTotal * VAT_RATE) * 100) / 100;
+      const total = Math.round((preVatTotal + vatAmount) * 100) / 100;
+      const vatRatePercent = Math.round(VAT_RATE * 100);
       const travelSecsAfterPickup = legs.reduce((a, l) => a + (Number(l.sec||0)||0), 0);
       const travelMins = Math.round(travelSecsAfterPickup / 60);
       const serviceMins = 5 + (3 * (stopInputs.length + 1));
       const etaTotalMins = travelMins + serviceMins;
-      const info = 'Mode=distance · perKm=' + perKm.toFixed(2) + ' (pickup zone ' + pickupZone + ')' + (cargoInfo.rate ? (' · cargo ' + Math.round(cargoInfo.rate * 100) + '%') : '') + (surchargeInfo.rate ? (' · surcharge ' + Math.round(surchargeInfo.rate * 100) + '%') : '') + (discountAmount ? (' · discount ' + cur + discountAmount.toFixed(2)) : '');
+      const info = 'Mode=distance · perKm=' + perKm.toFixed(2) + ' (pickup zone ' + pickupZone + ')' + (cargoInfo.rate ? (' · cargo ' + Math.round(cargoInfo.rate * 100) + '%') : '') + (surchargeInfo.rate ? (' · surcharge ' + Math.round(surchargeInfo.rate * 100) + '%') : '') + (discountAmount ? (' · discount ' + cur + discountAmount.toFixed(2)) : '') + (' · VAT ' + vatRatePercent + '% ' + cur + vatAmount.toFixed(2));
       const discountNote = discountAmount ? (i18n('quoteSummaryDiscountNote') || ' (discount applied)') : '';
       const summary = i18n('quoteSummaryDistance', {
         currency: cur,
@@ -2995,7 +3261,10 @@ window.initZonesMap = function initZonesMap(){
         surchargeAmount,
         discounts: discountItems,
         discountTotal: discountAmount,
-        subtotal,
+        subtotal: subtotalBeforeDiscount,
+        preVatTotal,
+        vatRate: VAT_RATE,
+        vatAmount,
         total,
         parts,
         legs,
@@ -3010,7 +3279,7 @@ window.initZonesMap = function initZonesMap(){
       setPricingUiCopy({
         cur,
         total,
-        subtotal,
+        subtotal: subtotalBeforeDiscount,
         totalKm,
         etaTotalMins,
         dropCount: stopInputs.length + 1,
@@ -3033,7 +3302,9 @@ window.initZonesMap = function initZonesMap(){
         afterHours: surchargeInfo.afterHours,
         discountAmount,
         discountItems,
-        discountTotal: discountAmount
+        discountTotal: discountAmount,
+        vatRate: VAT_RATE,
+        vatAmount
       });
       const now = new Date();
       const hh = String(now.getHours()).padStart(2, '0');
@@ -3048,9 +3319,13 @@ window.initZonesMap = function initZonesMap(){
       }
       window._lastQuoteContext = {
         createdAt: new Date().toISOString(),
+        cur: cur,
         currency: cur,
         total: total,
-        subtotal: subtotal,
+        subtotal: subtotalBeforeDiscount,
+        preVatTotal: preVatTotal,
+        vatRate: VAT_RATE,
+        vatAmount: vatAmount,
         totalKm: totalKm,
         etaMins: etaTotalMins,
         pickupZone: pickupZoneNum,
@@ -3087,6 +3362,10 @@ window.initZonesMap = function initZonesMap(){
           }
         },
         pricing: {
+          subtotalBeforeDiscount: subtotalBeforeDiscount,
+          preVatTotal: preVatTotal,
+          vatRate: VAT_RATE,
+          vatAmount: vatAmount,
           pickupCharge: pickupCharge,
           distanceTotal: distanceTotal,
           addressFee: addressFee,
@@ -3096,6 +3375,14 @@ window.initZonesMap = function initZonesMap(){
       };
       updateDeliverySummary();
       updateSubmitVisibility();
+      if (!quoteSummaryAutoScrolled) {
+        quoteSummaryAutoScrolled = true;
+        setTimeout(function(){
+          try {
+            if (qSummaryCard) scrollPanelToTop(qSummaryCard, 10);
+          } catch(_) {}
+        }, 0);
+      }
       try { refreshAvailability(); } catch(_) {}
       return;
     } catch(e){
@@ -3107,7 +3394,8 @@ window.initZonesMap = function initZonesMap(){
   }
   // Trigger computation
   if (qEstimate) { qEstimate.addEventListener('click', runEstimate); }
-  if (qSubmit) { qSubmit.addEventListener('click', submitBooking); }
+  if (qPayNow) { qPayNow.addEventListener('click', startInlinePayment); }
+  if (qSubmit) { qSubmit.addEventListener('click', startInlinePayment); }
   
 
   if (editMode && google.maps.drawing) {

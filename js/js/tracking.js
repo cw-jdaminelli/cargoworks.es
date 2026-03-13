@@ -32,7 +32,13 @@
     }
     const ul = document.createElement('ul');
     ul.className = 'tracking-timeline';
-    items.slice().reverse().forEach(item => {
+    items.slice().sort(function(a, b){
+      const aTs = Date.parse(String(a && a.ts || ''));
+      const bTs = Date.parse(String(b && b.ts || ''));
+      const aSafe = Number.isNaN(aTs) ? Number.MAX_SAFE_INTEGER : aTs;
+      const bSafe = Number.isNaN(bTs) ? Number.MAX_SAFE_INTEGER : bTs;
+      return aSafe - bSafe;
+    }).forEach(item => {
       const li = document.createElement('li');
       const ts = item && item.ts ? String(item.ts).replace('T', ' ').replace('Z', '') : '';
       const status = item && item.status ? String(item.status) : '';
@@ -41,6 +47,41 @@
       ul.appendChild(li);
     });
     return ul;
+  }
+
+  function renderDispatcherNotes(items){
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'tracking-notes';
+    const title = document.createElement('h3');
+    title.textContent = 'Dispatcher notes';
+    wrap.appendChild(title);
+    list.forEach(function(item){
+      const note = document.createElement('p');
+      note.className = 'tracking-notes-item';
+      const ts = item && item.ts ? String(item.ts).replace('T', ' ').replace('Z', '') : '';
+      const status = item && item.status ? String(item.status) : '';
+      const message = item && item.message ? String(item.message) : '';
+      note.textContent = (ts ? (ts + ' - ') : '') + (status ? (status + ': ') : '') + message;
+      wrap.appendChild(note);
+    });
+    return wrap;
+  }
+
+  function renderDeliveryNote(noteText){
+    const note = String(noteText || '').trim();
+    if (!note) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'tracking-delivery-note';
+    const title = document.createElement('h3');
+    title.textContent = 'Latest delivery update';
+    const body = document.createElement('p');
+    body.className = 'tracking-delivery-note-text';
+    body.textContent = note;
+    wrap.appendChild(title);
+    wrap.appendChild(body);
+    return wrap;
   }
 
   function renderDetails(order){
@@ -74,6 +115,12 @@
     links.appendChild(document.createTextNode(' | POD: '));
     links.appendChild(buildLink(order.podUrl, 'POD link'));
     detailsEl.appendChild(links);
+
+    const deliveryNote = renderDeliveryNote(order.deliveryNote || '');
+    if (deliveryNote) detailsEl.appendChild(deliveryNote);
+
+    const notesBlock = renderDispatcherNotes(order.dispatcherNotes || []);
+    if (notesBlock) detailsEl.appendChild(notesBlock);
 
     detailsEl.appendChild(renderTimeline(order.timeline || []));
   }

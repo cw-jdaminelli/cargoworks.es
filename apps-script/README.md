@@ -30,3 +30,28 @@ Set the booking API base in [index.html](../index.html):
 - Calendar ID is set to `primary` in Code.gs. If you want another calendar, replace it with the calendar ID.
 - If you use a different timezone, update both Code.gs and the Apps Script project settings.
 - For dynamic payments, set a script property named `STRIPE_SECRET` with your Stripe secret key.
+
+## Admin Endpoints
+
+- `GET ?action=adminList&token=...&date=YYYY-MM-DD` -> list orders for one day.
+- `GET ?action=adminList&token=...&scope=all&from=YYYY-MM-DD&to=YYYY-MM-DD` -> list all orders in range.
+- `GET ?action=adminList&token=...&ref=CW-DDMMYYYY-XXXX` -> server-side reference filtering (works with date or all scope).
+- `GET ?action=adminSheetInfo&token=...` -> returns orders log spreadsheet URL.
+- `GET ?action=adminBackfillLog&token=...&from=YYYY-MM-DD&to=YYYY-MM-DD` -> one-time historical import into orders log.
+
+## Orders Log Sheet
+
+- The orders log spreadsheet is created lazily when logging is first needed.
+- New rows are appended on:
+  - booking creation (`booking_created`)
+  - dispatcher update (`admin_update`)
+  - POD upload (`pod_uploaded`)
+- Historical orders are not auto-imported unless you run the backfill endpoint.
+
+## Required OAuth Scope
+
+If your project uses explicit scopes in `appsscript.json`, include:
+
+`https://www.googleapis.com/auth/spreadsheets`
+
+Without it, calls such as `SpreadsheetApp.create(...)` will fail and the orders log cannot be created.

@@ -457,9 +457,9 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
 }
 .booking-actions {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 .booking-actions .quote-info {
   margin-left: 0;
@@ -469,16 +469,14 @@ body { line-height: 1.5; overflow-x: hidden; background: transparent; }
   font-size: 0.7rem;
   line-height: 1.35;
   color: #2d1a4d;
-  max-width: 260px;
+  max-width: 100%;
 }
 .booking-actions .btn {
   flex: 0 0 auto;
 }
 .delivery-summary {
-  flex: 0 1 auto;
-}
-@media (max-width: 720px) {
-  .booking-actions { flex-wrap: wrap; }
+  flex: 1 1 100%;
+  margin-top: 0.25rem;
 }
 .delivery-summary .summary-title {
   font-weight: 700;
@@ -862,6 +860,7 @@ body .hero-section {
   .config-section--datetime #quoteDateDisplay,
   .config-section--datetime #quoteTime,
   .config-section--discount #quoteDiscount,
+  .quote-promo-inline #quoteDiscount,
   .config-section--booking #quoteNotes {
     width: 100%;
     height: 32px !important;
@@ -1023,16 +1022,16 @@ body .hero-section {
 .config-footer.quote-summary-card {
   display: grid;
   align-items: stretch;
-  gap: 0.6rem;
+  gap: 0.42rem;
   margin-top: 0;
-  padding: 0.9rem 1rem 1rem 1rem;
+  padding: 0.68rem 0.78rem 0.74rem 0.78rem;
   border: 1px solid rgba(0,0,0,0.08);
   border-radius: 12px;
   background: #fff;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.6);
 }
 .quote-summary-heading {
-  font-size: 0.75rem;
+  font-size: 0.69rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1044,10 +1043,10 @@ body .hero-section {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.3rem;
 }
 .config-footer.quote-summary-card .quote-rate {
-  font-size: 1.2rem;
+  font-size: 1rem;
 }
 .config-footer.quote-summary-card .pricing-ui-block {
   margin-top: 0.1rem;
@@ -1353,10 +1352,11 @@ body .hero-section {
 }
 
 .booking-phone-row {
-  display: flex;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
   align-items: center;
   gap: 0.45rem;
+  min-width: 0;
 }
 
 .cargo-option-strip {
@@ -1423,12 +1423,17 @@ body .hero-section {
 }
 
 #quotePhoneCountry {
-  flex: 0 0 148px;
-  min-width: 148px;
-  max-width: 148px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   height: 40px;
   padding: 0.2rem 0.45rem;
   font-size: 0.74rem;
+}
+
+.booking-phone-row #quotePhone {
+  width: 100%;
+  min-width: 0;
 }
 
 #quoteDiscountApply {
@@ -1488,9 +1493,9 @@ body .hero-section {
   }
 
   .booking-phone-row #quotePhoneCountry {
-    flex: 0 0 128px;
-    min-width: 128px;
-    max-width: 128px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .config-section--addresses #quoteAddStop,
@@ -1518,7 +1523,8 @@ body .hero-section {
     padding: 0.35rem 0.55rem;
   }
 
-  .config-section--discount #quoteDiscount {
+  .config-section--discount #quoteDiscount,
+  .quote-promo-inline #quoteDiscount {
     height: 34px;
     min-height: 34px;
     max-height: 34px;
@@ -1560,10 +1566,14 @@ body .hero-section {
     font-size: 0.52rem;
   }
 
+  .booking-phone-row {
+    grid-template-columns: 118px minmax(0, 1fr);
+  }
+
   #quotePhoneCountry {
-    flex-basis: 128px;
-    min-width: 128px;
-    max-width: 128px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     height: 34px;
     min-height: 34px;
     padding: 0.2rem 0.35rem;
@@ -1679,6 +1689,7 @@ body .hero-section {
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 0.6rem 1rem;
+  margin-top: 0.5rem;
   width: 100%;
 }
 .quote-delivery-summary {
@@ -1714,28 +1725,123 @@ body .hero-section {
 .pricing-ui-block {
   width: 100%;
 }
+.config-section--static .config-summary {
+  cursor: default;
+}
+
+.config-section--static.config-section--addresses .config-note {
+  display: inline !important;
+}
+
+.quote-promo-inline {
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed rgba(45, 26, 77, 0.2);
+}
+
+.quote-promo-inline__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.quote-promo-inline__row #quoteDiscountApply {
+  margin-top: 0;
+  align-self: end;
+  white-space: nowrap;
+}
+
+.quote-proceed-wrap {
+  margin-top: 0.62rem;
+  padding-top: 0.24rem;
+}
+
+.quote-proceed-wrap .btn,
+.quote-pay-cta-wrap .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.quote-pay-cta-wrap {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.quote-payment-mount {
+  border: 1px solid rgba(45, 26, 77, 0.16);
+  border-radius: 10px;
+  background: #fbfbfd;
+  padding: 0.75rem;
+}
+
+.quote-payment-intro,
+.quote-payment-fallback {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: #2d1a4d;
+}
+
+.quote-payment-fallback {
+  margin-top: 0.65rem;
+}
+
+.quote-payment-frame {
+  width: 100%;
+  min-height: 560px;
+  border: 0;
+  border-radius: 8px;
+  margin-top: 0.65rem;
+  background: #ffffff;
+}
+
+.pricing-ui-breakdown__line {
+  align-items: flex-start;
+}
+
+.pricing-ui-breakdown__line-label {
+  flex: 1 1 auto;
+}
+
+.pricing-ui-breakdown__line-value {
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .quote-payment-frame {
+    min-height: 640px;
+  }
+
+  .quote-promo-inline__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+}
+
 .pricing-ui-copy {
   width: 100%;
-  margin-top: 0.75rem;
+  margin-top: 0.45rem;
   border: 1px dashed rgba(0,0,0,0.15);
   border-radius: 10px;
-  padding: 0.6rem 0.75rem;
+  padding: 0.4rem 0.58rem;
   background: #fbfbfd;
 }
 .pricing-ui-copy summary {
   cursor: pointer;
   font-weight: 600;
   color: #2d1a4d;
+  font-size: 0.78rem;
 }
 .pricing-ui-copy__block {
-  margin-top: 0.6rem;
-  font-size: 0.85rem;
+  margin-top: 0.42rem;
+  font-size: 0.76rem;
   color: #2d1a4d;
-  line-height: 1.4;
+  line-height: 1.24;
 }
 
 .pricing-ui-summary__item {
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.3rem;
 }
 
 .pricing-ui-summary__item:last-child {
@@ -1743,45 +1849,47 @@ body .hero-section {
 }
 
 .pricing-ui-breakdown__section-title {
-  margin: 0.5rem 0 0.32rem;
+  margin: 0.32rem 0 0.2rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  font-size: 0.72rem;
+  font-size: 0.62rem;
 }
 
 .pricing-ui-breakdown__line {
   display: flex;
   justify-content: space-between;
-  gap: 0.7rem;
-  margin: 0.22rem 0;
+  gap: 0.45rem;
+  margin: 0.14rem 0;
 }
 
 .pricing-ui-breakdown__line-label {
   font-weight: 500;
+  font-size: 0.74rem;
 }
 
 .pricing-ui-breakdown__line-value {
   font-weight: 600;
   white-space: nowrap;
+  font-size: 0.74rem;
 }
 
 .pricing-ui-breakdown__line--subtotal {
-  margin-top: 0.55rem;
-  padding-top: 0.45rem;
+  margin-top: 0.38rem;
+  padding-top: 0.3rem;
   border-top: 1px dashed rgba(45, 26, 77, 0.2);
 }
 
 .pricing-ui-breakdown__line--total {
-  margin-top: 0.6rem;
-  padding-top: 0.45rem;
+  margin-top: 0.38rem;
+  padding-top: 0.3rem;
   border-top: 1px solid rgba(45, 26, 77, 0.28);
 }
 
 .pricing-ui-breakdown__line--total .pricing-ui-breakdown__line-label,
 .pricing-ui-breakdown__line--total .pricing-ui-breakdown__line-value {
   font-weight: 800;
-  font-size: 1rem;
+  font-size: 0.84rem;
 }
 .is-hidden {
   display: none;

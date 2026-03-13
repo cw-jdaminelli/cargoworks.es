@@ -87,10 +87,51 @@
   function dateKeyFromReference(ref){
     const match = String(ref || '').toUpperCase().match(/^CW-(\d{8})-/);
     if (!match) return '';
-    const y = match[1].slice(0, 4);
-    const m = match[1].slice(4, 6);
-    const d = match[1].slice(6, 8);
-    return y + '-' + m + '-' + d;
+    return normalizeDateKey(match[1]);
+  }
+
+  function isValidDateKeyParts(y, m, d){
+    const year = Number(y);
+    const month = Number(m);
+    const day = Number(d);
+    if ([year, month, day].some(Number.isNaN)) return false;
+    if (year < 2000 || year > 2100) return false;
+    const test = new Date(year, month - 1, day);
+    return test.getFullYear() === year
+      && (test.getMonth() + 1) === month
+      && test.getDate() === day;
+  }
+
+  function normalizeDateKey(value){
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const parts = raw.split('-');
+      return isValidDateKeyParts(parts[0], parts[1], parts[2]) ? raw : '';
+    }
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length !== 8) return '';
+
+    // Preferred UI/input format: DDMMYYYY.
+    const dd = digits.slice(0, 2);
+    const mm = digits.slice(2, 4);
+    const yyyy = digits.slice(4, 8);
+    if (isValidDateKeyParts(yyyy, mm, dd)) return yyyy + '-' + mm + '-' + dd;
+
+    // Legacy fallback: YYYYMMDD.
+    const legacyY = digits.slice(0, 4);
+    const legacyM = digits.slice(4, 6);
+    const legacyD = digits.slice(6, 8);
+    if (isValidDateKeyParts(legacyY, legacyM, legacyD)) return legacyY + '-' + legacyM + '-' + legacyD;
+
+    return '';
+  }
+
+  function formatDateForUi(value){
+    const normalized = normalizeDateKey(value);
+    if (!normalized) return '';
+    const parts = normalized.split('-');
+    return parts[2] + parts[1] + parts[0];
   }
 
   function formatDateKey(date){
@@ -137,6 +178,7 @@
     query.set('action', 'adminList');
     query.set('token', token);
     if (params && params.date) query.set('date', String(params.date));
+    if (params && params.ref) query.set('ref', String(params.ref));
     if (params && params.scope) query.set('scope', String(params.scope));
     if (params && params.from) query.set('from', String(params.from));
     if (params && params.to) query.set('to', String(params.to));
@@ -174,7 +216,13 @@
     if (!Array.isArray(items) || !items.length) return el('div', 'dispatcher-status', 'No updates yet.');
     const ul = document.createElement('ul');
     ul.className = 'dispatcher-timeline';
-    items.slice().reverse().slice(0, 6).forEach(function(item){
+    items.slice().sort(function(a, b){
+      const aTs = Date.parse(String(a && a.ts || ''));
+      const bTs = Date.parse(String(b && b.ts || ''));
+      const aSafe = Number.isNaN(aTs) ? Number.MAX_SAFE_INTEGER : aTs;
+      const bSafe = Number.isNaN(bTs) ? Number.MAX_SAFE_INTEGER : bTs;
+      return aSafe - bSafe;
+    }).forEach(function(item){
       const li = document.createElement('li');
       const ts = item && item.ts ? String(item.ts).replace('T', ' ').replace('Z', '') : '';
       const status = item && item.status ? String(item.status) : '';
@@ -205,7 +253,7 @@
     card.appendChild(header);
 
     const meta = el('div', 'dispatcher-meta');
-    meta.appendChild(el('span', '', 'Date: ' + (order.schedule && order.schedule.date ? order.schedule.date : '-')));
+    meta.appendChild(el('span', '', 'Date: ' + (order.schedule && order.schedule.date ? formatDateForUi(order.schedule.date) : '-')));
     meta.appendChild(el('span', '', 'Time: ' + (order.schedule && order.schedule.time ? order.schedule.time : '-')));
     meta.appendChild(el('span', '', 'Customer: ' + (order.customer && order.customer.name ? order.customer.name : '-')));
     meta.appendChild(el('span', '', 'Email: ' + (order.customer && order.customer.email ? order.customer.email : '-')));
@@ -213,6 +261,17 @@
     meta.appendChild(el('span', '', 'Preference: ' + (order.updatesPreference || '-')));
     meta.appendChild(el('span', '', 'Payment: ' + (order.paymentStatus || '-')));
     card.appendChild(meta);
+
+    const bookingNotes = String(order && order.notes || '').trim();
+    if (bookingNotes) {
+      const notes = el('div', 'dispatcher-notes');
+      const notesLabel = el('strong', '', 'Booking notes: ');
+      const notesText = document.createElement('span');
+      notesText.textContent = bookingNotes;
+      notes.appendChild(notesLabel);
+      notes.appendChild(notesText);
+      card.appendChild(notes);
+    }
 
     const links = el('div', 'dispatcher-links');
     const tracking = buildLink(order.trackingUrl, 'Tracking');
@@ -308,14 +367,17 @@
       try {
         setStatus('Saving status...');
         const token = currentToken();
+        const text = String(message.value || '').trim();
         await postAdmin({
           action: 'adminUpdate',
           token: token,
           eventId: order.eventId,
           status: statusSelect.value,
-          paymentStatus: paymentSelect.value
+          paymentStatus: paymentSelect.value,
+          message: text
         });
-        setStatus('Status updated.');
+        if (message) message.value = '';
+        setStatus(text ? 'Status and note updated.' : 'Status updated.');
       } catch(_) {
         setStatus('Update failed.');
       }
@@ -520,8 +582,10 @@
     const status = String(filterStatus && filterStatus.value || '').trim();
     const updates = String(filterUpdates && filterUpdates.value || '').trim();
     const payment = String(filterPayment && filterPayment.value || '').trim();
-    const fromDate = String(filterFromDate && filterFromDate.value || '').trim();
-    const toDate = String(filterToDate && filterToDate.value || '').trim();
+    const fromDateRaw = String(filterFromDate && filterFromDate.value || '').trim();
+    const toDateRaw = String(filterToDate && filterToDate.value || '').trim();
+    const fromDate = normalizeDateKey(fromDateRaw);
+    const toDate = normalizeDateKey(toDateRaw);
     const sortMode = String(sortSelect && sortSelect.value || 'newest').trim();
 
     const filtered = allOrders.filter(function(order){
@@ -545,17 +609,27 @@
     renderOrders(visible);
     const scope = loadMode === 'day'
       ? ('for ' + loadLabel)
-      : (loadMode === 'all' ? 'from all loaded orders' : (loadMode === 'reference' ? 'for reference search' : ''));
+      : (loadMode === 'all'
+        ? 'from all loaded orders'
+        : (loadMode === 'reference'
+          ? 'for reference search'
+          : (loadMode === 'reference-fallback' ? 'for reference search (all-dates fallback)' : '')));
     setSummary('Showing ' + visible.length + ' of ' + allOrders.length + ' order(s)' + (scope ? (' ' + scope) : '') + '.');
   }
 
   async function loadDay(dateKey){
+    const normalizedDate = normalizeDateKey(dateKey);
+    if (!normalizedDate) {
+      setStatus('Choose a valid date.');
+      return;
+    }
     try {
       setStatus('Loading day...');
-      const orders = await fetchOrders({ date: dateKey });
+      const orders = await fetchOrders({ date: normalizedDate });
       allOrders = orders;
       loadMode = 'day';
-      loadLabel = dateKey;
+      loadLabel = formatDateForUi(normalizedDate);
+      if (dateInput) dateInput.value = normalizedDate;
       refreshFilterOptions();
       applyFilters();
       setStatus('Loaded ' + orders.length + ' order(s).');
@@ -568,14 +642,22 @@
   }
 
   async function loadAll(){
+    const fromRaw = String(filterFromDate && filterFromDate.value || '').trim();
+    const toRaw = String(filterToDate && filterToDate.value || '').trim();
+    const from = normalizeDateKey(fromRaw);
+    const to = normalizeDateKey(toRaw);
+    if ((fromRaw && !from) || (toRaw && !to)) {
+      setStatus('Choose valid From/To dates.');
+      return;
+    }
     try {
       setStatus('Loading all orders...');
-      const from = String(filterFromDate && filterFromDate.value || '').trim();
-      const to = String(filterToDate && filterToDate.value || '').trim();
       const orders = await fetchOrders({ scope: 'all', from: from, to: to });
       allOrders = orders;
       loadMode = 'all';
-      loadLabel = from || to ? (from + ' .. ' + to) : 'all';
+      loadLabel = from || to
+        ? ((from ? formatDateForUi(from) : '') + ' .. ' + (to ? formatDateForUi(to) : ''))
+        : 'all';
       refreshFilterOptions();
       applyFilters();
       setStatus('Loaded ' + orders.length + ' total order(s).');
@@ -591,19 +673,24 @@
     const cleanRef = String(ref || '').trim().toUpperCase();
     if (!cleanRef) { setStatus('Enter a reference.'); return; }
     const dateKey = dateKeyFromReference(cleanRef);
-    if (!dateKey) {
-      setStatus('Reference must look like CW-YYYYMMDD-XXXX.');
-      return;
-    }
     try {
       setStatus('Searching...');
-      const orders = await fetchOrders({ date: dateKey });
-      allOrders = orders.filter(function(order){ return String(order.reference || '').toUpperCase() === cleanRef; });
-      loadMode = 'reference';
+      let orders = [];
+      if (dateKey) {
+        orders = await fetchOrders({ date: dateKey, ref: cleanRef });
+      }
+      if (!orders.length) {
+        setStatus(dateKey ? 'No match on reference date. Searching all dates...' : 'Searching all dates...');
+        orders = await fetchOrders({ scope: 'all', ref: cleanRef });
+        loadMode = 'reference-fallback';
+      } else {
+        loadMode = 'reference';
+      }
+      allOrders = orders;
       loadLabel = cleanRef;
       refreshFilterOptions();
       applyFilters();
-      if (dateInput) dateInput.value = dateKey;
+      if (dateInput && dateKey) dateInput.value = dateKey;
       setStatus(allOrders.length ? 'Search complete.' : 'No matches.');
     } catch(err) {
       allOrders = [];
@@ -652,7 +739,6 @@
 
   if (loadBtn) loadBtn.addEventListener('click', function(){
     const value = dateInput && dateInput.value ? dateInput.value : formatDateKey(new Date());
-    if (dateInput) dateInput.value = value;
     loadDay(value);
   });
 
