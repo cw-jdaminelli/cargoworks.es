@@ -1160,6 +1160,23 @@ body .hero-section {
 }
 .config-summary::-webkit-details-marker { display: none; }
 .config-title { font-size: 0.95rem; letter-spacing: 0.01em; }
+.config-section.is-invalid .config-title::before {
+  content: '* ';
+  color: #c62828;
+  font-weight: 800;
+}
+.config-section.is-invalid .config-summary {
+  border-bottom-color: rgba(198, 40, 40, 0.4);
+}
+.config-error-hint {
+  margin-left: auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #c62828;
+  max-width: 48%;
+  text-align: right;
+}
 .config-note {
   margin-left: 0.4rem;
   flex: 0 1 68%;
@@ -1514,6 +1531,11 @@ body .hero-section {
     max-width: 62%;
   }
 
+  .config-error-hint {
+    font-size: 0.6rem;
+    max-width: 52%;
+  }
+
   .config-section--datetime #quoteDateDisplay,
   .config-section--datetime #quoteTime {
     height: 34px;
@@ -1618,6 +1640,25 @@ body .hero-section {
     padding: 0.1rem 0.35rem;
   }
 }
+
+@media (max-width: 560px) {
+  .booking-phone-row {
+    grid-template-columns: 98px minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  #quotePhoneCountry {
+    font-size: 0.68rem;
+    padding: 0.2rem 0.3rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .booking-phone-row {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+}
+
 .cw-location-option {
   display: flex;
   align-items: center;

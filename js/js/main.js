@@ -26,6 +26,14 @@ if (langSelect) {
     }
   };
 
+  const setAttributeText = (dataAttribute, attributeName, dict) => {
+    document.querySelectorAll(`[${dataAttribute}]`).forEach((node) => {
+      const key = node.getAttribute(dataAttribute);
+      if (!key || dict[key] == null) return;
+      node.setAttribute(attributeName, dict[key]);
+    });
+  };
+
   const applyLanguage = (lang) => {
     const dict = Object.assign({}, fallbackLang, translations[lang]);
     setText('navAbout', dict.navAbout);
@@ -261,6 +269,11 @@ if (langSelect) {
       const hasNode = document.querySelector(`[data-i18n="${key}"]`) || document.getElementById(key);
       if (hasNode) setText(key, dict[key]);
     });
+
+    setAttributeText('data-i18n-aria-label', 'aria-label', dict);
+    setAttributeText('data-i18n-title', 'title', dict);
+    setAttributeText('data-i18n-placeholder', 'placeholder', dict);
+    setAttributeText('data-i18n-content', 'content', dict);
 
     if (window._refreshPricingUi && window._lastPricingUiContext) {
       try { window._refreshPricingUi(); } catch(_) {}

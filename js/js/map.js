@@ -877,6 +877,9 @@ window.initZonesMap = function initZonesMap(){
   const qSubmit = document.getElementById('quoteSubmit');
   const qProceedBooking = document.getElementById('quoteProceedBooking');
   const qBookingSection = document.getElementById('quoteBookingSection');
+  const qAddressesSection = document.querySelector('.config-section--addresses');
+  const qDateTimeSection = document.querySelector('.config-section--datetime');
+  const qCargoSection = document.querySelector('.config-section--cargo');
   const qPayNow = document.getElementById('quotePayNow');
   const qPaymentMount = document.getElementById('quotePaymentMount');
   const qTraceInfoIcon = document.getElementById('quoteTraceInfoIcon');
@@ -889,6 +892,9 @@ window.initZonesMap = function initZonesMap(){
   let bookingDetailsRevealed = false;
   let paymentFrameVisible = false;
   let quoteSummaryAutoScrolled = false;
+  let cargoExplicitlyConfirmed = false;
+  let guidedScrolledToDateTime = false;
+  let guidedScrolledToCargo = false;
   let activeEmbeddedCheckout = null;
   let lastEmbeddedMountError = '';
   // const qByDistance = document.getElementById('quoteByDistance'); // removed toggle
@@ -953,7 +959,11 @@ window.initZonesMap = function initZonesMap(){
   }
   if (qDiscount && !qDiscount.value) qDiscount.value = DEFAULT_DISCOUNT_CODE;
   function onDateTimeSelectionChange(){
-    try { autoEstimateIfReady(); refreshAvailability(); updateDeliverySummary(); } catch(_) {}
+    try {
+      autoEstimateIfReady({ source: 'datetime', highlightErrors: true });
+      refreshAvailability();
+      updateDeliverySummary();
+    } catch(_) {}
   }
   if (qDate) qDate.addEventListener('change', function(){
     syncDateDisplay();
@@ -978,21 +988,31 @@ window.initZonesMap = function initZonesMap(){
   if (qTime) qTime.addEventListener('change', onDateTimeSelectionChange);
   if (qTime) qTime.addEventListener('input', onDateTimeSelectionChange);
   if (qCargo) qCargo.addEventListener('change', function(){
-    try { autoEstimateIfReady(); updateDeliverySummary(); syncCargoOptionChips(); } catch(_) {}
+    try {
+      cargoExplicitlyConfirmed = true;
+      autoEstimateIfReady({ source: 'cargo', highlightErrors: true, immediate: true });
+      updateDeliverySummary();
+      syncCargoOptionChips();
+    } catch(_) {}
   });
   if (qCargoOptionChips && qCargoOptionChips.length && qCargo) {
     qCargoOptionChips.forEach(function(chip){
       chip.addEventListener('click', function(){
         const value = String((chip && chip.dataset && chip.dataset.cargoOption) || '').trim();
         if (!value) return;
+        cargoExplicitlyConfirmed = true;
         if (qCargo.value !== value) {
           qCargo.value = value;
           try {
             qCargo.dispatchEvent(new Event('change', { bubbles: true }));
           } catch(_) {
-            autoEstimateIfReady();
+            cargoExplicitlyConfirmed = true;
+            autoEstimateIfReady({ source: 'cargo', highlightErrors: true, immediate: true });
             updateDeliverySummary();
           }
+        } else {
+          autoEstimateIfReady({ source: 'cargo', highlightErrors: true, immediate: true });
+          updateDeliverySummary();
         }
         syncCargoOptionChips();
       });
@@ -1037,6 +1057,95 @@ window.initZonesMap = function initZonesMap(){
       const nextTop = Math.max(0, panel.scrollTop + delta);
       panel.scrollTo({ top: nextTop, behavior: 'smooth' });
     } catch(_) {}
+  }
+  function sectionByKey(sectionKey){
+    if (sectionKey === 'addresses') return qAddressesSection;
+    if (sectionKey === 'datetime') return qDateTimeSection;
+    if (sectionKey === 'cargo') return qCargoSection;
+    if (sectionKey === 'booking') return qBookingSection;
+    return null;
+  }
+  function setSectionInvalidState(sectionKey, isInvalid){
+    const sectionEl = sectionByKey(sectionKey);
+    if (!sectionEl) return;
+    sectionEl.classList.toggle('is-invalid', !!isInvalid);
+  }
+  function setSectionErrorMessage(sectionKey, msg){
+    const sectionEl = sectionByKey(sectionKey);
+    if (!sectionEl) return;
+    const summaryEl = sectionEl.querySelector('.config-summary');
+    if (!summaryEl) return;
+    let hintEl = summaryEl.querySelector('.config-error-hint');
+    const text = String(msg || '').trim();
+    if (!text) {
+      if (hintEl) hintEl.remove();
+      return;
+    }
+    if (!hintEl) {
+      hintEl = document.createElement('span');
+      hintEl.className = 'config-error-hint';
+      summaryEl.appendChild(hintEl);
+    }
+    hintEl.textContent = text;
+  }
+  function setSectionValidationState(sectionKey, errorMsg){
+    const msg = String(errorMsg || '').trim();
+    setSectionInvalidState(sectionKey, !!msg);
+    setSectionErrorMessage(sectionKey, msg);
+  }
+  function clearAllSectionInvalidStates(){
+    setSectionValidationState('addresses', '');
+    setSectionValidationState('datetime', '');
+    setSectionValidationState('cargo', '');
+    setSectionValidationState('booking', '');
+  }
+  function hasDateTimeSelection(){
+    const hasDate = !!(qDate && qDate.value);
+    const hasTime = !!(qTime && qTime.value);
+    return hasDate && hasTime;
+  }
+  function getAddressValidationError(){
+    const orderedInputs = getOrderedInputs();
+    if (!orderedInputs || orderedInputs.length < 2) {
+      return i18n('quoteEnterBoth') || 'Enter pickup and dropoff';
+    }
+    const pickupEl = orderedInputs[0];
+    const dropEl = orderedInputs[orderedInputs.length - 1];
+    const pickupText = String((pickupEl && pickupEl.value) || '').trim();
+    const dropText = String((dropEl && dropEl.value) || '').trim();
+    if (!pickupText || !dropText) {
+      return i18n('quoteEnterBoth') || 'Enter pickup and dropoff';
+    }
+    if (!getLocationForInput(pickupEl) || !getLocationForInput(dropEl)) {
+      return i18n('quoteAddressNotFound') || 'Address not found';
+    }
+    for (let i = 1; i < orderedInputs.length - 1; i++) {
+      const stopInput = orderedInputs[i];
+      const stopText = String((stopInput && stopInput.value) || '').trim();
+      if (!stopText) continue;
+      if (!getLocationForInput(stopInput)) {
+        return i18n('quoteAddressNotFound') || 'Address not found';
+      }
+    }
+    return '';
+  }
+  function getDateTimeValidationError(){
+    if (hasDateTimeSelection()) return '';
+    return i18n('quoteDateTimeRequired') || 'Please choose a date and time.';
+  }
+  function getCargoValidationError(){
+    const cargoValue = String((qCargo && qCargo.value) || '').trim();
+    if (!cargoValue) return i18n('quoteCargoRequired') || 'Please choose a cargo type.';
+    if (!cargoExplicitlyConfirmed) {
+      return i18n('quoteCargoConfirmRequired') || 'Please choose a cargo type to continue.';
+    }
+    return '';
+  }
+  function resetGuidedFlowState(resetCargoChoice){
+    guidedScrolledToDateTime = false;
+    guidedScrolledToCargo = false;
+    if (resetCargoChoice) cargoExplicitlyConfirmed = false;
+    clearAllSectionInvalidStates();
   }
   function ensureBookingSectionPlacement(){
     try {
@@ -1353,7 +1462,7 @@ window.initZonesMap = function initZonesMap(){
         }
         activeDiscountCodes.push(code);
         setDiscountStatus(i18n('discountApplied', { code }) || ('Code applied: ' + code));
-        if (typeof runEstimate === 'function') runEstimate();
+        autoEstimateIfReady({ source: 'address' });
       });
     });
   }
@@ -1364,9 +1473,14 @@ window.initZonesMap = function initZonesMap(){
     });
   }
 
-  function getBookingValidationError(){
+  function getBookingValidationState(){
     const hasQuote = !!(window._lastQuoteContext);
-    if (!hasQuote) return i18n('quoteEstimateFirst') || 'Please calculate a quote first.';
+    if (!hasQuote) {
+      return {
+        error: i18n('quoteEstimateFirst') || 'Please calculate a quote first.',
+        section: 'cargo'
+      };
+    }
     const name = String((qName && qName.value) || '').trim();
     const email = String((qEmail && qEmail.value) || '').trim();
     const emailConfirm = String((qEmailConfirm && qEmailConfirm.value) || '').trim();
@@ -1375,16 +1489,19 @@ window.initZonesMap = function initZonesMap(){
     const consent = !!(qConsent && qConsent.checked);
     const dateVal = (qDate && qDate.value) ? String(qDate.value) : '';
     const timeVal = (qTime && qTime.value) ? String(qTime.value) : '';
-    if (!name) return i18n('bookingNameRequired') || 'Please enter your name.';
-    if (!email) return i18n('bookingEmailRequired') || 'Please enter your email.';
-    if (!isValidEmail(email)) return i18n('bookingEmailInvalid') || 'Please enter a valid email.';
-    if (!emailConfirm) return i18n('bookingEmailConfirmRequired') || 'Please confirm your email.';
-    if (email.toLowerCase() !== emailConfirm.toLowerCase()) return i18n('bookingEmailMismatch') || 'Email confirmation does not match.';
-    if (!phoneRaw) return i18n('bookingPhoneRequired') || 'Please enter your phone number.';
-    if (!isValidPhone(phone)) return i18n('bookingPhoneInvalid') || 'Please enter a valid phone number with country code.';
-    if (!consent) return i18n('bookingConsentRequired') || 'Please confirm you agree to be contacted.';
-    if (!dateVal || !timeVal) return 'Please choose a date and time.';
-    return '';
+    if (!name) return { error: i18n('bookingNameRequired') || 'Please enter your name.', section: 'booking' };
+    if (!email) return { error: i18n('bookingEmailRequired') || 'Please enter your email.', section: 'booking' };
+    if (!isValidEmail(email)) return { error: i18n('bookingEmailInvalid') || 'Please enter a valid email.', section: 'booking' };
+    if (!emailConfirm) return { error: i18n('bookingEmailConfirmRequired') || 'Please confirm your email.', section: 'booking' };
+    if (email.toLowerCase() !== emailConfirm.toLowerCase()) return { error: i18n('bookingEmailMismatch') || 'Email confirmation does not match.', section: 'booking' };
+    if (!phoneRaw) return { error: i18n('bookingPhoneRequired') || 'Please enter your phone number.', section: 'booking' };
+    if (!isValidPhone(phone)) return { error: i18n('bookingPhoneInvalid') || 'Please enter a valid phone number with country code.', section: 'booking' };
+    if (!consent) return { error: i18n('bookingConsentRequired') || 'Please confirm you agree to be contacted.', section: 'booking' };
+    if (!dateVal || !timeVal) return { error: i18n('quoteDateTimeRequired') || 'Please choose a date and time.', section: 'datetime' };
+    return { error: '', section: '' };
+  }
+  function getBookingValidationError(){
+    return getBookingValidationState().error;
   }
   function hidePaymentMount(){
     try {
@@ -1421,6 +1538,7 @@ window.initZonesMap = function initZonesMap(){
     if (!hasQuote) {
       bookingDetailsRevealed = false;
       hidePaymentMount();
+      setSectionValidationState('booking', '');
     }
     if (qProceedBooking) qProceedBooking.classList.toggle('is-hidden', !hasQuote);
     if (qBookingSection) qBookingSection.classList.toggle('is-hidden', !bookingDetailsRevealed);
@@ -1430,6 +1548,10 @@ window.initZonesMap = function initZonesMap(){
       qPayNow.classList.toggle('is-hidden', !showPay);
       updatePayButtonLabel();
       qPayNow.disabled = false;
+    }
+    const bookingValidation = getBookingValidationState();
+    if (!bookingValidation.error || bookingValidation.section !== 'booking') {
+      setSectionValidationState('booking', '');
     }
     updateDeliverySummary();
   }
@@ -1459,13 +1581,73 @@ window.initZonesMap = function initZonesMap(){
       if (!window._lastQuoteContext) return;
       ensureBookingSectionPlacement();
       bookingDetailsRevealed = true;
+      setSectionValidationState('booking', '');
       setBookingStatus('');
       updateSubmitVisibility();
-      if (qBookingSection) scrollPanelToCenter(qBookingSection);
+      if (qBookingSection) scrollPanelToTop(qBookingSection, 8);
     });
   }
   ensureBookingSectionPlacement();
   updateSubmitVisibility();
+
+  function getSectionTopInPanel(sectionEl){
+    try {
+      if (!sectionEl) return null;
+      const panel = getEstimatorPanel();
+      if (!panel) return null;
+      const panelRect = panel.getBoundingClientRect();
+      const sectionRect = sectionEl.getBoundingClientRect();
+      return sectionRect.top - panelRect.top;
+    } catch(_) { return null; }
+  }
+  function validateSectionsOnManualScroll(){
+    try {
+      const threshold = 12;
+      const dateTimeTop = getSectionTopInPanel(qDateTimeSection);
+      const cargoTop = getSectionTopInPanel(qCargoSection);
+      const summaryTop = getSectionTopInPanel(qSummaryCard);
+
+      const addressError = getAddressValidationError();
+      const dateTimeError = getDateTimeValidationError();
+      const cargoError = getCargoValidationError();
+
+      if (addressError && dateTimeTop != null && dateTimeTop <= threshold) {
+        setSectionValidationState('addresses', addressError);
+      } else if (!addressError) {
+        setSectionValidationState('addresses', '');
+      }
+
+      if (dateTimeError && cargoTop != null && cargoTop <= threshold) {
+        setSectionValidationState('datetime', dateTimeError);
+        setAvailabilityStatus(i18n('quoteDateTimeRequired') || 'Please choose a date and time.', true);
+      } else if (!dateTimeError) {
+        setSectionValidationState('datetime', '');
+      }
+
+      const summaryVisible = !!(qSummaryCard && !qSummaryCard.classList.contains('is-hidden'));
+      if (cargoError && summaryVisible && summaryTop != null && summaryTop <= threshold) {
+        setSectionValidationState('cargo', cargoError);
+      } else if (!cargoError) {
+        setSectionValidationState('cargo', '');
+      }
+    } catch(_) {}
+  }
+  function bindManualScrollValidation(){
+    try {
+      const panel = getEstimatorPanel();
+      if (!panel || panel.dataset.sectionValidationBound === '1') return;
+      panel.dataset.sectionValidationBound = '1';
+      let rafId = 0;
+      panel.addEventListener('scroll', function(){
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(function(){
+          rafId = 0;
+          validateSectionsOnManualScroll();
+        });
+      }, { passive: true });
+    } catch(_) {}
+  }
+  bindManualScrollValidation();
 
   function parseTimeToMinutes(str){
     const s = String(str || '').trim();
@@ -1601,14 +1783,18 @@ window.initZonesMap = function initZonesMap(){
   }
   function getAvailabilityFlagMessage(surchargeInfo){
     if (!surchargeInfo) return '';
-    const weekendMsg = surchargeInfo.isWeekendHoliday
-      ? (i18n('availabilityFlagWeekend') || 'Weekend/holiday date/time selected. Weekend/holiday surcharges apply.')
-      : '';
-    const afterHoursMsg = surchargeInfo.afterHours
-      ? (i18n('availabilityFlagAfterHours') || 'After-hours date/time selected. After-hours surcharge applies.')
-      : '';
-    if (weekendMsg && afterHoursMsg) return weekendMsg + ' ' + afterHoursMsg;
-    return weekendMsg || afterHoursMsg || '';
+    const hasWeekendHoliday = !!surchargeInfo.isWeekendHoliday;
+    const hasAfterHours = !!surchargeInfo.afterHours;
+    if (hasWeekendHoliday && hasAfterHours) {
+      return i18n('availabilityFlagWeekendAndAfterHours') || 'Weekend/holiday and after-hours date/time selected. Weekend/holiday and after-hours surcharges apply.';
+    }
+    if (hasWeekendHoliday) {
+      return i18n('availabilityFlagWeekend') || 'Weekend/holiday date/time selected. Weekend/holiday surcharge applies.';
+    }
+    if (hasAfterHours) {
+      return i18n('availabilityFlagAfterHours') || 'After-hours date/time selected. After-hours surcharge applies.';
+    }
+    return '';
   }
   function isTimeBlocked(min, blocked, duration){
     const endMin = min + Math.max(0, Number(duration || 0) || 0);
@@ -1644,55 +1830,19 @@ window.initZonesMap = function initZonesMap(){
     }
     return null;
   }
-  function setTimeInputMinutes(min){
-    if (!qTime || min == null) return;
-    const h = Math.floor(min / 60);
-    const m = min % 60;
-    qTime.value = pad2(h) + ':' + pad2(m);
-  }
-  function setDateInputValue(dateKey){
-    if (!qDate || !dateKey) return;
-    qDate.value = String(dateKey);
-    syncDateDisplay();
-  }
-  function addDays(date, days){
-    const dt = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    dt.setDate(dt.getDate() + days);
-    return dt;
-  }
-  async function findNextAvailableSlotFrom(date, maxDays){
-    const base = date instanceof Date ? date : new Date();
-    const limit = Number(maxDays || 0) || 14;
-    const now = new Date();
-    const durationMin = getEstimatedDurationMinutes() + AVAILABILITY_BUFFER_MINUTES;
-    for (let i = 0; i <= limit; i++) {
-      const day = addDays(base, i);
-      const dateKey = formatDateKeyLocal(day);
-      const data = await fetchAvailabilityForDate(dateKey);
-      const blockedRaw = (data && data.blocked) || [];
-      const blocked = extendBlockedWithBuffer(blockedRaw, AVAILABILITY_BUFFER_MINUTES);
-      const startMin = (i === 0 && formatDateKeyLocal(now) === dateKey)
-        ? ((now.getHours() * 60) + now.getMinutes())
-        : 0;
-      const nextMin = findNextAvailableMinute(startMin, blocked, dateKey, durationMin);
-      if (nextMin != null) return { dateKey, minute: nextMin };
-    }
-    return null;
-  }
-  async function initAvailabilityDefaults(){
-    if (!calendarConfigured()) return;
-    try {
-      const slot = await findNextAvailableSlotFrom(new Date(), 14);
-      if (!slot) return;
-      setDateInputValue(slot.dateKey);
-      setTimeInputMinutes(slot.minute);
-      const slotLabel = pad2(Math.floor(slot.minute / 60)) + ':' + pad2(slot.minute % 60);
-      setAvailabilityStatus(i18n('availabilityNextSlot', { time: slotLabel }) || ('Next available slot: ' + slotLabel));
-    } catch(_) {}
-  }
   async function refreshAvailability(){
     if (!calendarConfigured()) { setAvailabilityStatus(''); return; }
-    const dateKey = qDate && qDate.value ? String(qDate.value) : formatDateKeyLocal(new Date());
+    const hasDate = !!(qDate && qDate.value);
+    const hasTime = !!(qTime && qTime.value);
+    if (!hasDate && !hasTime) {
+      setAvailabilityStatus('');
+      return;
+    }
+    if (!hasDate || !hasTime) {
+      setAvailabilityStatus(i18n('quoteDateTimeRequired') || 'Please choose a date and time.', true);
+      return;
+    }
+    const dateKey = String(qDate.value);
     const flagMsg = getAvailabilityFlagMessage(computeSurchargeInfo());
     if (flagMsg) {
       setAvailabilityStatus(flagMsg);
@@ -1713,9 +1863,11 @@ window.initZonesMap = function initZonesMap(){
         return;
       }
       if (selectedMin == null || selectedMin !== nextMin) {
-        setTimeInputMinutes(nextMin);
         const slot = pad2(Math.floor(nextMin / 60)) + ':' + pad2(nextMin % 60);
-        setAvailabilityStatus(i18n('availabilityNextSlot', { time: slot }) || ('Next available slot: ' + slot));
+        setAvailabilityStatus(
+          i18n('availabilityNextSlotSuggested', { time: slot }) || ('Selected time is unavailable. Next available slot: ' + slot),
+          true
+        );
       } else {
         setAvailabilityStatus(i18n('availabilityAvailable') || 'Time available.');
       }
@@ -1725,7 +1877,7 @@ window.initZonesMap = function initZonesMap(){
     }
   }
   if (qDate && qTime) {
-    try { initAvailabilityDefaults(); refreshAvailability(); } catch(_) {}
+    try { refreshAvailability(); } catch(_) {}
   }
   function getCargoAdjustment(){
     try {
@@ -2192,7 +2344,7 @@ window.initZonesMap = function initZonesMap(){
       updateAddressMarkers();
       updateSubmitVisibility();
       updateDeliverySummary();
-      if (typeof runEstimate === 'function') runEstimate();
+      autoEstimateIfReady({ source: 'address', immediate: true });
     } catch(_) {}
   }
   // Create a stop item and return its input element
@@ -2288,6 +2440,14 @@ window.initZonesMap = function initZonesMap(){
   async function handleMapClick(ll){
     try {
       if (!ll) return;
+      if (!isInServiceLatLng(ll)) {
+        clearRouteOverlays();
+        const msg = i18n('quoteOutsideService') || 'Outside service map — please contact us for a custom quote.';
+        const detail = i18n('quoteOutsideServiceDetail') || 'Contact us for orders outside our service area.';
+        setQuoteResultWithDebug(msg, 'Map click outside service area');
+        setBreakdownLines([detail]);
+        return;
+      }
       const targetInput = pickTargetInputForMapClick();
       if (!targetInput) return;
       const addr = await reverseGeocodeAddress(ll);
@@ -2378,7 +2538,7 @@ window.initZonesMap = function initZonesMap(){
       const nextRecent = recent.concat(Array.from(used));
       while (nextRecent.length > 8) nextRecent.shift();
       window._recentRandomStops = nextRecent;
-      try { if (typeof runEstimate === 'function') await runEstimate(); } catch(_){ }
+      autoEstimateIfReady({ source: 'address', immediate: true });
     } catch(_){ }
   }
   function resetBookingFieldsAfterSuccess(){
@@ -2400,6 +2560,7 @@ window.initZonesMap = function initZonesMap(){
       if (qOut) qOut.textContent = '';
       if (qRate) qRate.textContent = '';
       window._lastQuoteContext = null;
+      resetGuidedFlowState(true);
       if (qDeliverySummary) {
         qDeliverySummary.classList.add('is-hidden');
         qDeliverySummary.innerHTML = '';
@@ -2450,12 +2611,13 @@ window.initZonesMap = function initZonesMap(){
       if (qOut) qOut.classList.remove('is-hidden');
       const traceInfo = document.getElementById('quoteTraceInfoIcon');
       if (traceInfo) {
-        const infoText = i18n('quoteTraceInfo') || "Submitting a request doesn't charge you automatically, you will receive a payment link once you make your booking.";
+        const infoText = i18n('quoteTraceInfo') || "Submitting a request does not charge you automatically. You can complete payment securely on this page after confirming your booking details.";
         traceInfo.setAttribute('aria-label', infoText);
         traceInfo.setAttribute('title', infoText);
       }
       setBookingStatus('');
       window._lastQuoteContext = null;
+      resetGuidedFlowState(true);
       if (qDeliverySummary) {
         qDeliverySummary.classList.add('is-hidden');
         qDeliverySummary.innerHTML = '';
@@ -2607,7 +2769,7 @@ window.initZonesMap = function initZonesMap(){
     qStopsWrap.addEventListener('drop', async function(){
       try { normalizeStopOrder(); } catch(_) {}
       // Recompute after reorder
-      try { if (typeof runEstimate === 'function') await runEstimate(); } catch(_){}
+      autoEstimateIfReady({ source: 'address', immediate: true });
     });
   }
   function getLocationForInput(inputEl){
@@ -2652,16 +2814,61 @@ window.initZonesMap = function initZonesMap(){
     if (ordered.length < 2) return false;
     return !!(getLocationForInput(ordered[0]) && getLocationForInput(ordered[ordered.length - 1]));
   }
-  function autoEstimateIfReady(){
+  function autoEstimateIfReady(options){
+    const opts = options || {};
+    const source = String(opts.source || 'address');
+    const highlightErrors = !!opts.highlightErrors;
+    const immediate = !!opts.immediate;
     try {
       updateAddressMarkers();
-      const readyCount = countReadyLocations();
-      if (readyCount >= 2 && hasReadyPickupDrop()) {
-        if (window._quoteAutoTimer) clearTimeout(window._quoteAutoTimer);
-        window._quoteAutoTimer = setTimeout(function(){
-          try { runEstimate(); } catch(_){}
-        }, 80);
+      const addressError = getAddressValidationError();
+      if (addressError) {
+        guidedScrolledToDateTime = false;
+        guidedScrolledToCargo = false;
+        if (highlightErrors && (source === 'address' || source === 'datetime' || source === 'cargo')) {
+          setSectionValidationState('addresses', addressError);
+        }
+        return;
       }
+      setSectionValidationState('addresses', '');
+
+      if (!guidedScrolledToDateTime && qDateTimeSection) {
+        guidedScrolledToDateTime = true;
+        setTimeout(function(){
+          scrollPanelToTop(qDateTimeSection, 8);
+        }, 0);
+      }
+
+      const dateTimeError = getDateTimeValidationError();
+      if (dateTimeError) {
+        guidedScrolledToCargo = false;
+        if (highlightErrors && (source === 'datetime' || source === 'cargo')) {
+          setSectionValidationState('datetime', dateTimeError);
+        }
+        return;
+      }
+      setSectionValidationState('datetime', '');
+
+      if (!guidedScrolledToCargo && qCargoSection) {
+        guidedScrolledToCargo = true;
+        setTimeout(function(){
+          scrollPanelToTop(qCargoSection, 8);
+        }, 0);
+      }
+
+      const cargoError = getCargoValidationError();
+      if (cargoError) {
+        if (highlightErrors && source === 'cargo') {
+          setSectionValidationState('cargo', cargoError);
+        }
+        return;
+      }
+      setSectionValidationState('cargo', '');
+
+      if (window._quoteAutoTimer) clearTimeout(window._quoteAutoTimer);
+      window._quoteAutoTimer = setTimeout(function(){
+        try { runEstimate(); } catch(_){}
+      }, immediate ? 0 : 80);
     } catch(_) {}
   }
   // attach autocomplete to primary inputs
@@ -2696,7 +2903,7 @@ window.initZonesMap = function initZonesMap(){
                 inputEl.value = '';
                 clearStoredLocation(inputEl);
                 normalizeStopOrder();
-                if (typeof runEstimate === 'function') runEstimate();
+                autoEstimateIfReady({ source: 'address', immediate: true });
               } catch(_) {}
             });
             parent.appendChild(delExisting);
@@ -2726,7 +2933,7 @@ window.initZonesMap = function initZonesMap(){
           try {
             inputEl.value = '';
             clearStoredLocation(inputEl);
-            if (typeof runEstimate === 'function') runEstimate();
+            autoEstimateIfReady({ source: 'address', immediate: true });
           } catch(_) {}
         });
         w.appendChild(del);
@@ -2776,7 +2983,11 @@ window.initZonesMap = function initZonesMap(){
       del.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
       del.textContent = '×';
       del.addEventListener('click', function(){
-        try { clearAddressMarker(i); w.remove(); if (typeof runEstimate === 'function') runEstimate(); } catch(_) {}
+        try {
+          clearAddressMarker(i);
+          w.remove();
+          autoEstimateIfReady({ source: 'address', immediate: true });
+        } catch(_) {}
       });
       if (h) w.appendChild(h);
       w.appendChild(i);
@@ -2810,7 +3021,11 @@ window.initZonesMap = function initZonesMap(){
             del.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
             del.textContent = '×';
             del.addEventListener('click', function(){
-              try { clearAddressMarker(i); i.parentElement.remove(); if (typeof runEstimate === 'function') runEstimate(); } catch(_) {}
+              try {
+                clearAddressMarker(i);
+                i.parentElement.remove();
+                autoEstimateIfReady({ source: 'address', immediate: true });
+              } catch(_) {}
             });
             i.parentElement.appendChild(del);
           }
@@ -2837,7 +3052,11 @@ window.initZonesMap = function initZonesMap(){
           del.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
           del.textContent = '×';
           del.addEventListener('click', function(){
-            try { clearAddressMarker(i); w.remove(); if (typeof runEstimate === 'function') runEstimate(); } catch(_) {}
+            try {
+              clearAddressMarker(i);
+              w.remove();
+              autoEstimateIfReady({ source: 'address', immediate: true });
+            } catch(_) {}
           });
           w.appendChild(del);
           w.dataset.role = 'stop';
@@ -2879,10 +3098,19 @@ window.initZonesMap = function initZonesMap(){
   }
   function buildBookingPayload(){
     const ctx = window._lastQuoteContext || null;
-    if (!ctx) return { error: i18n('quoteEstimateFirst') || 'Please calculate a quote first.' };
-    try { defaultDateTimeInputs(); } catch(_) {}
-    const validationError = getBookingValidationError();
-    if (validationError) return { error: validationError };
+    if (!ctx) {
+      return {
+        error: i18n('quoteEstimateFirst') || 'Please calculate a quote first.',
+        errorSection: 'cargo'
+      };
+    }
+    const validation = getBookingValidationState();
+    if (validation.error) {
+      return {
+        error: validation.error,
+        errorSection: validation.section || 'booking'
+      };
+    }
     const name = String((qName && qName.value) || '').trim();
     const email = String((qEmail && qEmail.value) || '').trim();
     const phoneRaw = String((qPhone && qPhone.value) || '').trim();
@@ -2915,33 +3143,6 @@ window.initZonesMap = function initZonesMap(){
       return '';
     }
   }
-  function renderInlinePayment(paymentUrl, trackingUrl, reference){
-    if (!qPaymentMount) return;
-    qPaymentMount.innerHTML = '';
-    const intro = document.createElement('p');
-    intro.className = 'quote-payment-intro';
-    intro.textContent = i18n('quotePaymentFallback') || 'If the secure card form does not appear, open payment in a new tab:';
-    qPaymentMount.appendChild(intro);
-
-    const fallback = document.createElement('p');
-    fallback.className = 'quote-payment-fallback';
-    fallback.textContent = '';
-    fallback.appendChild(document.createTextNode(' '));
-    fallback.appendChild(buildStatusLink(paymentUrl, i18n('quotePaymentOpenTab') || 'Open payment'));
-    if (trackingUrl) {
-      fallback.appendChild(document.createTextNode(' · '));
-      fallback.appendChild(buildStatusLink(trackingUrl, i18n('bookingTrackingLink') || 'Tracking link'));
-    }
-    if (reference) {
-      const refNode = document.createElement('span');
-      refNode.textContent = ' · ' + (i18n('bookingRefLabel', { ref: reference }) || ('Ref: ' + reference));
-      fallback.appendChild(refNode);
-    }
-    qPaymentMount.appendChild(fallback);
-    qPaymentMount.classList.remove('is-hidden');
-    paymentFrameVisible = true;
-    scrollPanelToCenter(qPaymentMount);
-  }
   async function renderEmbeddedPayment(clientSecret, trackingUrl, reference, paymentUrl, publishableKey){
     if (!qPaymentMount) return false;
     const stripePublishableKey = String(publishableKey || window.CARGOWORKS_STRIPE_PUBLISHABLE_KEY || '').trim();
@@ -2967,10 +3168,6 @@ window.initZonesMap = function initZonesMap(){
     footer.className = 'quote-payment-fallback';
     if (trackingUrl) {
       footer.appendChild(buildStatusLink(trackingUrl, i18n('bookingTrackingLink') || 'Tracking link'));
-    }
-    if (paymentUrl) {
-      if (footer.childNodes.length) footer.appendChild(document.createTextNode(' · '));
-      footer.appendChild(buildStatusLink(paymentUrl, i18n('quotePaymentOpenTab') || 'Open payment'));
     }
     if (reference) {
       const refNode = document.createElement('span');
@@ -3000,14 +3197,25 @@ window.initZonesMap = function initZonesMap(){
   async function startInlinePayment(){
     try {
       if (!BOOKING_API_BASE) {
-        setBookingStatus('Booking is not configured yet.', true);
+        setBookingStatus(i18n('quoteBookingNotConfigured') || 'Booking is not configured yet.', true);
         return;
       }
       const payload = buildBookingPayload();
       if (payload.error) {
+        const errorSection = String(payload.errorSection || '').trim();
+        if (errorSection) {
+          setSectionValidationState(errorSection, payload.error);
+          const targetSection = sectionByKey(errorSection);
+          if (targetSection) {
+            if (errorSection === 'booking') bookingDetailsRevealed = true;
+            updateSubmitVisibility();
+            scrollPanelToTop(targetSection, 8);
+          }
+        }
         setBookingStatus(payload.error, true);
         return;
       }
+      setSectionValidationState('booking', '');
       const base = BOOKING_API_BASE.replace(/\/$/, '');
       if (qPayNow) qPayNow.disabled = true;
       if (qSubmit) qSubmit.disabled = true;
@@ -3050,7 +3258,12 @@ window.initZonesMap = function initZonesMap(){
       } catch(_) {}
 
       if (paymentClientSecret && !hasPublishableKey) {
-        setBookingStatus('Missing Stripe publishable key. Set window.CARGOWORKS_STRIPE_PUBLISHABLE_KEY or STRIPE_PUBLISHABLE in Apps Script properties.', true);
+        hidePaymentMount();
+        setBookingStatus(
+          i18n('quotePaymentMissingPublishableKey') || 'Missing Stripe publishable key. Set window.CARGOWORKS_STRIPE_PUBLISHABLE_KEY or STRIPE_PUBLISHABLE in Apps Script properties.',
+          true
+        );
+        return;
       }
       if (paymentMode === 'embedded' && paymentClientSecret) {
         const mounted = await renderEmbeddedPayment(paymentClientSecret, trackingUrl, ref, paymentUrl, publishableKey);
@@ -3066,18 +3279,17 @@ window.initZonesMap = function initZonesMap(){
           return;
         }
       }
-      if (paymentUrl) {
-        renderInlinePayment(paymentUrl, trackingUrl, ref);
-        const reason = paymentEmbeddedError || lastEmbeddedMountError || paymentError;
-        const fallbackBase = i18n('quotePaymentFallback') || 'If the secure card form does not appear, open payment in a new tab:';
-        setBookingStatus(reason ? (fallbackBase + ' (' + reason + ')') : fallbackBase);
+      const embeddedFailure = paymentEmbeddedError || lastEmbeddedMountError || paymentError;
+      if (paymentUrl && !paymentClientSecret) {
+        hidePaymentMount();
+        setBookingStatus(i18n('quotePaymentOnSiteRequired') || 'On-site payment is required to complete this order. Please try again.', true);
         return;
       }
       if (paymentError || lastEmbeddedMountError) {
-        const errLabel = paymentError || lastEmbeddedMountError;
-        setBookingStatus(errLabel, true);
+        const errLabel = embeddedFailure;
+        setBookingStatus(errLabel || (i18n('quotePaymentUnavailable') || 'Payment could not be initialized. Please try again.'), true);
       } else {
-        setBookingStatus(i18n('quotePaymentUnavailable') || 'Payment could not be initialized. Please try again.', true);
+        setBookingStatus(i18n('quotePaymentOnSiteRequired') || 'On-site payment is required to complete this order. Please try again.', true);
       }
     } catch(e) {
       setBookingStatus(i18n('quotePaymentStartError') || 'Could not start payment. Please try again.', true);
@@ -3092,6 +3304,17 @@ window.initZonesMap = function initZonesMap(){
     window._lastQuoteContext = null;
     bookingDetailsRevealed = false;
     quoteSummaryAutoScrolled = false;
+    setSectionValidationState('booking', '');
+    if (!hasReadyPickupDrop()) {
+      guidedScrolledToDateTime = false;
+      guidedScrolledToCargo = false;
+      setSectionValidationState('addresses', '');
+    }
+    if (!hasDateTimeSelection()) {
+      guidedScrolledToCargo = false;
+      setSectionValidationState('datetime', '');
+    }
+    if (!cargoExplicitlyConfirmed) setSectionValidationState('cargo', '');
     hidePaymentMount();
     updateSubmitVisibility();
   }
@@ -3313,7 +3536,7 @@ window.initZonesMap = function initZonesMap(){
       const recalculated = i18n('quoteRecalculatedAt', { time: (hh + ':' + mm + ':' + ss) }) || ('Recalculated at ' + hh + ':' + mm + ':' + ss);
       const traceInfo = document.getElementById('quoteTraceInfoIcon');
       if (traceInfo) {
-        const infoText = i18n('quoteTraceInfo') || "Submitting a request doesn't charge you automatically, you will receive a payment link once you make your booking.";
+        const infoText = i18n('quoteTraceInfo') || "Submitting a request does not charge you automatically. You can complete payment securely on this page after confirming your booking details.";
         traceInfo.setAttribute('aria-label', infoText);
         traceInfo.setAttribute('title', infoText);
       }

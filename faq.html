@@ -3,77 +3,661 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/>
-  <title>CARGOWORKS.es – FAQ</title>
+  <title data-i18n="faqDocumentTitle">FAQ – CARGOWORKS.es</title>
+  <meta name="description" content="Frequently asked questions about Cargoworks cargo bike delivery service in Barcelona. Learn about pricing, deliveries, booking, and more." data-i18n-content="faqMetaDescription">
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css">
   <link rel="stylesheet" href="css/effects/layout.css"/>
+  <style>
+    /* FAQ Page Specific Styles */
+    .faq-page {
+      background: #fafbfc;
+      min-height: 100vh;
+    }
+
+    .faq-hero {
+      background: linear-gradient(135deg, #2b0f3a 0%, #1a0a24 100%);
+      padding: calc(var(--header-height) + 3rem) 1.5rem 3rem;
+      text-align: center;
+      color: #fff;
+    }
+
+    .faq-hero-inner {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    .faq-hero h1 {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: clamp(2.5rem, 6vw, 3.5rem);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      margin: 0 0 1rem 0;
+    }
+
+    .faq-hero p {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1.1rem;
+      line-height: 1.6;
+      opacity: 0.9;
+      margin: 0 0 1.5rem 0;
+    }
+
+    .faq-hero .btn {
+      font-size: 0.95rem;
+    }
+
+    /* Main content */
+    .faq-main {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 4rem;
+    }
+
+    /* Category navigation */
+    .faq-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 2.5rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .faq-nav a {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #5c5c6e;
+      text-decoration: none;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      background: #fff;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      transition: all 150ms ease;
+    }
+
+    .faq-nav a:hover {
+      color: #2b0f3a;
+      border-color: rgba(43, 15, 58, 0.2);
+      background: #f8f6fa;
+    }
+
+    /* Category sections */
+    .faq-category {
+      margin-bottom: 3rem;
+    }
+
+    .faq-category:last-child {
+      margin-bottom: 0;
+    }
+
+    .faq-category-title {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: 1.25rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #2b0f3a;
+      margin: 0 0 1rem 0;
+      padding-bottom: 0.75rem;
+      border-bottom: 2px solid #ff6fa1;
+      display: inline-block;
+    }
+
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    /* Accordion items */
+    .faq-item {
+      background: #fff;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      border-radius: 0;
+      overflow: hidden;
+    }
+
+    .faq-item:first-child {
+      border-radius: 12px 12px 0 0;
+    }
+
+    .faq-item:last-child {
+      border-radius: 0 0 12px 12px;
+    }
+
+    .faq-item:only-child {
+      border-radius: 12px;
+    }
+
+    .faq-item + .faq-item {
+      border-top: none;
+    }
+
+    .faq-item summary {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1rem;
+      font-weight: 500;
+      color: #1a1a2e;
+      padding: 1.25rem 3rem 1.25rem 1.25rem;
+      cursor: pointer;
+      list-style: none;
+      position: relative;
+      transition: background 150ms ease;
+      line-height: 1.4;
+    }
+
+    .faq-item summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .faq-item summary::after {
+      content: '';
+      position: absolute;
+      right: 1.25rem;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 10px;
+      height: 10px;
+      border-right: 2px solid #5c5c6e;
+      border-bottom: 2px solid #5c5c6e;
+      transform: translateY(-65%) rotate(45deg);
+      transition: transform 200ms ease;
+    }
+
+    .faq-item[open] summary::after {
+      transform: translateY(-35%) rotate(-135deg);
+    }
+
+    .faq-item summary:hover {
+      background: #f8f9fa;
+    }
+
+    .faq-item[open] summary {
+      background: #f8f6fa;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+    }
+
+    .faq-answer {
+      padding: 1rem 1.25rem 1.5rem;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.95rem;
+      line-height: 1.7;
+      color: #444;
+    }
+
+    .faq-answer p {
+      margin: 0 0 0.75rem 0;
+    }
+
+    .faq-answer p:last-child {
+      margin-bottom: 0;
+    }
+
+    .faq-answer ul {
+      margin: 0.5rem 0 1rem 0;
+      padding-left: 1.25rem;
+    }
+
+    .faq-answer li {
+      margin-bottom: 0.35rem;
+      color: #555;
+    }
+
+    .faq-answer li:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Support section */
+    .faq-support {
+      margin-top: 4rem;
+      padding: 2.5rem;
+      background: #fff;
+      border-radius: 16px;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+    }
+
+    .faq-support-title {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: #2b0f3a;
+      margin: 0 0 0.75rem 0;
+    }
+
+    .faq-support-text {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1rem;
+      line-height: 1.6;
+      color: #555;
+      margin: 0 0 1.5rem 0;
+    }
+
+    .faq-support-channels {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .faq-channel {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 1rem;
+      background: #f8f9fa;
+      border-radius: 10px;
+      text-decoration: none;
+      color: inherit;
+      transition: background 150ms ease, transform 150ms ease;
+    }
+
+    .faq-channel:hover {
+      background: #f0f0f4;
+      transform: translateY(-1px);
+      color: inherit;
+    }
+
+    .faq-channel-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    .faq-channel-icon.phone {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+
+    .faq-channel-icon.whatsapp {
+      background: #e8f5e9;
+      color: #25d366;
+    }
+
+    .faq-channel-icon.email {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+
+    .faq-channel-content {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .faq-channel-label {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #777;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .faq-channel-value {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #1a1a2e;
+    }
+
+    .faq-channel-note {
+      font-size: 0.8rem;
+      color: #888;
+      font-weight: 400;
+    }
+
+    .faq-support-note {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.9rem;
+      color: #666;
+      padding: 0.75rem 1rem;
+      background: #fffbe6;
+      border-radius: 8px;
+      border-left: 3px solid #ffc107;
+    }
+
+    /* CTA at bottom */
+    .faq-cta {
+      text-align: center;
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    .faq-cta p {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1.1rem;
+      color: #444;
+      margin: 0 0 1rem 0;
+    }
+
+    /* Footer */
+    .faq-footer {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.9rem;
+      color: #666;
+      border-top: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    .faq-footer a {
+      color: #2b0f3a;
+      text-decoration: none;
+      margin-left: 1rem;
+    }
+
+    .faq-footer a:hover {
+      color: #ff6fa1;
+    }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .faq-hero {
+        padding: calc(var(--header-height) + 2rem) 1rem 2rem;
+      }
+
+      .faq-hero h1 {
+        font-size: 2rem;
+      }
+
+      .faq-hero p {
+        font-size: 1rem;
+      }
+
+      .faq-main {
+        padding: 2rem 1rem 3rem;
+      }
+
+      .faq-nav {
+        gap: 0.4rem;
+      }
+
+      .faq-nav a {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.75rem;
+      }
+
+      .faq-item summary {
+        padding: 1rem 2.5rem 1rem 1rem;
+        font-size: 0.95rem;
+      }
+
+      .faq-item summary::after {
+        right: 1rem;
+      }
+
+      .faq-answer {
+        padding: 0.75rem 1rem 1.25rem;
+        font-size: 0.9rem;
+      }
+
+      .faq-support {
+        padding: 1.5rem;
+      }
+
+      .faq-support-channels {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
-<body>
+<body class="faq-page">
+  <!-- Fixed nav strip -->
   <header class="site-header">
     <nav class="hero-nav">
       <ul class="nav-links">
-        <li><a href="index.html#about" id="navAbout" data-i18n="navAbout">About</a></li>
-        <li><a href="index.html#services" id="navServices" data-i18n="navServices">Services</a></li>
-        <li><a href="index.html#zones" id="navZones" data-i18n="navZones">Zones</a></li>
+        <li><a href="about.html" data-i18n="navAbout">About</a></li>
+        <li><a href="services.html" data-i18n="navServices">Services</a></li>
       </ul>
       <div class="nav-controls">
-        <label for="langSelect" class="visually-hidden">🌐</label>
+        <label for="langSelect" class="visually-hidden" data-i18n="langSelectLabel">Language</label>
         <select id="langSelect" class="lang-select">
-          <option value="ca">Català</option>
+          <option value="ca">Catala</option>
           <option value="es">Castellano</option>
-          <option value="pt">Português</option>
+          <option value="pt">Portugues</option>
           <option value="en" selected>English</option>
         </select>
       </div>
     </nav>
   </header>
 
-  <section class="hero-section" id="top">
-    <div class="hero-inner">
-      <h1 class="hero-title" data-i18n="faqPageTitle">FAQ</h1>
+  <!-- Hero Section -->
+  <section class="faq-hero">
+    <div class="faq-hero-inner">
+      <h1 data-i18n="faqHeroTitle">Frequently Asked Questions</h1>
+      <p data-i18n="faqHeroText">Everything you need to know about our cargo bike delivery service in Barcelona. Can't find what you're looking for? Get in touch with our team.</p>
+      <a class="btn" href="index.html#zones" data-i18n="ctaBook">Book a delivery</a>
     </div>
   </section>
 
-  <main style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
-    <p data-i18n="pageNote" style="opacity:0.8; margin-top:0;"></p>
+  <!-- Main FAQ Content -->
+  <main class="faq-main">
+    <!-- Category Navigation -->
+    <nav class="faq-nav" aria-label="FAQ categories" data-i18n-aria-label="faqCategoryNavLabel">
+      <a href="#pricing" data-i18n="faqNavPricing">Pricing</a>
+      <a href="#deliveries" data-i18n="faqNavDeliveries">Deliveries</a>
+      <a href="#booking" data-i18n="faqNavBooking">Booking</a>
+      <a href="#payments" data-i18n="faqNavPayments">Payments</a>
+      <a href="#support" data-i18n="faqNavSupport">Support</a>
+    </nav>
 
-    <div class="faq" style="display:grid; gap:0.75rem;">
-      <details>
-        <summary data-i18n="faqQ1">Do you cover all of Barcelona?</summary>
-        <p data-i18n="faqA1">Yes. Coverage depends on the job, so send us the postcodes and we’ll confirm.</p>
-      </details>
-      <details>
-        <summary data-i18n="faqQ2">Do you handle multi-stop deliveries?</summary>
-        <p data-i18n="faqA2">Yes. Multi-stop routes are a big part of our work.</p>
-      </details>
-      <details>
-        <summary data-i18n="faqQ3">What can you carry?</summary>
-        <p data-i18n="faqA3">A wide range of city-friendly loads. Share approximate size and weight.</p>
-      </details>
-      <details>
-        <summary data-i18n="faqQ4">Do you offer same-day service?</summary>
-        <p data-i18n="faqA4">Yes, subject to availability and timing.</p>
-      </details>
-      <details>
-        <summary data-i18n="faqQ5">Can you replace vans completely?</summary>
-        <p data-i18n="faqA5">Sometimes. Often it’s a mix. We help find what makes sense.</p>
-      </details>
-      <details>
-        <summary data-i18n="faqQ6">How does pricing work?</summary>
-        <p data-i18n="faqA6">Pricing is clear and consistent, based on the delivery details.</p>
-      </details>
+    <!-- Pricing Section -->
+    <section id="pricing" class="faq-category">
+      <h2 class="faq-category-title" data-i18n="faqPricingTitle">Pricing</h2>
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary data-i18n="faqPricingQ1">How is the delivery price calculated?</summary>
+          <div class="faq-answer" data-i18n="faqPricingA1">
+            <p>Prices are calculated automatically based on several factors:</p>
+            <ul>
+              <li>Pickup location</li>
+              <li>Delivery distance</li>
+              <li>Number of stops</li>
+              <li>Cargo size or weight</li>
+              <li>Delivery time (weekends or after hours)</li>
+            </ul>
+            <p>The system estimates the effort required to complete the delivery and generates the price instantly before booking.</p>
+          </div>
+        </details>
+        <details class="faq-item">
+          <summary data-i18n="faqPricingQ2">What is the minimum delivery price?</summary>
+          <div class="faq-answer" data-i18n="faqPricingA2">
+            <p>The minimum delivery price is <strong>8 EUR</strong>.</p>
+            <p>This minimum applies to the core delivery cost (pickup and distance). Additional services such as extra stops, cargo modifiers, or time-based surcharges may increase the final total.</p>
+          </div>
+        </details>
+        <details class="faq-item">
+          <summary data-i18n="faqPricingQ3">Why do deliveries outside central Barcelona sometimes cost more?</summary>
+          <div class="faq-answer" data-i18n="faqPricingA3">
+            <p>Our riders operate most efficiently in central Barcelona where many deliveries happen throughout the day.</p>
+            <p>When a delivery takes us farther from this area, it may require additional travel between jobs. Pricing takes this into account to ensure deliveries remain reliable across the entire service area.</p>
+          </div>
+        </details>
+        <details class="faq-item">
+          <summary data-i18n="faqPricingQ4">Why did the price change when I added stops?</summary>
+          <div class="faq-answer" data-i18n="faqPricingA4">
+            <p>Each stop adds time to a route. Riders need to safely stop, access the building, complete the handoff, and continue to the next location.</p>
+            <p>For routes with three or more delivery addresses, a small handling fee is added to reflect the additional time required.</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- Deliveries Section -->
+    <section id="deliveries" class="faq-category">
+      <h2 class="faq-category-title" data-i18n="faqDeliveriesTitle">Deliveries</h2>
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary data-i18n="faqDeliveriesQ1">What can cargo bikes deliver?</summary>
+          <div class="faq-answer" data-i18n="faqDeliveriesA1">
+            <p>Cargo bikes are ideal for transporting:</p>
+            <ul>
+              <li>Boxes and cases</li>
+              <li>Retail goods</li>
+              <li>Documents</li>
+              <li>Flowers</li>
+              <li>Bakery deliveries</li>
+              <li>Anything that fits and is not too delicate</li>
+            </ul>
+            <p>Typical maximum capacity is around <strong>80kg</strong>, depending on cargo type.</p>
+          </div>
+        </details>
+        <details class="faq-item">
+          <summary data-i18n="faqDeliveriesQ2">Do you offer same-day delivery?</summary>
+          <div class="faq-answer" data-i18n="faqDeliveriesA2">
+            <p>Yes. Most deliveries within Barcelona can be completed the same day depending on availability and distance, but it is always best to book ahead of time as it leaves less room for error.</p>
+            <p>We also offer a small discount for orders scheduled ahead of time.</p>
+          </div>
+        </details>
+        <details class="faq-item">
+          <summary data-i18n="faqDeliveriesQ3">Can I add multiple stops to a delivery?</summary>
+          <div class="faq-answer" data-i18n="faqDeliveriesA3">
+            <p>Yes. You can add several delivery addresses when booking a route.</p>
+            <p>Multi-stop deliveries are often more efficient than placing several separate orders. It also comes out cheaper.</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- Booking Section -->
+    <section id="booking" class="faq-category">
+      <h2 class="faq-category-title" data-i18n="faqBookingTitle">Booking</h2>
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary data-i18n="faqBookingQ1">How do I book a delivery?</summary>
+          <div class="faq-answer" data-i18n="faqBookingA1">
+            <p>You can plan and book your route in a few simple steps:</p>
+            <ul>
+              <li>Enter pickup and dropoff addresses</li>
+              <li>Select cargo type, date and time</li>
+              <li>Review the instant quote</li>
+              <li>Confirm and pay online</li>
+            </ul>
+            <p>Once confirmed, you'll receive an order ID and tracking link.</p>
+          </div>
+        </details>
+        <details class="faq-item">
+          <summary data-i18n="faqBookingQ2">Can I track my delivery?</summary>
+          <div class="faq-answer" data-i18n="faqBookingA2">
+            <p>We still don't offer live tracking through our system. What we do sometimes is share our WhatsApp live location with the order recipient, sender or both.</p>
+            <p>After booking, you'll receive a tracking link that allows you to follow the delivery updates.</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- Payments Section -->
+    <section id="payments" class="faq-category">
+      <h2 class="faq-category-title" data-i18n="faqPaymentsTitle">Payments</h2>
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary data-i18n="faqPaymentsQ1">When do I pay for the delivery?</summary>
+          <div class="faq-answer" data-i18n="faqPaymentsA1">
+            <p>Payment is completed during booking through the website.</p>
+            <p>Your delivery is confirmed once the payment is successful.</p>
+          </div>
+        </details>
+        <details class="faq-item">
+          <summary data-i18n="faqPaymentsQ2">Can I use promo codes?</summary>
+          <div class="faq-answer" data-i18n="faqPaymentsA2">
+            <p>Yes. Promo codes can be entered during booking and will be applied to the final delivery price.</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- Support Section -->
+    <section id="support" class="faq-category">
+      <h2 class="faq-category-title" data-i18n="faqSupportTitle">Support</h2>
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary data-i18n="faqSupportQ1">I need to update or cancel my delivery</summary>
+          <div class="faq-answer" data-i18n="faqSupportA1">
+            <p>If you need to change delivery details, please contact us as soon as possible and include your order ID.</p>
+          </div>
+        </details>
+        <details class="faq-item" open>
+          <summary data-i18n="faqSupportQ2">How can I contact support?</summary>
+          <div class="faq-answer" data-i18n="faqSupportA2">
+            <p>Here are the best ways to reach us:</p>
+            <ul>
+              <li><strong>Call:</strong> +34 608 08 19 55 (we may be out riding)</li>
+              <li><strong>WhatsApp:</strong> 5-10 min response (usually)</li>
+              <li><strong>Email:</strong> info@cargoworks.es (we always reply by next morning)</li>
+            </ul>
+            <p>Please include your order ID so we can assist you quickly.</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- Contact Support Card -->
+    <div class="faq-support">
+      <h3 class="faq-support-title" data-i18n="faqSupportCardTitle">Need more help?</h3>
+      <p class="faq-support-text" data-i18n="faqSupportCardText">Our team is here to assist you with any questions about your delivery.</p>
+      
+      <div class="faq-support-channels">
+        <a href="tel:+34608081955" class="faq-channel">
+          <div class="faq-channel-icon phone">
+            <i class="fa fa-phone"></i>
+          </div>
+          <div class="faq-channel-content">
+            <span class="faq-channel-label" data-i18n="faqSupportChannelPhoneLabel">Phone</span>
+            <span class="faq-channel-value">+34 608 08 19 55</span>
+            <span class="faq-channel-note" data-i18n="faqSupportChannelPhoneNote">We may be out riding</span>
+          </div>
+        </a>
+        <a href="https://wa.me/34608081955" target="_blank" rel="noopener" class="faq-channel">
+          <div class="faq-channel-icon whatsapp">
+            <i class="fa fa-whatsapp"></i>
+          </div>
+          <div class="faq-channel-content">
+            <span class="faq-channel-label" data-i18n="faqSupportChannelWhatsappLabel">WhatsApp</span>
+            <span class="faq-channel-value" data-i18n="faqSupportChannelWhatsappValue">Message us</span>
+            <span class="faq-channel-note" data-i18n="faqSupportChannelWhatsappNote">5-10 min response</span>
+          </div>
+        </a>
+        <a href="mailto:info@cargoworks.es" class="faq-channel">
+          <div class="faq-channel-icon email">
+            <i class="fa fa-envelope"></i>
+          </div>
+          <div class="faq-channel-content">
+            <span class="faq-channel-label" data-i18n="faqSupportChannelEmailLabel">Email</span>
+            <span class="faq-channel-value">info@cargoworks.es</span>
+            <span class="faq-channel-note" data-i18n="faqSupportChannelEmailNote">Reply by next morning</span>
+          </div>
+        </a>
+      </div>
+
+      <p class="faq-support-note" data-i18n="faqSupportOrderNote">Please include your <strong>order ID</strong> in all communications so we can assist you quickly.</p>
     </div>
 
-    <div class="cta-group" style="margin:1.5rem 0 0.5rem 0;">
-      <a class="btn" href="mailto:info@cargoworks.es" data-i18n="ctaQuote">Get a quote</a>
-      <a class="btn btn--whatsapp" href="https://wa.me/34608081955?text=Hola%2C%20me%20gustar%C3%ADa%20solicitar%20una%20cotizaci%C3%B3n." target="_blank" rel="noopener" data-i18n="ctaWhatsApp">WhatsApp</a>
+    <!-- CTA -->
+    <div class="faq-cta">
+      <p data-i18n="faqCtaText">Ready to ship with us?</p>
+      <a class="btn" href="index.html#zones" data-i18n="ctaBook">Book a delivery</a>
     </div>
   </main>
 
-  <footer style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
-    <span data-i18n="footerCopy">© 2025 Cargoworks – Bike Logistics Barcelona</span>
+  <!-- Footer -->
+  <footer class="faq-footer">
+    <span data-i18n="footerCopy">2025 Cargoworks - Bike Logistics Barcelona</span>
     <a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener" data-i18n="footerInstagram">Instagram</a>
   </footer>
 
