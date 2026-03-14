@@ -34,8 +34,40 @@ if (langSelect) {
     });
   };
 
+  const navPageName = (hrefOrPath) => {
+    try {
+      const raw = String(hrefOrPath || '').trim();
+      if (!raw || raw.startsWith('#') || raw.startsWith('mailto:') || raw.startsWith('tel:')) return '';
+      const url = new URL(raw, window.location.href);
+      const path = String(url.pathname || '/');
+      const parts = path.split('/').filter(Boolean);
+      return (parts.pop() || 'index.html').toLowerCase();
+    } catch (_) {
+      return '';
+    }
+  };
+
+  const updateDynamicNav = () => {
+    const current = navPageName(window.location.pathname);
+    document.querySelectorAll('.hero-nav .nav-links li').forEach((li) => {
+      const link = li.querySelector('a[href]');
+      if (!link) return;
+      const target = navPageName(link.getAttribute('href'));
+      if (!target) {
+        li.style.display = '';
+        link.removeAttribute('aria-current');
+        return;
+      }
+      const isCurrent = target === current;
+      li.style.display = isCurrent ? 'none' : '';
+      if (isCurrent) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    });
+  };
+
   const applyLanguage = (lang) => {
     const dict = Object.assign({}, fallbackLang, translations[lang]);
+    setText('navHome', dict.navHome);
     setText('navAbout', dict.navAbout);
     setText('navServices', dict.navServices);
     setText('navZones', dict.navZones);
@@ -274,6 +306,7 @@ if (langSelect) {
     setAttributeText('data-i18n-title', 'title', dict);
     setAttributeText('data-i18n-placeholder', 'placeholder', dict);
     setAttributeText('data-i18n-content', 'content', dict);
+    updateDynamicNav();
 
     if (window._refreshPricingUi && window._lastPricingUiContext) {
       try { window._refreshPricingUi(); } catch(_) {}
