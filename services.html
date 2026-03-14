@@ -3,71 +3,780 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/>
-  <title>CARGOWORKS.es – Services</title>
+  <title>Services – CARGOWORKS.es</title>
+  <meta name="description" content="Cargo bike courier services in Barcelona. Same-day delivery, multi-stop routes, business deliveries, and restaurant supply logistics.">
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css">
   <link rel="stylesheet" href="css/effects/layout.css"/>
+  <style>
+    /* Services Page Specific Styles */
+    :root {
+      --services-purple: #2b0f3a;
+      --services-purple-light: #f8f6fa;
+      --services-coral: #ff6fa1;
+      --services-gray: #5c5c6e;
+      --services-gray-light: #fafbfc;
+      --services-text: #1a1a2e;
+    }
+
+    .services-page {
+      background: #fff;
+      min-height: 100vh;
+    }
+
+    /* Hero Section */
+    .services-hero {
+      background: linear-gradient(135deg, var(--services-purple) 0%, #1a0a24 100%);
+      padding: calc(var(--header-height) + 5rem) 1.5rem 5rem;
+      text-align: center;
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .services-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      pointer-events: none;
+    }
+
+    .services-hero-inner {
+      max-width: 800px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .services-hero h1 {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: clamp(2.5rem, 7vw, 4rem);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      margin: 0 0 1.5rem 0;
+      line-height: 1.1;
+    }
+
+    .services-hero p {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1.2rem;
+      line-height: 1.7;
+      opacity: 0.9;
+      margin: 0 0 2rem 0;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Section Base Styles */
+    .services-section {
+      padding: 5rem 1.5rem;
+    }
+
+    .services-section--alt {
+      background: var(--services-gray-light);
+    }
+
+    .services-section-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--services-coral);
+      margin: 0 0 0.75rem 0;
+    }
+
+    .section-title {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      color: var(--services-purple);
+      margin: 0 0 1rem 0;
+      line-height: 1.2;
+    }
+
+    .section-text {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1.1rem;
+      line-height: 1.7;
+      color: var(--services-gray);
+      max-width: 640px;
+    }
+
+    /* Problem Section */
+    .problem-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+
+    .problem-visual {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .problem-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    .problem-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      flex-shrink: 0;
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .problem-card-text {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.95rem;
+      color: var(--services-text);
+      font-weight: 500;
+    }
+
+    /* Solution Section */
+    .solution-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+
+    .solution-visual {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      order: 2;
+    }
+
+    .solution-card {
+      background: var(--services-purple-light);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      border: 1px solid rgba(43, 15, 58, 0.08);
+    }
+
+    .solution-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      flex-shrink: 0;
+      background: #ecfdf5;
+      color: #059669;
+    }
+
+    .solution-card-text {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.95rem;
+      color: var(--services-text);
+      font-weight: 500;
+    }
+
+    /* Services Grid */
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .service-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 2rem;
+      border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.04);
+      transition: transform 200ms ease, box-shadow 200ms ease;
+    }
+
+    .service-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+    }
+
+    .service-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 1.25rem;
+      background: var(--services-purple-light);
+      color: var(--services-purple);
+    }
+
+    .service-card:nth-child(1) .service-icon { background: #fef3c7; color: #d97706; }
+    .service-card:nth-child(2) .service-icon { background: #dbeafe; color: #2563eb; }
+    .service-card:nth-child(3) .service-icon { background: #f3e8ff; color: #7c3aed; }
+    .service-card:nth-child(4) .service-icon { background: #dcfce7; color: #16a34a; }
+
+    .service-title {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: 1.35rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      color: var(--services-purple);
+      margin: 0 0 0.75rem 0;
+    }
+
+    .service-desc {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: var(--services-gray);
+      margin: 0 0 1.25rem 0;
+    }
+
+    .service-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .service-list li {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.8rem;
+      color: var(--services-gray);
+      background: var(--services-gray-light);
+      padding: 0.35rem 0.75rem;
+      border-radius: 20px;
+      border: 1px solid rgba(0,0,0,0.04);
+    }
+
+    /* Why Cargo Bikes Section */
+    .why-content {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 4rem;
+      align-items: center;
+      margin-top: 2.5rem;
+    }
+
+    .benefits-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25rem;
+    }
+
+    .benefit-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 1.5rem;
+      border: 1px solid rgba(0,0,0,0.06);
+      text-align: center;
+    }
+
+    .benefit-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      margin: 0 auto 1rem;
+      background: var(--services-purple-light);
+      color: var(--services-purple);
+    }
+
+    .benefit-card:nth-child(1) .benefit-icon { background: #fef3c7; color: #d97706; }
+    .benefit-card:nth-child(2) .benefit-icon { background: #dcfce7; color: #16a34a; }
+    .benefit-card:nth-child(3) .benefit-icon { background: #dbeafe; color: #2563eb; }
+    .benefit-card:nth-child(4) .benefit-icon { background: #fce7f3; color: #db2777; }
+
+    .benefit-title {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--services-text);
+      margin: 0;
+    }
+
+    .why-image {
+      border-radius: 16px;
+      overflow: hidden;
+      background: linear-gradient(135deg, var(--services-purple) 0%, #1a0a24 100%);
+      aspect-ratio: 4/3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .why-image-content {
+      text-align: center;
+      color: #fff;
+      padding: 2rem;
+    }
+
+    .why-image-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      opacity: 0.9;
+    }
+
+    .why-image-text {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: 1.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Service Area Section */
+    .area-content {
+      display: grid;
+      grid-template-columns: 1fr 1.5fr;
+      gap: 4rem;
+      align-items: start;
+      margin-top: 2.5rem;
+    }
+
+    .area-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .area-tag {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--services-purple);
+      background: #fff;
+      padding: 0.75rem 1.25rem;
+      border-radius: 30px;
+      border: 1px solid rgba(43, 15, 58, 0.15);
+      transition: all 150ms ease;
+    }
+
+    .area-tag:hover {
+      background: var(--services-purple-light);
+      border-color: rgba(43, 15, 58, 0.25);
+    }
+
+    /* CTA Section */
+    .services-cta {
+      background: linear-gradient(135deg, var(--services-purple) 0%, #1a0a24 100%);
+      padding: 5rem 1.5rem;
+      text-align: center;
+      color: #fff;
+    }
+
+    .services-cta-inner {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .services-cta h2 {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      margin: 0 0 1.5rem 0;
+    }
+
+    .services-cta p {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1.1rem;
+      line-height: 1.6;
+      opacity: 0.9;
+      margin: 0 0 2rem 0;
+    }
+
+    .services-cta .btn {
+      font-size: 1rem;
+      padding: 1rem 2.5rem;
+    }
+
+    /* Footer */
+    .services-footer {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.9rem;
+      color: #666;
+      border-top: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    .services-footer a {
+      color: var(--services-purple);
+      text-decoration: none;
+      margin-left: 1rem;
+    }
+
+    .services-footer a:hover {
+      color: var(--services-coral);
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .problem-section,
+      .solution-section,
+      .why-content,
+      .area-content {
+        grid-template-columns: 1fr;
+        gap: 2.5rem;
+      }
+
+      .solution-visual {
+        order: 0;
+      }
+
+      .services-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .services-hero {
+        padding: calc(var(--header-height) + 3rem) 1rem 3rem;
+      }
+
+      .services-hero h1 {
+        font-size: 2.25rem;
+      }
+
+      .services-hero p {
+        font-size: 1rem;
+      }
+
+      .services-section {
+        padding: 3rem 1rem;
+      }
+
+      .section-title {
+        font-size: 1.5rem;
+      }
+
+      .section-text {
+        font-size: 1rem;
+      }
+
+      .service-card {
+        padding: 1.5rem;
+      }
+
+      .benefits-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .services-cta {
+        padding: 3rem 1rem;
+      }
+    }
+  </style>
 </head>
-<body>
+<body class="services-page">
+  <!-- Fixed nav strip -->
   <header class="site-header">
     <nav class="hero-nav">
       <ul class="nav-links">
-        <li><a href="index.html#about" id="navAbout" data-i18n="navAbout">About</a></li>
-        <li><a href="index.html#services" id="navServices" data-i18n="navServices">Services</a></li>
-        <li><a href="index.html#zones" id="navZones" data-i18n="navZones">Zones</a></li>
+        <li><a href="index.html#about" data-i18n="navAbout">About</a></li>
+        <li><a href="services.html" data-i18n="navServices">Services</a></li>
+        <li><a href="index.html#zones" data-i18n="navZones">Zones</a></li>
       </ul>
       <div class="nav-controls">
-        <label for="langSelect" class="visually-hidden">🌐</label>
+        <label for="langSelect" class="visually-hidden">Language</label>
         <select id="langSelect" class="lang-select">
-          <option value="ca">Català</option>
+          <option value="ca">Catala</option>
           <option value="es">Castellano</option>
-          <option value="pt">Português</option>
+          <option value="pt">Portugues</option>
           <option value="en" selected>English</option>
         </select>
       </div>
     </nav>
   </header>
 
-  <section class="hero-section" id="top">
-    <div class="hero-inner">
-      <h1 class="hero-title" data-i18n="servicesPageTitle">Services</h1>
+  <!-- Hero Section -->
+  <section class="services-hero">
+    <div class="services-hero-inner">
+      <h1>Courier Services Across Barcelona</h1>
+      <p>Cargoworks provides fast urban deliveries using cargo bikes. Ideal for businesses that need reliable same-day logistics within Barcelona.</p>
+      <a class="btn" href="index.html#zones">Get an instant quote</a>
     </div>
   </section>
 
-  <main style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
-    <p data-i18n="pageNote" style="opacity:0.8; margin-top:0;"></p>
-
-    <div class="cta-group" style="margin:0.5rem 0 1rem 0;">
-      <a class="btn" href="mailto:info@cargoworks.es" data-i18n="ctaQuote">Get a quote</a>
-      <a class="btn btn--whatsapp" href="https://wa.me/34608081955?text=Hola%2C%20me%20gustar%C3%ADa%20solicitar%20una%20cotizaci%C3%B3n." target="_blank" rel="noopener" data-i18n="ctaWhatsApp">WhatsApp</a>
+  <!-- Problem Section -->
+  <section class="services-section services-section--alt">
+    <div class="services-section-inner">
+      <div class="problem-section">
+        <div class="problem-content">
+          <span class="section-label">The Problem</span>
+          <h2 class="section-title">Urban logistics is inefficient</h2>
+          <p class="section-text">Cities like Barcelona are dense, busy, and increasingly difficult for delivery vehicles to navigate. Traffic congestion, limited parking, restricted access zones, and short delivery windows make traditional courier services inefficient for short-distance urban deliveries.</p>
+          <p class="section-text" style="margin-top: 1rem;">Vans often spend more time searching for parking or navigating traffic than actually completing the delivery.</p>
+        </div>
+        <div class="problem-visual">
+          <div class="problem-card">
+            <div class="problem-icon">
+              <i class="fa fa-car"></i>
+            </div>
+            <span class="problem-card-text">Traffic congestion slows everything down</span>
+          </div>
+          <div class="problem-card">
+            <div class="problem-icon">
+              <i class="fa fa-ban"></i>
+            </div>
+            <span class="problem-card-text">Limited parking in city center</span>
+          </div>
+          <div class="problem-card">
+            <div class="problem-icon">
+              <i class="fa fa-road"></i>
+            </div>
+            <span class="problem-card-text">Restricted access zones</span>
+          </div>
+          <div class="problem-card">
+            <div class="problem-icon">
+              <i class="fa fa-clock-o"></i>
+            </div>
+            <span class="problem-card-text">Short delivery windows missed</span>
+          </div>
+        </div>
+      </div>
     </div>
+  </section>
 
-    <section>
-      <h2 data-i18n="servicesSameDayTitle">Same-day deliveries</h2>
-      <p data-i18n="servicesSameDayBody">For urgent or time-sensitive deliveries across the city.</p>
-    </section>
-
-    <section>
-      <h2 data-i18n="servicesRecurringTitle">Recurring routes</h2>
-      <p data-i18n="servicesRecurringBody">For businesses that deliver daily or weekly and need consistency.</p>
-    </section>
-
-    <section>
-      <h2 data-i18n="servicesTransitionTitle">Van → cargo bike transition</h2>
-      <p data-i18n="servicesTransitionBody">Support for businesses looking to reduce van use and improve urban efficiency.</p>
-    </section>
-
-    <div class="cta-group" style="margin:1.5rem 0 0.5rem 0;">
-      <a class="btn" href="mailto:info@cargoworks.es" data-i18n="ctaQuote">Get a quote</a>
-      <a class="btn btn--whatsapp" href="https://wa.me/34608081955?text=Hola%2C%20me%20gustar%C3%ADa%20solicitar%20una%20cotizaci%C3%B3n." target="_blank" rel="noopener" data-i18n="ctaWhatsApp">WhatsApp</a>
+  <!-- Solution Section -->
+  <section class="services-section">
+    <div class="services-section-inner">
+      <div class="solution-section">
+        <div class="solution-content">
+          <span class="section-label">The Solution</span>
+          <h2 class="section-title">Built for city deliveries</h2>
+          <p class="section-text">Cargo bikes are designed specifically for dense urban environments. They can move quickly through city streets, access areas where vans struggle, and complete deliveries without delays caused by traffic or parking restrictions.</p>
+          <p class="section-text" style="margin-top: 1rem;">For many deliveries within Barcelona, cargo bikes are simply the most efficient way to move goods across the city.</p>
+        </div>
+        <div class="solution-visual">
+          <div class="solution-card">
+            <div class="solution-icon">
+              <i class="fa fa-bolt"></i>
+            </div>
+            <span class="solution-card-text">Move quickly through city streets</span>
+          </div>
+          <div class="solution-card">
+            <div class="solution-icon">
+              <i class="fa fa-map-marker"></i>
+            </div>
+            <span class="solution-card-text">Access areas vans cannot reach</span>
+          </div>
+          <div class="solution-card">
+            <div class="solution-icon">
+              <i class="fa fa-check-circle"></i>
+            </div>
+            <span class="solution-card-text">No parking delays</span>
+          </div>
+          <div class="solution-card">
+            <div class="solution-icon">
+              <i class="fa fa-leaf"></i>
+            </div>
+            <span class="solution-card-text">Zero emissions transport</span>
+          </div>
+        </div>
+      </div>
     </div>
-  </main>
+  </section>
 
-  <footer style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
-    <span data-i18n="footerCopy">© 2025 Cargoworks – Bike Logistics Barcelona</span>
-    <a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener" data-i18n="footerInstagram">Instagram</a>
+  <!-- Services Section -->
+  <section class="services-section services-section--alt">
+    <div class="services-section-inner">
+      <span class="section-label">Our Services</span>
+      <h2 class="section-title">What we deliver</h2>
+      <p class="section-text">From urgent parcels to daily business routes, we handle it all with speed and reliability.</p>
+      
+      <div class="services-grid">
+        <div class="service-card">
+          <div class="service-icon">
+            <i class="fa fa-flash"></i>
+          </div>
+          <h3 class="service-title">Same-day Delivery</h3>
+          <p class="service-desc">Fast deliveries across Barcelona. Our cargo bikes move quickly through dense city streets, avoiding traffic and parking delays. Most deliveries within Barcelona can be completed the same day depending on distance and availability.</p>
+          <ul class="service-list">
+            <li>Documents</li>
+            <li>Retail shipments</li>
+            <li>Urgent parcels</li>
+            <li>Business deliveries</li>
+          </ul>
+        </div>
+
+        <div class="service-card">
+          <div class="service-icon">
+            <i class="fa fa-map-signs"></i>
+          </div>
+          <h3 class="service-title">Multi-stop Deliveries</h3>
+          <p class="service-desc">Deliver to multiple locations in a single route. Our booking tool allows you to add several stops when creating a delivery. This is often more efficient than booking several separate deliveries.</p>
+          <ul class="service-list">
+            <li>Restaurant supply routes</li>
+            <li>Distributor drop rounds</li>
+            <li>Retail restocking</li>
+            <li>Internal company deliveries</li>
+          </ul>
+        </div>
+
+        <div class="service-card">
+          <div class="service-icon">
+            <i class="fa fa-building"></i>
+          </div>
+          <h3 class="service-title">Business Deliveries</h3>
+          <p class="service-desc">Reliable logistics for local businesses. We work with companies that need frequent deliveries across Barcelona. Cargo bike logistics can often be faster and more flexible than van-based couriers within the city centre.</p>
+          <ul class="service-list">
+            <li>Wine distributors</li>
+            <li>Bakeries</li>
+            <li>Coffee roasters</li>
+            <li>Florists</li>
+            <li>Retail stores</li>
+            <li>Offices</li>
+          </ul>
+        </div>
+
+        <div class="service-card">
+          <div class="service-icon">
+            <i class="fa fa-cutlery"></i>
+          </div>
+          <h3 class="service-title">Restaurant Supply</h3>
+          <p class="service-desc">Efficient deliveries to restaurants and hospitality venues. Cargo bikes are ideal for navigating busy neighbourhoods such as Eixample, El Born, and Gracia. They allow us to deliver quickly without the delays vans often experience.</p>
+          <ul class="service-list">
+            <li>Wine cases</li>
+            <li>Fresh ingredients</li>
+            <li>Baked goods</li>
+            <li>Hospitality supplies</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why Cargo Bikes Section -->
+  <section class="services-section">
+    <div class="services-section-inner">
+      <span class="section-label">Why Cargo Bikes</span>
+      <h2 class="section-title">The fastest way to move goods through Barcelona</h2>
+      <p class="section-text">They avoid traffic congestion, access narrow streets, and reduce the environmental impact of urban logistics.</p>
+      
+      <div class="why-content">
+        <div class="benefits-grid">
+          <div class="benefit-card">
+            <div class="benefit-icon">
+              <i class="fa fa-rocket"></i>
+            </div>
+            <h4 class="benefit-title">Faster city deliveries</h4>
+          </div>
+          <div class="benefit-card">
+            <div class="benefit-icon">
+              <i class="fa fa-leaf"></i>
+            </div>
+            <h4 class="benefit-title">Zero-emission transport</h4>
+          </div>
+          <div class="benefit-card">
+            <div class="benefit-icon">
+              <i class="fa fa-street-view"></i>
+            </div>
+            <h4 class="benefit-title">Access central neighbourhoods</h4>
+          </div>
+          <div class="benefit-card">
+            <div class="benefit-icon">
+              <i class="fa fa-clock-o"></i>
+            </div>
+            <h4 class="benefit-title">Reliable arrival times</h4>
+          </div>
+        </div>
+        <div class="why-image">
+          <div class="why-image-content">
+            <div class="why-image-icon">
+              <i class="fa fa-bicycle"></i>
+            </div>
+            <div class="why-image-text">Built for Barcelona</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Service Area Section -->
+  <section class="services-section services-section--alt">
+    <div class="services-section-inner">
+      <div class="area-content">
+        <div class="area-text">
+          <span class="section-label">Service Area</span>
+          <h2 class="section-title">We deliver across Barcelona</h2>
+          <p class="section-text">Our riders operate primarily within the central districts where cargo bike delivery is most efficient.</p>
+        </div>
+        <div class="area-list">
+          <span class="area-tag">Eixample</span>
+          <span class="area-tag">Gracia</span>
+          <span class="area-tag">El Born</span>
+          <span class="area-tag">Poblenou</span>
+          <span class="area-tag">Sants</span>
+          <span class="area-tag">Sant Antoni</span>
+          <span class="area-tag">Barceloneta</span>
+          <span class="area-tag">Raval</span>
+          <span class="area-tag">Gothic Quarter</span>
+          <span class="area-tag">Les Corts</span>
+          <span class="area-tag">Sarria</span>
+          <span class="area-tag">Horta</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="services-cta">
+    <div class="services-cta-inner">
+      <h2>Ready to book a delivery?</h2>
+      <p>Get an instant quote and schedule your delivery in minutes. No account needed.</p>
+      <a class="btn" href="index.html#zones">Get instant quote</a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="services-footer">
+    <span>2025 Cargoworks - Bike Logistics Barcelona</span>
+    <a href="faq.html">FAQ</a>
+    <a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener">Instagram</a>
   </footer>
 
   <script src="js/js/translations.js"></script>
