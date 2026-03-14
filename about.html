@@ -3,69 +3,676 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/>
-  <title>CARGOWORKS.es – About</title>
+  <title>About – CARGOWORKS.es</title>
+  <meta name="description" content="Learn about Cargoworks, Barcelona's cargo bike courier service. Practical urban logistics, done right.">
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css">
   <link rel="stylesheet" href="css/effects/layout.css"/>
   <style>
-    /* Hide empty paragraphs injected by i18n when a language has fewer blocks */
-    main p:empty { display: none; }
+    :root {
+      --about-purple: #2b0f3a;
+      --about-purple-light: #f8f6fa;
+      --about-coral: #ff6fa1;
+      --about-gray: #5c5c6e;
+      --about-gray-light: #fafbfc;
+      --about-text: #1a1a2e;
+    }
+
+    .about-page {
+      background: #fff;
+      min-height: 100vh;
+    }
+
+    /* Hero Section */
+    .about-hero {
+      background: linear-gradient(135deg, var(--about-purple) 0%, #1a0a24 100%);
+      padding: calc(var(--header-height) + 6rem) 1.5rem 6rem;
+      text-align: center;
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .about-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      pointer-events: none;
+    }
+
+    .about-hero-inner {
+      max-width: 800px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .about-hero h1 {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: clamp(2.5rem, 7vw, 4rem);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      margin: 0 0 1.5rem 0;
+      line-height: 1.1;
+    }
+
+    .about-hero p {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1.25rem;
+      line-height: 1.7;
+      opacity: 0.9;
+      margin: 0;
+      max-width: 560px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Section Base Styles */
+    .about-section {
+      padding: 5rem 1.5rem;
+    }
+
+    .about-section--alt {
+      background: var(--about-gray-light);
+    }
+
+    .about-section-inner {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--about-coral);
+      margin: 0 0 0.75rem 0;
+      display: block;
+    }
+
+    .section-title {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: clamp(1.75rem, 4vw, 2.25rem);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      color: var(--about-purple);
+      margin: 0 0 1.25rem 0;
+      line-height: 1.2;
+    }
+
+    .section-text {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1.1rem;
+      line-height: 1.8;
+      color: var(--about-gray);
+      margin: 0 0 1rem 0;
+    }
+
+    .section-text:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Intro Section - Full Width Text */
+    .intro-section {
+      text-align: center;
+    }
+
+    .intro-section .section-text {
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Story Section - Two Column */
+    .story-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: start;
+    }
+
+    .story-content {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .story-visual {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .story-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    .story-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    .story-card:nth-child(1) .story-icon { background: #fef3c7; color: #d97706; }
+    .story-card:nth-child(2) .story-icon { background: #fee2e2; color: #dc2626; }
+    .story-card:nth-child(3) .story-icon { background: #dbeafe; color: #2563eb; }
+
+    .story-card-text {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.95rem;
+      color: var(--about-text);
+      line-height: 1.5;
+    }
+
+    /* Idea Section - Centered with Icon */
+    .idea-section {
+      text-align: center;
+    }
+
+    .idea-icon-wrapper {
+      width: 80px;
+      height: 80px;
+      border-radius: 20px;
+      background: var(--about-purple-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 2rem;
+      font-size: 2rem;
+      color: var(--about-purple);
+    }
+
+    .idea-section .section-text {
+      max-width: 640px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Approach Section - List Style */
+    .approach-list {
+      list-style: none;
+      padding: 0;
+      margin: 2rem 0 0 0;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+
+    .approach-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: #fff;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    .approach-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      flex-shrink: 0;
+      background: #ecfdf5;
+      color: #059669;
+    }
+
+    .approach-text {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.95rem;
+      color: var(--about-text);
+      font-weight: 500;
+    }
+
+    /* Mindset Section */
+    .mindset-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+
+    .mindset-visual {
+      background: linear-gradient(135deg, var(--about-purple) 0%, #1a0a24 100%);
+      border-radius: 16px;
+      padding: 3rem;
+      text-align: center;
+      color: #fff;
+    }
+
+    .mindset-quote {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: 1.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    /* Responsibility Section */
+    .responsibility-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    .responsibility-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 1.75rem;
+      text-align: center;
+      border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    .responsibility-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      margin: 0 auto 1rem;
+    }
+
+    .responsibility-card:nth-child(1) .responsibility-icon { background: #dcfce7; color: #16a34a; }
+    .responsibility-card:nth-child(2) .responsibility-icon { background: #dbeafe; color: #2563eb; }
+    .responsibility-card:nth-child(3) .responsibility-icon { background: #fce7f3; color: #db2777; }
+
+    .responsibility-title {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--about-text);
+      margin: 0 0 0.5rem 0;
+    }
+
+    .responsibility-desc {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.9rem;
+      color: var(--about-gray);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* Today Section */
+    .today-section {
+      text-align: center;
+    }
+
+    .today-services {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-top: 2rem;
+    }
+
+    .today-tag {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--about-purple);
+      background: var(--about-purple-light);
+      padding: 0.6rem 1.25rem;
+      border-radius: 30px;
+      border: 1px solid rgba(43, 15, 58, 0.1);
+    }
+
+    /* CTA Section */
+    .about-cta {
+      background: linear-gradient(135deg, var(--about-purple) 0%, #1a0a24 100%);
+      padding: 5rem 1.5rem;
+      text-align: center;
+      color: #fff;
+    }
+
+    .about-cta-inner {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .about-cta h2 {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      margin: 0 0 1.5rem 0;
+    }
+
+    .about-cta p {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1.1rem;
+      line-height: 1.6;
+      opacity: 0.9;
+      margin: 0 0 2rem 0;
+    }
+
+    .about-cta .btn {
+      font-size: 1rem;
+      padding: 1rem 2.5rem;
+    }
+
+    /* Footer */
+    .about-footer {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.9rem;
+      color: #666;
+      border-top: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    .about-footer a {
+      color: var(--about-purple);
+      text-decoration: none;
+      margin-left: 1rem;
+    }
+
+    .about-footer a:hover {
+      color: var(--about-coral);
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .story-layout,
+      .mindset-layout {
+        grid-template-columns: 1fr;
+        gap: 2.5rem;
+      }
+
+      .responsibility-cards {
+        grid-template-columns: 1fr;
+      }
+
+      .approach-list {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .about-hero {
+        padding: calc(var(--header-height) + 3rem) 1rem 3rem;
+      }
+
+      .about-hero h1 {
+        font-size: 2.25rem;
+      }
+
+      .about-hero p {
+        font-size: 1.05rem;
+      }
+
+      .about-section {
+        padding: 3rem 1rem;
+      }
+
+      .section-title {
+        font-size: 1.5rem;
+      }
+
+      .section-text {
+        font-size: 1rem;
+      }
+
+      .mindset-visual {
+        padding: 2rem;
+      }
+
+      .mindset-quote {
+        font-size: 1.25rem;
+      }
+
+      .about-cta {
+        padding: 3rem 1rem;
+      }
+    }
   </style>
 </head>
-<body>
+<body class="about-page">
+  <!-- Fixed nav strip -->
   <header class="site-header">
     <nav class="hero-nav">
       <ul class="nav-links">
-        <li><a href="index.html#about" id="navAbout" data-i18n="navAbout">About</a></li>
-        <li><a href="index.html#services" id="navServices" data-i18n="navServices">Services</a></li>
-        <li><a href="index.html#zones" id="navZones" data-i18n="navZones">Zones</a></li>
+        <li><a href="about.html" data-i18n="navAbout">About</a></li>
+        <li><a href="services.html" data-i18n="navServices">Services</a></li>
+        <li><a href="index.html#zones" data-i18n="navZones">Zones</a></li>
       </ul>
       <div class="nav-controls">
-        <label for="langSelect" class="visually-hidden">🌐</label>
+        <label for="langSelect" class="visually-hidden">Language</label>
         <select id="langSelect" class="lang-select">
-          <option value="ca">Català</option>
-          <option value="es" selected>Castellano</option>
-          <option value="pt">Português</option>
-          <option value="en">English</option>
+          <option value="ca">Catala</option>
+          <option value="es">Castellano</option>
+          <option value="pt">Portugues</option>
+          <option value="en" selected>English</option>
         </select>
       </div>
     </nav>
   </header>
 
-  <section class="hero-section" id="top">
-    <div class="hero-inner">
-      <h1 class="hero-title" data-i18n="aboutPageTitle">About</h1>
+  <!-- Hero Section -->
+  <section class="about-hero">
+    <div class="about-hero-inner">
+      <h1>About Cargoworks</h1>
+      <p>Practical urban logistics, done right.</p>
     </div>
   </section>
 
-  <main style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
-    <div class="cta-group" style="margin:0.5rem 0 1rem 0;">
-      <a class="btn" href="mailto:info@cargoworks.es?subject=Quote%20request" data-i18n="ctaQuote">Get a quote</a>
-      <a class="btn" href="mailto:info@cargoworks.es?subject=Book%20a%20delivery" data-i18n="ctaBook">Book a delivery</a>
-      <a class="btn" href="mailto:info@cargoworks.es?subject=Recurring%20routes" data-i18n="ctaRecurring">Request recurring routes</a>
-      <a class="btn btn--whatsapp" href="https://wa.me/34608081955?text=Hola%2C%20podemos%20hablar%20de%20rutas%20recurrentes%3F" target="_blank" rel="noopener" data-i18n="ctaTalk">Talk to us</a>
+  <!-- Intro Section -->
+  <section class="about-section intro-section">
+    <div class="about-section-inner">
+      <p class="section-text">Cargoworks is a cargo bike courier service based in Barcelona. We focus on solving everyday delivery problems for local businesses quickly, reliably, and without unnecessary complexity.</p>
+      <p class="section-text">Cities are busy. Deliveries are unpredictable. Things change during the day. Our job is to make sure the delivery still gets done.</p>
     </div>
+  </section>
 
-    <h2 data-i18n="aboutTitle" style="margin-top:0;">About</h2>
-    <p data-i18n="aboutP1">Cargoworks is a Barcelona-based cargo bike courier service. We move things across the city every day, all year, in real conditions.</p>
-    <p data-i18n="aboutP2">At our core, we are couriers. What supports that work is solid experience in cargo bike logistics: routes, timing, loads, pricing, operations, and people. We don’t just ride bikes — we understand how urban delivery works and take responsibility for doing it properly.</p>
-    <p data-i18n="aboutP3">Cargo bike logistics isn’t a trend for us. It’s a professional tool.</p>
-    <p data-i18n="aboutP4">We work with businesses that deliver regularly, as well as clients who need occasional same-day jobs. Some are moving away from vans, others start directly with bikes. In both cases, our role is to make deliveries simple, reliable, and realistic.</p>
-    <p data-i18n="aboutP5">Every job is planned with care. Sometimes that means redesigning routes. Sometimes adjusting expectations. Often, it just means simplifying things.</p>
-    <p data-i18n="aboutP6">We take responsibility towards our clients, our riders, the city, and the environment. Sustainability isn’t a slogan — it’s what happens when logistics are done well.</p>
-
-    <div class="cta-group" style="margin:1.5rem 0 0.5rem 0;">
-      <a class="btn" href="mailto:info@cargoworks.es?subject=Quote%20request" data-i18n="ctaQuote">Get a quote</a>
-      <a class="btn" href="mailto:info@cargoworks.es?subject=Book%20a%20delivery" data-i18n="ctaBook">Book a delivery</a>
-      <a class="btn btn--whatsapp" href="https://wa.me/34608081955?text=Hola%2C%20podemos%20hablar%20de%20rutas%20recurrentes%3F" target="_blank" rel="noopener" data-i18n="ctaTalk">Talk to us</a>
+  <!-- How We Started Section -->
+  <section class="about-section about-section--alt">
+    <div class="about-section-inner">
+      <div class="story-layout">
+        <div class="story-content">
+          <span class="section-label">Our Story</span>
+          <h2 class="section-title">How Cargoworks Started</h2>
+          <p class="section-text">Cargoworks started with a simple observation: urban deliveries are often far more complicated than they need to be.</p>
+          <p class="section-text">In dense cities like Barcelona, vans spend a lot of time stuck in traffic, searching for parking, or navigating streets that simply weren't designed for large vehicles.</p>
+          <p class="section-text">There had to be a better way to organise urban deliveries.</p>
+        </div>
+        <div class="story-visual">
+          <div class="story-card">
+            <div class="story-icon">
+              <i class="fa fa-car"></i>
+            </div>
+            <span class="story-card-text">Vans stuck in traffic, searching for parking</span>
+          </div>
+          <div class="story-card">
+            <div class="story-icon">
+              <i class="fa fa-clock-o"></i>
+            </div>
+            <span class="story-card-text">Gig riders rushing with unpredictable service</span>
+          </div>
+          <div class="story-card">
+            <div class="story-icon">
+              <i class="fa fa-lightbulb-o"></i>
+            </div>
+            <span class="story-card-text">A better way had to exist</span>
+          </div>
+        </div>
+      </div>
     </div>
-  </main>
+  </section>
 
-  <footer style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
-    <span data-i18n="footerCopy">© 2025 Cargoworks – Bike Logistics Barcelona</span>
-    <a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener" data-i18n="footerInstagram">Instagram</a>
+  <!-- The Idea Section -->
+  <section class="about-section idea-section">
+    <div class="about-section-inner">
+      <div class="idea-icon-wrapper">
+        <i class="fa fa-bicycle"></i>
+      </div>
+      <span class="section-label">The Idea</span>
+      <h2 class="section-title">Use the Right Tool for the Job</h2>
+      <p class="section-text">Cargo bikes are one of the most efficient tools for moving goods through a city like Barcelona. They are fast, flexible, and perfectly suited for short-distance deliveries between local businesses.</p>
+      <p class="section-text">Cargoworks was built around this idea: use the right tool and organise deliveries in a way that actually works in a dense urban environment.</p>
+    </div>
+  </section>
+
+  <!-- Background Section -->
+  <section class="about-section about-section--alt">
+    <div class="about-section-inner">
+      <span class="section-label">The Background</span>
+      <h2 class="section-title">Years of Logistics Experience</h2>
+      <p class="section-text">Cargoworks was founded by someone who has spent years working around logistics, urban transport, and delivery operations.</p>
+      <p class="section-text">That experience made one thing very clear: the biggest challenge in city logistics is not moving packages — it's organising deliveries efficiently. Routes change, addresses are complicated, traffic builds up, and timing shifts throughout the day.</p>
+      <p class="section-text">Running deliveries is essentially a continuous process of solving small problems.</p>
+    </div>
+  </section>
+
+  <!-- The Approach Section -->
+  <section class="about-section">
+    <div class="about-section-inner">
+      <span class="section-label">The Approach</span>
+      <h2 class="section-title">Practical by Design</h2>
+      <p class="section-text">The goal is simple: create a delivery service that is efficient for businesses, sustainable for riders, and well suited to the streets of Barcelona.</p>
+      
+      <ul class="approach-list">
+        <li class="approach-item">
+          <div class="approach-icon">
+            <i class="fa fa-bicycle"></i>
+          </div>
+          <span class="approach-text">Using cargo bikes where they make the most sense</span>
+        </li>
+        <li class="approach-item">
+          <div class="approach-icon">
+            <i class="fa fa-euro"></i>
+          </div>
+          <span class="approach-text">Pricing based on real operational effort</span>
+        </li>
+        <li class="approach-item">
+          <div class="approach-icon">
+            <i class="fa fa-map-o"></i>
+          </div>
+          <span class="approach-text">Organising routes to remain predictable</span>
+        </li>
+        <li class="approach-item">
+          <div class="approach-icon">
+            <i class="fa fa-check"></i>
+          </div>
+          <span class="approach-text">Keeping booking simple and transparent</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Mindset Section -->
+  <section class="about-section about-section--alt">
+    <div class="about-section-inner">
+      <div class="mindset-layout">
+        <div>
+          <span class="section-label">The Mindset</span>
+          <h2 class="section-title">Stay Calm, Solve Problems</h2>
+          <p class="section-text">Urban logistics can be messy. Addresses change, deliveries evolve, and things rarely go exactly as planned.</p>
+          <p class="section-text">The philosophy behind Cargoworks is straightforward: stay calm, solve the problem, and keep the delivery moving. A practical approach tends to work better than complicated systems.</p>
+        </div>
+        <div class="mindset-visual">
+          <p class="mindset-quote">"Stay calm, solve the problem, keep the delivery moving."</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Responsibility Section -->
+  <section class="about-section">
+    <div class="about-section-inner">
+      <span class="section-label">Responsible Logistics</span>
+      <h2 class="section-title">Built for the City We Operate In</h2>
+      <p class="section-text">Urban delivery services should work well for the city they operate in. Responsibility means building a system that is sustainable for the people doing the work and reliable for the businesses relying on it.</p>
+      
+      <div class="responsibility-cards">
+        <div class="responsibility-card">
+          <div class="responsibility-icon">
+            <i class="fa fa-leaf"></i>
+          </div>
+          <h3 class="responsibility-title">Zero Emissions</h3>
+          <p class="responsibility-desc">Cargo bikes produce no direct emissions and reduce congestion</p>
+        </div>
+        <div class="responsibility-card">
+          <div class="responsibility-icon">
+            <i class="fa fa-users"></i>
+          </div>
+          <h3 class="responsibility-title">Sustainable for Riders</h3>
+          <p class="responsibility-desc">Fair conditions and structured work for the people delivering</p>
+        </div>
+        <div class="responsibility-card">
+          <div class="responsibility-icon">
+            <i class="fa fa-handshake-o"></i>
+          </div>
+          <h3 class="responsibility-title">Reliable for Business</h3>
+          <p class="responsibility-desc">Consistent service that businesses can depend on</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Today Section -->
+  <section class="about-section about-section--alt today-section">
+    <div class="about-section-inner">
+      <span class="section-label">Today</span>
+      <h2 class="section-title">Moving Goods Across Barcelona</h2>
+      <p class="section-text">Today, Cargoworks focuses on helping local businesses move goods efficiently across Barcelona. From restaurant deliveries to distributor drop routes, the goal remains the same: make urban deliveries simpler, faster, and more reliable.</p>
+      
+      <div class="today-services">
+        <span class="today-tag">Restaurant supply</span>
+        <span class="today-tag">Distributor routes</span>
+        <span class="today-tag">Same-day delivery</span>
+        <span class="today-tag">Business logistics</span>
+        <span class="today-tag">Multi-stop runs</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="about-cta">
+    <div class="about-cta-inner">
+      <h2>Need a delivery in Barcelona?</h2>
+      <p>Get an instant quote and book your delivery in seconds.</p>
+      <a class="btn" href="index.html#zones">Get a quote</a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="about-footer">
+    <span>© 2025 Cargoworks – Bike Logistics Barcelona</span>
+    <a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener">Instagram</a>
   </footer>
 
   <script src="js/js/translations.js"></script>
