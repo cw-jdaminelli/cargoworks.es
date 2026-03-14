@@ -32,20 +32,24 @@
 
 	<!-- Fixed nav strip -->
 	<header class="site-header">
-			<nav class="hero-nav">
-				<ul class="nav-links">
-				<li><a href="#about" id="navAbout" data-i18n="navAbout">About</a></li>
-				<li><a href="#services" id="navServices" data-i18n="navServices">Services</a></li>
-				<li><a href="#zones" id="navZones" data-i18n="navZones">Zones</a></li>
+		<nav class="hero-nav">
+			<a href="index.html" class="nav-brand" aria-label="Cargoworks Home">
+				<span class="nav-brand-text">CARGOWORKS</span>
+			</a>
+			<ul class="nav-links">
+				<li><a href="services.html" id="navServices" data-i18n="navServices">Services</a></li>
+				<li><a href="about.html" id="navAbout" data-i18n="navAbout">About</a></li>
+				<li><a href="faq.html" id="navFaq" data-i18n="navFaq">FAQ</a></li>
 			</ul>
 			<div class="nav-controls">
-				<label for="langSelect" class="visually-hidden">🌐</label>
+				<label for="langSelect" class="visually-hidden">Language</label>
 				<select id="langSelect" class="lang-select">
-					<option value="ca">Català</option>
+					<option value="ca">Catala</option>
 					<option value="es" selected>Castellano</option>
-					<option value="pt">Português</option>
+					<option value="pt">Portugues</option>
 					<option value="en">English</option>
 				</select>
+				<a href="#zones" class="nav-cta btn">Book Now</a>
 			</div>
 		</nav>
 	</header>

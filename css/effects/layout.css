@@ -2069,6 +2069,32 @@ a { color: var(--accent-primary); }
 
 .nav-controls { display: flex; align-items: center; gap: 1rem; flex: 0 0 auto; }
 
+/* Nav brand */
+.nav-brand {
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+}
+.nav-brand-text {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.5rem;
+  letter-spacing: 0.04em;
+  color: #2b0f3a;
+}
+.nav-active {
+  color: #ff6fa1 !important;
+  border-bottom: 2px solid #ff6fa1 !important;
+}
+.nav-cta {
+  padding: 0.5rem 1rem !important;
+  font-size: 0.85rem !important;
+  margin-left: 0.5rem;
+}
+@media (max-width: 640px) {
+  .nav-brand-text { font-size: 1.2rem; }
+  .nav-cta { display: none; }
+}
+
 /* ===== Hero title ===== */
 .hero-title {
   position: relative;
