@@ -3164,14 +3164,16 @@ window.initZonesMap = function initZonesMap(){
       quote: mergedQuote
     };
   }
-  function buildTrackingUrlFromRef(ref){
+  function buildTrackingUrlFromRef(ref, trackingToken){
     try {
       if (!ref) return '';
+      const token = String(trackingToken || '').trim();
+      const tokenParam = token ? ('&t=' + encodeURIComponent(token)) : '';
       const origin = (location.origin && location.origin !== 'null') ? location.origin : '';
-      if (origin) return origin.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(ref);
+      if (origin) return origin.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(ref) + tokenParam;
       const clean = location.href.replace(/[#?].*$/, '');
       const base = clean.replace(/\/[a-zA-Z0-9._-]+$/, '');
-      return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(ref);
+      return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(ref) + tokenParam;
     } catch(_) {
       return '';
     }
@@ -3181,19 +3183,23 @@ window.initZonesMap = function initZonesMap(){
       const params = new URLSearchParams(location.search || '');
       return {
         booking: String(params.get('booking') || '').trim().toLowerCase(),
-        ref: String(params.get('ref') || '').trim().toUpperCase()
+        ref: String(params.get('ref') || '').trim().toUpperCase(),
+        sessionId: String(params.get('session_id') || '').trim(),
+        trackingToken: String(params.get('t') || '').trim()
       };
     } catch(_) {
-      return { booking: '', ref: '' };
+      return { booking: '', ref: '', sessionId: '', trackingToken: '' };
     }
   }
   function clearBookingReturnParams(){
     try {
       const url = new URL(window.location.href);
-      const hasBooking = url.searchParams.has('booking') || url.searchParams.has('ref');
+      const hasBooking = url.searchParams.has('booking') || url.searchParams.has('ref') || url.searchParams.has('session_id') || url.searchParams.has('t');
       if (!hasBooking) return;
       url.searchParams.delete('booking');
       url.searchParams.delete('ref');
+      url.searchParams.delete('session_id');
+      url.searchParams.delete('t');
       const query = url.searchParams.toString();
       const next = url.pathname + (query ? ('?' + query) : '') + (url.hash || '');
       window.history.replaceState({}, document.title, next);
@@ -3211,20 +3217,39 @@ window.initZonesMap = function initZonesMap(){
     }
     return json;
   }
-  async function syncPaymentReturnStatus(reference, outcome, paymentUrl){
+  async function syncPaymentReturnStatus(reference, outcome, paymentUrl, sessionId){
     const ref = String(reference || '').trim().toUpperCase();
     const result = String(outcome || '').trim().toLowerCase();
-    if (!ref || !result || !BOOKING_API_BASE) return null;
+    const stripeSessionId = String(sessionId || '').trim();
+    if (!ref || !result || !BOOKING_API_BASE || !stripeSessionId) return null;
     try {
       return await postBookingAction({
         action: 'paymentReturn',
         reference: ref,
         outcome: result,
-        paymentUrl: String(paymentUrl || '').trim()
+        paymentUrl: String(paymentUrl || '').trim(),
+        sessionId: stripeSessionId
       });
     } catch(_) {
       return null;
     }
+  }
+  function extractCheckoutSessionId(result){
+    try {
+      if (!result || typeof result !== 'object') return '';
+      const candidates = [
+        result.sessionId,
+        result.session_id,
+        result.id,
+        result.checkoutSessionId,
+        result.checkout_session_id
+      ];
+      for (let i = 0; i < candidates.length; i++) {
+        const value = String(candidates[i] || '').trim();
+        if (value) return value;
+      }
+    } catch(_) {}
+    return '';
   }
   function buildSupportWhatsAppUrl(reference){
     const ref = String(reference || '').trim();
@@ -3301,22 +3326,25 @@ window.initZonesMap = function initZonesMap(){
     if (!state.booking || !state.ref) return;
 
     const ref = state.ref;
-    const trackingUrl = buildTrackingUrlFromRef(ref);
+    const trackingUrl = buildTrackingUrlFromRef(ref, state.trackingToken);
     const booking = state.booking;
+    const sessionId = state.sessionId;
     const outcome = (booking === 'success' || booking === 'return')
       ? 'success'
-      : 'failed';
+      : 'pending';
 
-    await syncPaymentReturnStatus(ref, outcome, '');
+    const syncResult = await syncPaymentReturnStatus(ref, outcome, '', sessionId);
+    const resolvedPayment = String(syncResult && syncResult.paymentStatus || '').trim();
+    const resolvedTrackingUrl = String(syncResult && syncResult.trackingUrl || '').trim() || trackingUrl;
 
-    if (outcome === 'success') {
+    if (resolvedPayment === 'Paid') {
       hidePaymentMount();
       resetBookingFieldsAfterSuccess();
-      renderBookingConfirmedMessage(ref, trackingUrl);
-    } else if (outcome === 'pending') {
+      renderBookingConfirmedMessage(ref, resolvedTrackingUrl);
+    } else if (resolvedPayment === 'Pending' || !syncResult) {
       const note = i18n('bookingPaymentPending') || 'Payment is still pending for this order.';
       const trackNote = i18n('bookingTrackPrompt') || 'You can track your order status here:';
-      const link = buildStatusLink(trackingUrl, i18n('bookingTrackingLink') || 'Tracking link');
+      const link = buildStatusLink(resolvedTrackingUrl, i18n('bookingTrackingLink') || 'Tracking link');
       setBookingStatusHtml([note + ' ' + trackNote + ' ', link], true);
     } else {
       const fail = i18n('bookingPaymentFailed') || 'Payment failed. Please contact support and include your order ID.';
@@ -3363,12 +3391,18 @@ window.initZonesMap = function initZonesMap(){
     try {
       activeEmbeddedCheckout = await stripe.initEmbeddedCheckout({
         fetchClientSecret: function(){ return Promise.resolve(clientSecret); },
-        onComplete: function(){
+        onComplete: async function(result){
           try {
-            syncPaymentReturnStatus(reference, 'success', paymentUrl);
-            hidePaymentMount();
-            resetBookingFieldsAfterSuccess();
-            renderBookingConfirmedMessage(reference, trackingUrl);
+            const sessionId = extractCheckoutSessionId(result);
+            const syncResult = await syncPaymentReturnStatus(reference, 'success', paymentUrl, sessionId);
+            if (syncResult && String(syncResult.paymentStatus || '') === 'Paid') {
+              const resolvedTrackingUrl = String(syncResult.trackingUrl || '').trim() || trackingUrl;
+              hidePaymentMount();
+              resetBookingFieldsAfterSuccess();
+              renderBookingConfirmedMessage(reference, resolvedTrackingUrl);
+              return;
+            }
+            setBookingStatus(i18n('bookingPaymentPending') || 'Payment is still pending for this order.', true);
           } catch(_) {}
         }
       });
@@ -3476,9 +3510,6 @@ window.initZonesMap = function initZonesMap(){
         return;
       }
       if (paymentError || lastEmbeddedMountError) {
-        if (ref && embeddedFailure) {
-          await syncPaymentReturnStatus(ref, 'failed', paymentUrl);
-        }
         const errLabel = embeddedFailure;
         setBookingStatus(errLabel || (i18n('quotePaymentUnavailable') || 'Payment could not be initialized. Please try again.'), true);
       } else {

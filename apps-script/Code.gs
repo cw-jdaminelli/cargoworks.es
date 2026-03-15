@@ -84,6 +84,9 @@ function doGet(e){
   try {
     const params = e && e.parameter ? e.parameter : {};
     if (String(params.debug || '') === '1') {
+      if (!isAdminAuthorized(String(params.token || '').trim())) {
+        return jsonResponse({ error: 'Unauthorized' }, 401);
+      }
       return jsonResponse({
         lastError: getLastError(),
         lastPayload: getLastPayload()
@@ -93,14 +96,8 @@ function doGet(e){
     if (action === 'track') {
       return handleTrackingGet(params);
     }
-    if (action === 'adminList') {
-      return handleAdminList(params);
-    }
-    if (action === 'adminSheetInfo') {
-      return handleAdminSheetInfo(params);
-    }
-    if (action === 'adminBackfillLog') {
-      return handleAdminBackfill(params);
+    if (action === 'adminList' || action === 'adminSheetInfo' || action === 'adminBackfillLog') {
+      return jsonResponse({ error: 'Use POST for admin actions' }, 405);
     }
     const dateKey = String(params.date || '').trim();
     if (!dateKey) return jsonResponse({ error: 'Missing date parameter' }, 400);
@@ -124,6 +121,9 @@ function doPost(e){
     if (payload && payload.action) {
       const action = String(payload.action || '').trim();
       if (action === 'paymentReturn') return handlePaymentReturn(payload);
+      if (action === 'adminList') return handleAdminList(payload);
+      if (action === 'adminSheetInfo') return handleAdminSheetInfo(payload);
+      if (action === 'adminBackfillLog') return handleAdminBackfill(payload);
       return handleAdminPost(payload);
     }
     setLastPayload(payload);
@@ -148,10 +148,11 @@ function doPost(e){
     if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
 
     const location = getPickupAddress(quote);
-    const payment = createStripeSession(payload, shortRef);
+    const trackingToken = generatePublicToken(24);
+    const payment = createStripeSession(payload, shortRef, trackingToken);
     const publishableKey = getStripePublishableKey();
     const whatsappUrl = buildWhatsAppUrl(shortRef);
-    const trackingUrl = buildTrackingUrl(payload, shortRef);
+    const trackingUrl = buildTrackingUrl(payload, shortRef, trackingToken);
     const updatesPreference = String(payload.updatesPreference || '').trim();
     const enrichedPayload = Object.assign({}, payload, {
       reference: shortRef,
@@ -163,7 +164,7 @@ function doPost(e){
       trackingUrl: trackingUrl,
       updatesPreference: updatesPreference
     });
-    const adminData = buildDefaultAdminData(enrichedPayload, payment, trackingUrl, updatesPreference);
+    const adminData = buildDefaultAdminData(enrichedPayload, payment, trackingUrl, updatesPreference, trackingToken);
     const description = buildEventDescription(enrichedPayload, adminData);
 
     const event = cal.createEvent(title, start, end, {
@@ -379,7 +380,7 @@ function buildEventDescription(payload, adminData){
   }
 }
 
-function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference){
+function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference, trackingToken){
   const paymentUrl = payload && payload.paymentUrl ? String(payload.paymentUrl) : '';
   const paymentStatus = normalizePaymentStatus('', !!paymentUrl);
   return {
@@ -388,6 +389,7 @@ function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference)
     paymentUrl: paymentUrl,
     updatesPreference: updatesPreference || '',
     trackingUrl: trackingUrl || '',
+    trackingToken: String(trackingToken || '').trim(),
     podUrl: '',
     timeline: [{
       ts: new Date().toISOString(),
@@ -398,15 +400,36 @@ function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference)
   };
 }
 
-function buildTrackingUrl(payload, shortRef){
+function buildTrackingUrl(payload, shortRef, trackingToken){
   try {
     const sourceUrl = String(payload && payload.sourceUrl || '').trim();
     const originMatch = sourceUrl.match(/^https?:\/\/[^/]+/i);
     const origin = originMatch ? originMatch[0] : '';
     const base = origin || 'https://cargoworks.es';
-    return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(shortRef);
+    const token = String(trackingToken || '').trim();
+    const tokenParam = token ? ('&t=' + encodeURIComponent(token)) : '';
+    return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(shortRef) + tokenParam;
   } catch (err) {
-    return 'https://cargoworks.es/tracking.html?ref=' + encodeURIComponent(shortRef);
+    const token = String(trackingToken || '').trim();
+    const tokenParam = token ? ('&t=' + encodeURIComponent(token)) : '';
+    return 'https://cargoworks.es/tracking.html?ref=' + encodeURIComponent(shortRef) + tokenParam;
+  }
+}
+
+function generatePublicToken(length){
+  const size = Math.max(8, Number(length || 24) || 24);
+  try {
+    const uuid = Utilities.getUuid().replace(/-/g, '');
+    const now = Utilities.base64EncodeWebSafe(String(Date.now())).replace(/[^A-Za-z0-9]/g, '');
+    const token = (uuid + now + uuid).slice(0, size);
+    return token;
+  } catch (_) {
+    let out = '';
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < size; i++) {
+      out += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return out;
   }
 }
 
@@ -436,11 +459,11 @@ function buildShortRef(scheduleDateKey){
     m = String(now.getMonth() + 1).padStart(2, '0');
     y = String(now.getFullYear());
   }
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+  const rand = generatePublicToken(8).toUpperCase();
   return 'CW-' + d + m + y + '-' + rand;
 }
 
-function createStripeSession(payload, shortRef){
+function createStripeSession(payload, shortRef, trackingToken){
   try {
     const secret = getStripeSecret();
     if (!secret) return null;
@@ -451,9 +474,14 @@ function createStripeSession(payload, shortRef){
     const amount = Math.round(total * 100);
     const sourceUrl = String(payload.sourceUrl || '').trim();
     const origin = sourceUrl ? sourceUrl.replace(/\/#.*$/, '').replace(/\?.*$/, '') : '';
-    const successUrl = origin ? (origin + '?booking=success&ref=' + encodeURIComponent(shortRef)) : 'https://cargoworks.es/?booking=success';
-    const cancelUrl = origin ? (origin + '?booking=cancel&ref=' + encodeURIComponent(shortRef)) : 'https://cargoworks.es/?booking=cancel';
-    const returnUrl = origin ? (origin + '?booking=return&ref=' + encodeURIComponent(shortRef)) : 'https://cargoworks.es/?booking=return';
+    const tokenValue = String(trackingToken || '').trim();
+    const tokenParam = tokenValue ? ('&t=' + encodeURIComponent(tokenValue)) : '';
+    const successBase = origin ? (origin + '?booking=success&ref=' + encodeURIComponent(shortRef) + tokenParam) : 'https://cargoworks.es/?booking=success&ref=' + encodeURIComponent(shortRef) + tokenParam;
+    const cancelBase = origin ? (origin + '?booking=cancel&ref=' + encodeURIComponent(shortRef) + tokenParam) : 'https://cargoworks.es/?booking=cancel&ref=' + encodeURIComponent(shortRef) + tokenParam;
+    const returnBase = origin ? (origin + '?booking=return&ref=' + encodeURIComponent(shortRef) + tokenParam) : 'https://cargoworks.es/?booking=return&ref=' + encodeURIComponent(shortRef) + tokenParam;
+    const successUrl = successBase + '&session_id={CHECKOUT_SESSION_ID}';
+    const cancelUrl = cancelBase + '&session_id={CHECKOUT_SESSION_ID}';
+    const returnUrl = returnBase + '&session_id={CHECKOUT_SESSION_ID}';
     const name = (payload.customer && payload.customer.name) ? String(payload.customer.name) : 'Cargoworks booking';
     const email = (payload.customer && payload.customer.email) ? String(payload.customer.email) : '';
     const baseBody = {
@@ -542,6 +570,62 @@ function createStripeCheckoutSession(secret, body){
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return { ok: false, error: 'Stripe request failed: ' + msg };
   }
+}
+
+function fetchStripeCheckoutSession(secret, sessionId){
+  try {
+    const id = encodeURIComponent(String(sessionId || '').trim());
+    if (!id) return { ok: false, error: 'Missing session ID' };
+    const resp = UrlFetchApp.fetch('https://api.stripe.com/v1/checkout/sessions/' + id, {
+      method: 'get',
+      headers: { 'Authorization': 'Bearer ' + secret },
+      muteHttpExceptions: true
+    });
+    const status = resp.getResponseCode();
+    const text = resp.getContentText();
+    let json = null;
+    try { json = JSON.parse(text); } catch(_) { json = null; }
+    if (status < 200 || status >= 300) {
+      const errMsg = (json && json.error && json.error.message) ? json.error.message : text;
+      return { ok: false, error: 'Stripe error ' + status + ': ' + String(errMsg || '').slice(0, 200) };
+    }
+    if (!json || !json.id) return { ok: false, error: 'Stripe session missing ID' };
+    return { ok: true, session: json };
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return { ok: false, error: 'Stripe request failed: ' + msg };
+  }
+}
+
+function verifyStripeSessionForReference(reference, sessionId){
+  const secret = getStripeSecret();
+  if (!secret) return { ok: false, error: 'Stripe verification unavailable' };
+  const sessionResult = fetchStripeCheckoutSession(secret, sessionId);
+  if (!sessionResult.ok || !sessionResult.session) {
+    return { ok: false, error: sessionResult.error || 'Stripe session unavailable' };
+  }
+  const session = sessionResult.session;
+  const metadata = session && session.metadata ? session.metadata : {};
+  const metadataRef = normalizeReference(metadata && metadata.reference || '');
+  const expectedRef = normalizeReference(reference || '');
+  if (!metadataRef || metadataRef !== expectedRef) {
+    return { ok: false, error: 'Stripe session reference mismatch' };
+  }
+  const paymentStatusRaw = String(session && session.payment_status || '').trim().toLowerCase();
+  const sessionStatusRaw = String(session && session.status || '').trim().toLowerCase();
+  let paymentStatus = 'Pending';
+  if (paymentStatusRaw === 'paid') {
+    paymentStatus = 'Paid';
+  } else if (sessionStatusRaw === 'expired') {
+    paymentStatus = 'Failed';
+  }
+  return {
+    ok: true,
+    paymentStatus: paymentStatus,
+    paymentStatusRaw: paymentStatusRaw,
+    sessionStatusRaw: sessionStatusRaw,
+    sessionId: String(session.id || '').trim()
+  };
 }
 
 function getStripeSecret(){
@@ -789,10 +873,15 @@ function handleTrackingGet(params){
   try {
     const ref = String(params.ref || '').trim();
     if (!ref) return jsonResponse({ error: 'Missing ref' }, 400);
+    const token = String(params.t || '').trim();
     const event = findEventByReference(ref);
     if (!event) return jsonResponse({ error: 'Not found' }, 404);
     const summary = buildOrderSummary(event);
     if (!summary) return jsonResponse({ error: 'Not found' }, 404);
+    const requiredToken = String(summary.trackingToken || '').trim();
+    if (requiredToken && token && token !== requiredToken) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
+    }
     return jsonResponse({ order: buildTrackingPayload(summary) }, 200);
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
@@ -898,8 +987,14 @@ function handlePaymentReturn(payload){
   try {
     const reference = String(payload.reference || payload.ref || '').trim().toUpperCase();
     if (!reference) return jsonResponse({ error: 'Missing reference' }, 400);
-    const paymentStatus = paymentStatusFromOutcome(payload.outcome);
-    if (!paymentStatus) return jsonResponse({ error: 'Invalid outcome' }, 400);
+    const sessionId = String(payload.sessionId || payload.session_id || '').trim();
+    if (!sessionId) return jsonResponse({ error: 'Missing sessionId' }, 400);
+
+    const verification = verifyStripeSessionForReference(reference, sessionId);
+    if (!verification.ok) {
+      return jsonResponse({ error: 'Payment verification failed', detail: verification.error || 'Stripe verification failed' }, 403);
+    }
+    const paymentStatus = verification.paymentStatus;
 
     const event = findEventByReference(reference);
     if (!event) return jsonResponse({ error: 'Not found' }, 404);
@@ -918,13 +1013,14 @@ function handlePaymentReturn(payload){
 
     adminData.timeline = Array.isArray(adminData.timeline) ? adminData.timeline : [];
     const ts = new Date().toISOString();
-    const outcome = normalizePaymentOutcome(payload.outcome);
+    const claimedOutcome = normalizePaymentOutcome(payload.outcome);
+    const verifiedOutcome = String(verification.paymentStatusRaw || verification.sessionStatusRaw || '').trim() || paymentStatus.toLowerCase();
     const changed = previous !== resolvedPaymentStatus;
     if (changed) {
       adminData.timeline.push({
         ts: ts,
         status: adminData.status || DEFAULT_STATUS_LABEL,
-        message: 'Payment status changed from ' + (previous || '-') + ' to ' + resolvedPaymentStatus + ' (return: ' + outcome + ')',
+        message: 'Payment status changed from ' + (previous || '-') + ' to ' + resolvedPaymentStatus + ' (verified: ' + verifiedOutcome + (claimedOutcome ? (', claimed: ' + claimedOutcome) : '') + ')',
         via: 'system'
       });
       adminData.lastUpdateAt = ts;
@@ -964,7 +1060,7 @@ function handlePaymentReturn(payload){
       adminData: adminData,
       status: adminData.status,
       paymentStatus: adminData.paymentStatus,
-      message: 'Payment return: ' + outcome + (confirmationEmailSent ? ' (confirmation email sent)' : ''),
+      message: 'Payment return verified: ' + verifiedOutcome + (claimedOutcome ? (' (claimed: ' + claimedOutcome + ')') : '') + (confirmationEmailSent ? ' (confirmation email sent)' : ''),
       build: BUILD_ID
     });
 
@@ -972,6 +1068,7 @@ function handlePaymentReturn(payload){
       ok: true,
       reference: reference,
       paymentStatus: adminData.paymentStatus,
+      trackingUrl: adminData.trackingUrl || payloadData.trackingUrl || '',
       changed: changed,
       confirmationEmailSent: confirmationEmailSent
     }, 200);
@@ -1192,10 +1289,11 @@ function ensureAdminData(desc, payload){
   adminData.status = normalizeOrderStatus(adminData.status) || DEFAULT_STATUS_LABEL;
   adminData.paymentStatus = normalizePaymentStatus(adminData.paymentStatus, !!effectivePaymentUrl);
   adminData.paymentUrl = effectivePaymentUrl;
+  adminData.trackingToken = String(adminData.trackingToken || '').trim();
 
   if (!adminData.trackingUrl) {
     const ref = payload && payload.reference ? String(payload.reference) : '';
-    adminData.trackingUrl = ref ? buildTrackingUrl(payload || {}, ref) : '';
+    adminData.trackingUrl = ref ? buildTrackingUrl(payload || {}, ref, adminData.trackingToken) : '';
   }
   if (!Array.isArray(adminData.timeline)) adminData.timeline = [];
   if (!adminData.timeline.length) {
@@ -1259,6 +1357,7 @@ function buildOrderSummary(event){
       paymentStatus: adminData.paymentStatus || '',
       paymentUrl: adminData.paymentUrl || payload.paymentUrl || '',
       trackingUrl: adminData.trackingUrl || payload.trackingUrl || '',
+      trackingToken: adminData.trackingToken || '',
       updatesPreference: adminData.updatesPreference || payload.updatesPreference || '',
       podUrl: adminData.podUrl || '',
       timeline: timeline,
@@ -1279,19 +1378,25 @@ function buildOrderSummary(event){
 }
 
 function buildTrackingPayload(summary){
+  const paymentStatus = normalizePaymentStatus(summary && summary.paymentStatus, !!(summary && summary.paymentUrl));
+  const paymentUrl = (paymentStatus === 'Pending' || paymentStatus === 'Failed')
+    ? String(summary && summary.paymentUrl || '')
+    : '';
+  const podUrl = String(summary && summary.status || '') === 'Delivered'
+    ? String(summary && summary.podUrl || '')
+    : '';
   return {
     reference: summary.reference,
     status: summary.status,
-    paymentStatus: summary.paymentStatus,
-    paymentUrl: summary.paymentUrl,
+    paymentStatus: paymentStatus,
+    paymentUrl: paymentUrl,
     trackingUrl: summary.trackingUrl,
-    podUrl: summary.podUrl,
+    podUrl: podUrl,
     schedule: summary.schedule,
     timeline: summary.timeline || [],
     notes: summary.notes || '',
     dispatcherNotes: summary.dispatcherNotes || [],
-    deliveryNote: summary.deliveryNote || '',
-    customerName: summary.customer && summary.customer.name ? summary.customer.name : ''
+    deliveryNote: summary.deliveryNote || ''
   };
 }
 

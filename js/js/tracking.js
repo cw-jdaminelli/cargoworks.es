@@ -66,6 +66,29 @@
     }
   }
 
+  function qsToken(){
+    try {
+      const params = new URLSearchParams(location.search);
+      return String(params.get('t') || '').trim();
+    } catch(_) {
+      return '';
+    }
+  }
+
+  function normalizeRef(value){
+    return String(value || '').trim().toUpperCase();
+  }
+
+  const queryRef = normalizeRef(qsRef());
+  const queryToken = qsToken();
+
+  function tokenForRef(ref){
+    const normalized = normalizeRef(ref);
+    if (!queryToken) return '';
+    if (!queryRef) return '';
+    return normalized && normalized === queryRef ? queryToken : '';
+  }
+
   function sortByTimestamp(items){
     const list = Array.isArray(items) ? items.slice() : [];
     return list.map(function(item, idx){
@@ -330,7 +353,7 @@
     detailsEl.appendChild(renderTimeline(order.timeline || []));
   }
 
-  async function loadTracking(ref){
+  async function loadTracking(ref, trackingToken){
     if (!API_BASE) {
       setStatus(i18n('trackingNotConfigured') || 'Tracking is not configured.', true);
       return;
@@ -341,7 +364,9 @@
     }
     try {
       setStatus(i18n('trackingLoading') || 'Loading...', false);
-      const url = API_BASE + '?action=track&ref=' + encodeURIComponent(ref);
+      const token = String(trackingToken || '').trim();
+      const tokenParam = token ? ('&t=' + encodeURIComponent(token)) : '';
+      const url = API_BASE + '?action=track&ref=' + encodeURIComponent(ref) + tokenParam;
       const res = await fetch(url);
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || 'Request failed');
@@ -356,7 +381,7 @@
   if (loadBtn) {
     loadBtn.addEventListener('click', function(){
       const ref = String(refInput && refInput.value || '').trim();
-      loadTracking(ref);
+      loadTracking(ref, tokenForRef(ref));
     });
   }
 
@@ -364,15 +389,17 @@
     refInput.addEventListener('keydown', function(e){
       if (e.key === 'Enter') {
         e.preventDefault();
-        loadTracking(String(refInput.value || '').trim());
+        const ref = String(refInput.value || '').trim();
+        loadTracking(ref, tokenForRef(ref));
       }
     });
   }
 
   (function init(){
     applyStaticCopy();
-    const ref = qsRef();
+    const ref = queryRef;
+    const token = queryToken;
     if (refInput && ref) refInput.value = ref;
-    if (ref) loadTracking(ref);
+    if (ref) loadTracking(ref, token);
   })();
 })();

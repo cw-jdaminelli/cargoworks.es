@@ -174,29 +174,25 @@
   async function fetchOrders(params){
     const token = currentToken();
     if (!API_BASE) throw new Error('Booking API is not configured.');
-    const query = new URLSearchParams();
-    query.set('action', 'adminList');
-    query.set('token', token);
-    if (params && params.date) query.set('date', String(params.date));
-    if (params && params.ref) query.set('ref', String(params.ref));
-    if (params && params.scope) query.set('scope', String(params.scope));
-    if (params && params.from) query.set('from', String(params.from));
-    if (params && params.to) query.set('to', String(params.to));
-    const url = API_BASE + '?' + query.toString();
-    const res = await fetch(url);
-    const json = await res.json();
-    if (!res.ok || json.error) throw new Error(json.error || 'Request failed');
+    const payload = {
+      action: 'adminList',
+      token: token
+    };
+    if (params && params.date) payload.date = String(params.date);
+    if (params && params.ref) payload.ref = String(params.ref);
+    if (params && params.scope) payload.scope = String(params.scope);
+    if (params && params.from) payload.from = String(params.from);
+    if (params && params.to) payload.to = String(params.to);
+    const json = await postAdmin(payload);
     return Array.isArray(json.orders) ? json.orders : [];
   }
 
   async function fetchLogSheetInfo(){
     const token = currentToken();
-    const query = new URLSearchParams();
-    query.set('action', 'adminSheetInfo');
-    query.set('token', token);
-    const res = await fetch(API_BASE + '?' + query.toString());
-    const json = await res.json();
-    if (!res.ok || json.error) throw new Error(json.error || 'Could not load sheet info');
+    const json = await postAdmin({
+      action: 'adminSheetInfo',
+      token: token
+    });
     return json;
   }
 
