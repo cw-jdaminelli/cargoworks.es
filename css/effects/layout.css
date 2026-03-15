@@ -557,6 +557,10 @@ body .hero-section {
   scroll-behavior: smooth;
   justify-content: flex-start;
 }
+.zones-home-panel.is-intake-locked {
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+}
 .zones-home-panel .quote-estimator {
   display: block;
   flex: 0 0 auto;
@@ -566,6 +570,70 @@ body .hero-section {
   max-width: 720px;
   margin: 0 auto;
   padding: 0 1.6rem;
+}
+@media (min-width: 721px) {
+  .zones-home-panel.is-intake-locked .quote-estimator {
+    padding: 0 0.7rem;
+  }
+
+  .zones-home-panel.is-intake-locked .quote-estimator--accordion {
+    gap: 0.42rem;
+  }
+
+  .zones-home-panel.is-intake-locked .config-section {
+    margin-bottom: 0.4rem;
+  }
+
+  .zones-home-panel.is-intake-locked .config-summary {
+    padding: 0.46rem 0.65rem;
+  }
+
+  .zones-home-panel.is-intake-locked .config-title {
+    font-size: 0.8rem;
+  }
+
+  .zones-home-panel.is-intake-locked .config-note {
+    display: none;
+  }
+
+  .zones-home-panel.is-intake-locked .config-body {
+    padding: 0.38rem 0.56rem 0.44rem;
+  }
+
+  .zones-home-panel.is-intake-locked .quote-estimator input,
+  .zones-home-panel.is-intake-locked .quote-estimator select {
+    height: 30px;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.45rem;
+  }
+
+  .zones-home-panel.is-intake-locked .config-section--addresses .config-actions .btn {
+    min-height: 26px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.6rem;
+  }
+
+  .zones-home-panel.is-intake-locked .config-section--datetime .availability-status {
+    margin-top: 0.08rem;
+    font-size: 0.64rem;
+  }
+
+  .zones-home-panel.is-intake-locked .config-section--addresses .config-stops {
+    max-height: 78px;
+    overflow-y: auto;
+  }
+
+  .zones-home-panel.is-intake-locked .config-section--cargo #quoteCargo {
+    height: 30px;
+  }
+
+  .zones-home-panel.is-intake-locked .config-section--cargo #quoteCargo {
+    display: block;
+  }
+
+  .zones-home-panel.is-intake-locked .config-section--cargo .cargo-option-strip {
+    display: none;
+  }
 }
 @media (max-width: 720px) {
   .config-row--split {
@@ -816,6 +884,48 @@ body .hero-section {
   margin: 0.35rem 0 0;
   font-size: 0.85rem;
   color: #2d1a4d;
+}
+.discount-status .booking-confirmation {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+}
+.discount-status .booking-confirmation-title {
+  margin: 0;
+  font-family: 'Oswald', 'Inter', system-ui, sans-serif;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #2b0f3a;
+}
+.discount-status .booking-confirmation-text {
+  margin: 0;
+  font-size: 0.87rem;
+  color: #3a2f51;
+}
+.discount-status .booking-confirmation-order {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #2b0f3a;
+  background: rgba(43, 15, 58, 0.08);
+  border: 1px solid rgba(43, 15, 58, 0.18);
+  border-radius: 8px;
+  padding: 0.42rem 0.55rem;
+  display: inline-block;
+  width: fit-content;
+}
+.discount-status .booking-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.discount-status .booking-confirmation-support {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #4d4560;
 }
 .discount-helper {
   margin: 0.25rem 0 0;
@@ -2077,6 +2187,28 @@ a { color: var(--accent-primary); }
   text-decoration: underline;
 }
 
+.site-footer {
+  width: min(94vw, 1100px);
+  margin: clamp(1.2rem, 4vw, 2rem) auto;
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  align-items: center;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.92rem;
+  color: #2d1a4d;
+}
+
+.site-footer a {
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.site-footer a:hover,
+.site-footer a:focus {
+  text-decoration: underline;
+}
+
 /* ===== Nav ===== */
 .hero-nav {
   width: min(1100px, 100%);
@@ -2109,6 +2241,19 @@ a { color: var(--accent-primary); }
 }
 
 .nav-controls { display: flex; align-items: center; gap: 1rem; flex: 0 0 auto; }
+
+.lang-globe {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  background: rgba(30, 127, 255, 0.14);
+  color: #1e7fff;
+  font-size: 0.95rem;
+  line-height: 1;
+}
 
 /* ===== Hero title ===== */
 .hero-title {

@@ -472,8 +472,8 @@
         <li><a href="faq.html" data-i18n="siteFaq">FAQ</a></li>
       </ul>
       <div class="nav-controls">
-        <label for="langSelect" class="visually-hidden" data-i18n="langSelectLabel">Language</label>
-        <select id="langSelect" class="lang-select">
+        <span class="lang-globe" aria-hidden="true">🌐</span>
+        <select id="langSelect" class="lang-select" data-i18n-aria-label="langSelectLabel">
           <option value="ca" data-i18n="langOptionCa">Català</option>
           <option value="es" data-i18n="langOptionEs">Castellano</option>
           <option value="pt" data-i18n="langOptionPt">Português</option>
@@ -670,9 +670,33 @@
     </div>
   </section>
 
+  <section class="site-map" aria-label="Site map and contacts">
+    <div class="site-map__column">
+      <h3 data-i18n="siteExplore">Explore</h3>
+      <ul class="site-map__list">
+        <li><a href="index.html" data-i18n="navHome">Home</a></li>
+        <li><a href="about.html" data-i18n="siteAbout">About</a></li>
+        <li><a href="services.html" data-i18n="siteServices">Services</a></li>
+        <li><a href="faq.html" data-i18n="siteFaq">FAQ</a></li>
+        <li><a href="contact.html" data-i18n="siteContact">Contact</a></li>
+      </ul>
+    </div>
+    <div class="site-map__column">
+      <h3 data-i18n="siteContact">Contact</h3>
+      <p class="site-map__contact" data-i18n="siteContactBlurb">Best ways to reach us:</p>
+      <p class="site-map__contact">
+        <strong data-i18n="sitePhoneLabel">Call</strong>: <a href="tel:+34608081955">+34 608 08 19 55</a> <span data-i18n="sitePhoneNote">(may be out riding)</span><br>
+        <strong><a href="https://wa.me/34608081955" target="_blank" rel="noopener" data-i18n="siteWhatsappLabel">WhatsApp</a></strong> - <span data-i18n="siteWhatsappNote">5–10 min reply (usually)</span><br>
+        <strong data-i18n="siteEmailLabel">Email</strong>: <a href="mailto:info@cargoworks.es">info@cargoworks.es</a> <span data-i18n="siteEmailNote">(reply by next morning)</span>
+      </p>
+      <p class="site-map__contact"><strong data-i18n="siteHoursLabel">Hours</strong>: <span data-i18n="siteHoursText">Mon–Fri 7–17 · Sat–Sun 7–15</span></p>
+    </div>
+  </section>
+
   <!-- Footer -->
-  <footer class="about-footer">
+  <footer class="site-footer">
     <span data-i18n="footerCopy">© 2025 Cargoworks – Bike Logistics Barcelona</span>
+    <a href="faq.html" data-i18n="siteFaq">FAQ</a>
     <a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener" data-i18n="footerInstagram">Instagram</a>
   </footer>
 

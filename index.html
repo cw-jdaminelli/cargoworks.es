@@ -16,7 +16,7 @@
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css">
 
 	<!-- CSS -->
-	<link rel="stylesheet" href="css/effects/layout.css?v=2026-03-08-7"/>
+	<link rel="stylesheet" href="css/effects/layout.css?v=2026-03-15-1"/>
 
 	<!-- Preload hero images (Barcelona set) -->
 	<link rel="preload" as="image" href="https://images.unsplash.com/photo-1468793195345-d9d67818016d?q=80&w=1600&auto=format&fit=crop">
@@ -40,8 +40,8 @@
 					<li><a href="faq.html" data-i18n="siteFaq">FAQ</a></li>
 			</ul>
 			<div class="nav-controls">
-				<label for="langSelect" class="visually-hidden">🌐</label>
-				<select id="langSelect" class="lang-select">
+					<span class="lang-globe" aria-hidden="true">🌐</span>
+				<select id="langSelect" class="lang-select" data-i18n-aria-label="langSelectLabel">
 					<option value="ca">Català</option>
 					<option value="es" selected>Castellano</option>
 					<option value="pt">Português</option>
@@ -473,6 +473,12 @@
 
 	<!-- Services sliding cards -->
 	<style>
+		/* Legacy sliding service cards are intentionally disabled. */
+		#services,
+		.sc-cards {
+			display: none !important;
+		}
+
 		.sc-wrapper { height: auto; padding: clamp(3rem, 8vh, 6rem) 0; width: min(94vw, 1100px); margin: 0 auto; position: relative; }
 		.sc-card { width: 100%; height: clamp(320px, 58vh, 520px); background:#ffffff; border-radius:16px; padding: 0; box-shadow:0 16px 48px rgba(0,0,0,0.18); display:flex; overflow:hidden; }
 		/* two-column layout inside the card */
@@ -583,9 +589,11 @@
 		<div class="site-map__column">
 			<h3 data-i18n="siteExplore">Explore</h3>
 			<ul class="site-map__list">
-				<li><a href="#about" data-i18n="siteAbout">About</a></li>
-				<li><a href="#services" data-i18n="siteServices">Services</a></li>
-				<li><a href="#zones" data-i18n="siteZones">Zones</a></li>
+				<li><a href="index.html" data-i18n="navHome">Home</a></li>
+				<li><a href="about.html" data-i18n="siteAbout">About</a></li>
+				<li><a href="services.html" data-i18n="siteServices">Services</a></li>
+				<li><a href="faq.html" data-i18n="siteFaq">FAQ</a></li>
+				<li><a href="contact.html" data-i18n="siteContact">Contact</a></li>
 			</ul>
 		</div>
 		<div class="site-map__column">
@@ -600,49 +608,20 @@
 		</div>
 	</section>
 
-	<!-- GSAP + init -->
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.1/gsap.min.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.1/ScrollTrigger.min.js"></script>
+	<!-- Stripe -->
 	<script src="https://js.stripe.com/v3/"></script>
-	<script>
-		// Motion-safe, responsive pinning
-		gsap.registerPlugin(ScrollTrigger);
-		(function(){
-			const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-			const isSmall = window.matchMedia('(max-width: 720px)').matches;
-			if (prefersReduced || isSmall) return;
 
-			document.querySelectorAll('.sc-wrapper').forEach((wrapper, i, arr) => {
-				if (i === arr.length - 1) return;
-				const card = wrapper.querySelector('.sc-card');
-				if (!card) return;
-
-				gsap.set(card, { opacity: 1, scale: 1 });
-				gsap.timeline({
-					scrollTrigger: {
-						trigger: wrapper,
-						start: 'top top',
-						end: 'bottom top',
-						scrub: 0.25,
-						pin: true,
-						pinSpacing: false,
-						anticipatePin: 1
-					}
-				}).to(card, { opacity: 0, scale: 0.86, ease: 'none' }, 0);
-			});
-
-			window.addEventListener('load', () => ScrollTrigger.refresh());
-		})();
-	</script>
-
-	<footer>
+	<footer class="site-footer">
+		<span data-i18n="footerCopy">© 2025 Cargoworks – Bike Logistics Barcelona</span>
+		<a href="faq.html" data-i18n="siteFaq">FAQ</a>
+		<a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener" data-i18n="footerInstagram">Instagram</a>
 	</footer>
 
 	<!-- JS -->
-	<script src="js/js/map.js?v=2026-03-13-3"></script>
+	<script src="js/js/map.js?v=2026-03-15-1"></script>
 	<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB2-lL3jKtVa6ijgLs38NP2ag6fc4YoAE0&libraries=geometry,drawing,places&language=es&region=ES&loading=async&callback=initZonesMap"></script>
-	<script src="js/js/translations.js?v=2026-02-15-1"></script>
-	<script src="js/js/main.js?v=2026-02-15-1"></script>
+	<script src="js/js/translations.js?v=2026-03-15-1"></script>
+	<script src="js/js/main.js?v=2026-03-15-1"></script>
 	<script>
 		// Show the "Open Editor" link only on dev/Codespaces hosts
 		(function(){

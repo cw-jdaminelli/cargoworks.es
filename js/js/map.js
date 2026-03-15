@@ -960,7 +960,8 @@ window.initZonesMap = function initZonesMap(){
   if (qDiscount && !qDiscount.value) qDiscount.value = DEFAULT_DISCOUNT_CODE;
   function onDateTimeSelectionChange(){
     try {
-      autoEstimateIfReady({ source: 'datetime', highlightErrors: true });
+      // Do not show datetime errors immediately while user is still choosing date/time.
+      autoEstimateIfReady({ source: 'datetime', highlightErrors: false });
       refreshAvailability();
       updateDeliverySummary();
     } catch(_) {}
@@ -1032,6 +1033,34 @@ window.initZonesMap = function initZonesMap(){
   }
   function getEstimatorPanel(){
     return document.querySelector('.zones-home-panel');
+  }
+  function shouldLockEstimatorPanel(){
+    try {
+      if (window.matchMedia) return window.matchMedia('(min-width: 721px)').matches;
+    } catch(_) {}
+    return window.innerWidth > 720;
+  }
+  function canFitIntakeSections(panel){
+    try {
+      if (!panel || !qCargoSection) return false;
+      const prevTop = panel.scrollTop;
+      panel.scrollTop = 0;
+      const panelRect = panel.getBoundingClientRect();
+      const cargoRect = qCargoSection.getBoundingClientRect();
+      panel.scrollTop = prevTop;
+      return cargoRect.bottom <= (panelRect.bottom - 6);
+    } catch(_) {}
+    return false;
+  }
+  function syncEstimatorPanelMode(hasQuote){
+    try {
+      const panel = getEstimatorPanel();
+      if (!panel) return;
+      const shouldLock = !hasQuote && shouldLockEstimatorPanel() && canFitIntakeSections(panel);
+      panel.classList.toggle('is-intake-locked', shouldLock);
+      panel.classList.toggle('is-quote-ready', !shouldLock);
+      if (shouldLock) panel.scrollTop = 0;
+    } catch(_) {}
   }
   function scrollPanelToCenter(targetEl){
     try {
@@ -1530,6 +1559,7 @@ window.initZonesMap = function initZonesMap(){
     );
     const hasBookingStatus = !!(qBookingStatus && String(qBookingStatus.textContent || '').trim());
     const showSummaryCard = (ready && hasSummaryContent) || hasBookingStatus;
+    syncEstimatorPanelMode(hasQuote);
     if (qSummaryCard) qSummaryCard.classList.toggle('is-hidden', !showSummaryCard);
     if (qSummaryHeading) qSummaryHeading.classList.toggle('is-hidden', !showSummaryCard);
     if (qTraceInfoIcon) qTraceInfoIcon.classList.toggle('is-hidden', !ready);
@@ -1555,6 +1585,9 @@ window.initZonesMap = function initZonesMap(){
     }
     updateDeliverySummary();
   }
+  window.addEventListener('resize', function(){
+    syncEstimatorPanelMode(!!window._lastQuoteContext);
+  });
   if (qPickup) qPickup.addEventListener('input', updateSubmitVisibility);
   if (qDrop) qDrop.addEventListener('input', updateSubmitVisibility);
   if (qStopsWrap) qStopsWrap.addEventListener('input', updateSubmitVisibility);
@@ -2137,16 +2170,9 @@ window.initZonesMap = function initZonesMap(){
           });
         }
 
-        pushLine(
-          i18n('breakdownSubtotalLabel') || 'Subtotal',
-          formatMoneyLocalized(ctx.subtotal || 0, cur),
-          'subtotal'
-        );
-
         const discountItems = Array.isArray(ctx.discountItems) ? ctx.discountItems : [];
         let discountAggregateAmount = 0;
         if (discountItems.length) {
-          pushSectionTitle(i18n('breakdownPromoSectionLabel') || 'Promo');
           discountItems.forEach(function(item){
             const promoLabel = i18n('breakdownPromoLabel', { code: item.code }) || ('Promo ' + item.code);
             const amount = Math.abs(Number(item.amount || 0));
@@ -2157,6 +2183,12 @@ window.initZonesMap = function initZonesMap(){
             pushLine(i18n('breakdownDiscountTotalLabel') || 'Discount total', formatMoneySigned(-discountAggregateAmount, cur));
           }
         }
+
+        pushLine(
+          i18n('breakdownSubtotalLabel') || 'Subtotal',
+          formatMoneyLocalized(ctx.subtotal || 0, cur),
+          'subtotal'
+        );
 
         const vatRatePct = Math.round((Number(ctx.vatRate || 0.21) || 0.21) * 100);
         const vatLabel = i18n('breakdownVatLabel', { rate: vatRatePct }) || ('VAT (' + vatRatePct + '%)');
@@ -2819,6 +2851,7 @@ window.initZonesMap = function initZonesMap(){
     const source = String(opts.source || 'address');
     const highlightErrors = !!opts.highlightErrors;
     const immediate = !!opts.immediate;
+    const allowGuidedScroll = !shouldLockEstimatorPanel();
     try {
       updateAddressMarkers();
       const addressError = getAddressValidationError();
@@ -2832,7 +2865,7 @@ window.initZonesMap = function initZonesMap(){
       }
       setSectionValidationState('addresses', '');
 
-      if (!guidedScrolledToDateTime && qDateTimeSection) {
+      if (allowGuidedScroll && !guidedScrolledToDateTime && qDateTimeSection) {
         guidedScrolledToDateTime = true;
         setTimeout(function(){
           scrollPanelToTop(qDateTimeSection, 8);
@@ -2849,7 +2882,7 @@ window.initZonesMap = function initZonesMap(){
       }
       setSectionValidationState('datetime', '');
 
-      if (!guidedScrolledToCargo && qCargoSection) {
+      if (allowGuidedScroll && !guidedScrolledToCargo && qCargoSection) {
         guidedScrolledToCargo = true;
         setTimeout(function(){
           scrollPanelToTop(qCargoSection, 8);
@@ -3143,6 +3176,155 @@ window.initZonesMap = function initZonesMap(){
       return '';
     }
   }
+  function getBookingReturnState(){
+    try {
+      const params = new URLSearchParams(location.search || '');
+      return {
+        booking: String(params.get('booking') || '').trim().toLowerCase(),
+        ref: String(params.get('ref') || '').trim().toUpperCase()
+      };
+    } catch(_) {
+      return { booking: '', ref: '' };
+    }
+  }
+  function clearBookingReturnParams(){
+    try {
+      const url = new URL(window.location.href);
+      const hasBooking = url.searchParams.has('booking') || url.searchParams.has('ref');
+      if (!hasBooking) return;
+      url.searchParams.delete('booking');
+      url.searchParams.delete('ref');
+      const query = url.searchParams.toString();
+      const next = url.pathname + (query ? ('?' + query) : '') + (url.hash || '');
+      window.history.replaceState({}, document.title, next);
+    } catch(_) {}
+  }
+  async function postBookingAction(payload){
+    const base = String(BOOKING_API_BASE || '').replace(/\/$/, '');
+    if (!base) throw new Error('Booking API unavailable');
+    const form = new URLSearchParams();
+    form.set('payload', JSON.stringify(payload || {}));
+    const res = await fetch(base, { method: 'POST', body: form });
+    const json = await res.json();
+    if (!res.ok || (json && json.error)) {
+      throw new Error((json && json.error) || 'Booking action failed');
+    }
+    return json;
+  }
+  async function syncPaymentReturnStatus(reference, outcome, paymentUrl){
+    const ref = String(reference || '').trim().toUpperCase();
+    const result = String(outcome || '').trim().toLowerCase();
+    if (!ref || !result || !BOOKING_API_BASE) return null;
+    try {
+      return await postBookingAction({
+        action: 'paymentReturn',
+        reference: ref,
+        outcome: result,
+        paymentUrl: String(paymentUrl || '').trim()
+      });
+    } catch(_) {
+      return null;
+    }
+  }
+  function buildSupportWhatsAppUrl(reference){
+    const ref = String(reference || '').trim();
+    const msg = i18n('bookingSupportWhatsappMessage', { ref }) || ('Hello Cargoworks, I need help with order ' + ref + '.');
+    return 'https://wa.me/34608081955?text=' + encodeURIComponent(msg);
+  }
+  function renderBookingConfirmedMessage(reference, trackingUrl){
+    if (!qBookingStatus) return;
+    const ref = String(reference || '').trim().toUpperCase();
+    const trackHref = trackingUrl || buildTrackingUrlFromRef(ref);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'booking-confirmation';
+
+    const title = document.createElement('p');
+    title.className = 'booking-confirmation-title';
+    title.textContent = i18n('bookingConfirmedTitle') || 'Booking confirmed';
+    wrap.appendChild(title);
+
+    const body = document.createElement('p');
+    body.className = 'booking-confirmation-text';
+    body.textContent = i18n('bookingConfirmedBody') || 'Your delivery has been successfully booked.';
+    wrap.appendChild(body);
+
+    const order = document.createElement('p');
+    order.className = 'booking-confirmation-order';
+    order.textContent = i18n('bookingOrderIdLine', { ref }) || ('Order ID: ' + ref);
+    wrap.appendChild(order);
+
+    const realtime = document.createElement('p');
+    realtime.className = 'booking-confirmation-text';
+    realtime.textContent = i18n('bookingRealtimeTrackNote') || 'You can track the delivery in real time.';
+    wrap.appendChild(realtime);
+
+    if (trackHref) {
+      const actions = document.createElement('div');
+      actions.className = 'booking-confirmation-actions';
+      const trackBtn = document.createElement('a');
+      trackBtn.className = 'btn';
+      trackBtn.href = trackHref;
+      trackBtn.target = '_blank';
+      trackBtn.rel = 'noopener';
+      trackBtn.textContent = i18n('bookingTrackDelivery') || 'Track delivery';
+      actions.appendChild(trackBtn);
+      wrap.appendChild(actions);
+    }
+
+    const support = document.createElement('p');
+    support.className = 'booking-confirmation-support';
+    support.appendChild(document.createTextNode(i18n('bookingSupportIntro') || 'A confirmation email with the delivery details has been sent to you.'));
+    support.appendChild(document.createElement('br'));
+    support.appendChild(document.createTextNode(i18n('bookingSupportOrderIdNote') || 'If you need to update anything about this order, please contact support and include your order ID.'));
+    support.appendChild(document.createElement('br'));
+
+    const emailLink = document.createElement('a');
+    emailLink.href = 'mailto:info@cargoworks.es';
+    emailLink.textContent = 'info@cargoworks.es';
+    support.appendChild(emailLink);
+
+    support.appendChild(document.createTextNode(' · '));
+
+    const waLink = document.createElement('a');
+    waLink.href = buildSupportWhatsAppUrl(ref);
+    waLink.target = '_blank';
+    waLink.rel = 'noopener';
+    waLink.textContent = '+34 608 08 19 55 (WhatsApp)';
+    support.appendChild(waLink);
+
+    wrap.appendChild(support);
+    setBookingStatusHtml([wrap], false);
+  }
+  async function handleBookingReturnFromQuery(){
+    const state = getBookingReturnState();
+    if (!state.booking || !state.ref) return;
+
+    const ref = state.ref;
+    const trackingUrl = buildTrackingUrlFromRef(ref);
+    const booking = state.booking;
+    const outcome = (booking === 'success' || booking === 'return')
+      ? 'success'
+      : 'failed';
+
+    await syncPaymentReturnStatus(ref, outcome, '');
+
+    if (outcome === 'success') {
+      hidePaymentMount();
+      resetBookingFieldsAfterSuccess();
+      renderBookingConfirmedMessage(ref, trackingUrl);
+    } else if (outcome === 'pending') {
+      const note = i18n('bookingPaymentPending') || 'Payment is still pending for this order.';
+      const trackNote = i18n('bookingTrackPrompt') || 'You can track your order status here:';
+      const link = buildStatusLink(trackingUrl, i18n('bookingTrackingLink') || 'Tracking link');
+      setBookingStatusHtml([note + ' ' + trackNote + ' ', link], true);
+    } else {
+      const fail = i18n('bookingPaymentFailed') || 'Payment failed. Please contact support and include your order ID.';
+      setBookingStatus((ref ? (fail + ' ' + ref) : fail), true);
+    }
+
+    clearBookingReturnParams();
+  }
   async function renderEmbeddedPayment(clientSecret, trackingUrl, reference, paymentUrl, publishableKey){
     if (!qPaymentMount) return false;
     const stripePublishableKey = String(publishableKey || window.CARGOWORKS_STRIPE_PUBLISHABLE_KEY || '').trim();
@@ -3180,7 +3362,15 @@ window.initZonesMap = function initZonesMap(){
     if (!stripe) return false;
     try {
       activeEmbeddedCheckout = await stripe.initEmbeddedCheckout({
-        fetchClientSecret: function(){ return Promise.resolve(clientSecret); }
+        fetchClientSecret: function(){ return Promise.resolve(clientSecret); },
+        onComplete: function(){
+          try {
+            syncPaymentReturnStatus(reference, 'success', paymentUrl);
+            hidePaymentMount();
+            resetBookingFieldsAfterSuccess();
+            renderBookingConfirmedMessage(reference, trackingUrl);
+          } catch(_) {}
+        }
       });
       activeEmbeddedCheckout.mount(host);
       qPaymentMount.classList.remove('is-hidden');
@@ -3286,6 +3476,9 @@ window.initZonesMap = function initZonesMap(){
         return;
       }
       if (paymentError || lastEmbeddedMountError) {
+        if (ref && embeddedFailure) {
+          await syncPaymentReturnStatus(ref, 'failed', paymentUrl);
+        }
         const errLabel = embeddedFailure;
         setBookingStatus(errLabel || (i18n('quotePaymentUnavailable') || 'Payment could not be initialized. Please try again.'), true);
       } else {
@@ -3619,6 +3812,7 @@ window.initZonesMap = function initZonesMap(){
   if (qEstimate) { qEstimate.addEventListener('click', runEstimate); }
   if (qPayNow) { qPayNow.addEventListener('click', startInlinePayment); }
   if (qSubmit) { qSubmit.addEventListener('click', startInlinePayment); }
+  handleBookingReturnFromQuery();
   
 
   if (editMode && google.maps.drawing) {

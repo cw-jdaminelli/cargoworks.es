@@ -17,10 +17,68 @@ const ORDERS_LOG_SPREADSHEET_NAME = 'Cargoworks Orders Log';
 const ORDERS_LOG_TAB_NAME = 'OrdersLog';
 const ADMIN_DATA_START = '--- ADMIN DATA ---';
 const ADMIN_DATA_END = '--- END ADMIN DATA ---';
-const DEFAULT_STATUS_LABEL = 'Pending payment';
+const DEFAULT_STATUS_LABEL = 'Confirmed';
 const BUILD_ID = '2026-02-14-1';
 const WHATSAPP_NUMBER = '34608081955';
 const WHATSAPP_DEFAULT_MESSAGE = 'Hola Cargoworks, necesito ayuda con mi pedido numero ';
+const ORDER_STATUS_VALUES = ['Confirmed', 'Assigned', 'Picked up', 'In transit', 'Delivered', 'Failed', 'Canceled', 'Delivery rejected'];
+const PAYMENT_STATUS_VALUES = ['Paid', 'Pending', 'Failed'];
+
+function normalizeOrderStatus(value){
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const map = {
+    'confirmed': 'Confirmed',
+    'assigned': 'Assigned',
+    'picked up': 'Picked up',
+    'picked-up': 'Picked up',
+    'in transit': 'In transit',
+    'in-transit': 'In transit',
+    'delivered': 'Delivered',
+    'failed': 'Failed',
+    'canceled': 'Canceled',
+    'cancelled': 'Canceled',
+    'delivery rejected': 'Delivery rejected',
+    'delivery-rejected': 'Delivery rejected',
+    // Legacy values kept for backward compatibility.
+    'pending payment': 'Confirmed',
+    'issue': 'Failed'
+  };
+  const normalized = map[raw.toLowerCase()];
+  if (!normalized) return '';
+  return ORDER_STATUS_VALUES.indexOf(normalized) >= 0 ? normalized : '';
+}
+
+function normalizePaymentStatus(value, hasPaymentUrl){
+  const raw = String(value || '').trim();
+  // Keep unpaid orders in a recoverable state by default.
+  const fallback = 'Pending';
+  if (!raw) return fallback;
+  const key = raw.toLowerCase();
+  if (key === 'paid') return 'Paid';
+  if (key === 'pending') return 'Pending';
+  if (key === 'failed') return 'Failed';
+  // Legacy value kept for backward compatibility.
+  if (key === 'none') return fallback;
+  return '';
+}
+
+function normalizePaymentOutcome(value){
+  const key = String(value || '').trim().toLowerCase();
+  if (!key) return '';
+  if (key === 'success' || key === 'succeeded' || key === 'paid') return 'success';
+  if (key === 'failed' || key === 'failure' || key === 'error') return 'failed';
+  if (key === 'pending' || key === 'return' || key === 'cancel' || key === 'canceled' || key === 'cancelled') return 'pending';
+  return '';
+}
+
+function paymentStatusFromOutcome(outcome){
+  const normalized = normalizePaymentOutcome(outcome);
+  if (normalized === 'success') return 'Paid';
+  if (normalized === 'failed') return 'Failed';
+  if (normalized === 'pending') return 'Pending';
+  return '';
+}
 
 function doGet(e){
   try {
@@ -64,6 +122,8 @@ function doPost(e){
     const payload = parseJsonBody(e);
     if (!payload) return jsonResponse({ error: 'Invalid JSON body' }, 400);
     if (payload && payload.action) {
+      const action = String(payload.action || '').trim();
+      if (action === 'paymentReturn') return handlePaymentReturn(payload);
       return handleAdminPost(payload);
     }
     setLastPayload(payload);
@@ -82,7 +142,7 @@ function doPost(e){
     const customer = payload.customer || {};
     const name = String(customer.name || '').trim() || 'Customer';
     const shortRef = buildShortRef(dateKey);
-    const title = 'Pending payment - Cargoworks booking - ' + name + ' - ' + shortRef;
+    const title = DEFAULT_STATUS_LABEL + ' - Cargoworks booking - ' + name + ' - ' + shortRef;
 
     const cal = CalendarApp.getCalendarById(CALENDAR_ID);
     if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
@@ -112,7 +172,7 @@ function doPost(e){
     });
 
     const eventId = event.getId();
-    const mailStatus = sendEmails(enrichedPayload, shortRef, payment && payment.url, whatsappUrl, '');
+    const mailStatus = sendOwnerRequestEmail(enrichedPayload, shortRef, payment && payment.url, whatsappUrl, '');
     appendOrderLogEntry({
       action: 'booking_created',
       eventId: eventId,
@@ -321,7 +381,7 @@ function buildEventDescription(payload, adminData){
 
 function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference){
   const paymentUrl = payload && payload.paymentUrl ? String(payload.paymentUrl) : '';
-  const paymentStatus = paymentUrl ? 'pending' : 'none';
+  const paymentStatus = normalizePaymentStatus('', !!paymentUrl);
   return {
     status: DEFAULT_STATUS_LABEL,
     paymentStatus: paymentStatus,
@@ -406,6 +466,11 @@ function createStripeSession(payload, shortRef){
     };
     if (email) baseBody.customer_email = email;
 
+    const hostedBody = Object.assign({}, baseBody, {
+      success_url: successUrl,
+      cancel_url: cancelUrl
+    });
+
     // Preferred flow: Embedded Checkout so the card UI can render inside the site.
     const embeddedBody = Object.assign({}, baseBody, {
       ui_mode: 'embedded',
@@ -415,19 +480,27 @@ function createStripeSession(payload, shortRef){
     const embeddedAttempt = createStripeCheckoutSession(secret, embeddedBody);
     if (embeddedAttempt.ok && embeddedAttempt.session) {
       const embeddedSession = embeddedAttempt.session;
+      let retryPaymentUrl = String(embeddedSession.url || '').trim();
+      let retryPaymentError = '';
+      // Embedded sessions may not expose a public URL. Create a hosted retry URL for tracking and payment recovery.
+      if (!retryPaymentUrl) {
+        const hostedRetryAttempt = createStripeCheckoutSession(secret, hostedBody);
+        if (hostedRetryAttempt.ok && hostedRetryAttempt.session) {
+          retryPaymentUrl = String(hostedRetryAttempt.session.url || '').trim();
+        } else {
+          retryPaymentError = String(hostedRetryAttempt.error || '').trim();
+        }
+      }
       return {
         id: embeddedSession.id || '',
-        url: embeddedSession.url || '',
+        url: retryPaymentUrl,
         clientSecret: embeddedSession.client_secret || '',
-        mode: 'embedded'
+        mode: 'embedded',
+        embeddedError: retryPaymentError
       };
     }
 
     // Fallback: hosted Checkout URL.
-    const hostedBody = Object.assign({}, baseBody, {
-      success_url: successUrl,
-      cancel_url: cancelUrl
-    });
     const hostedAttempt = createStripeCheckoutSession(secret, hostedBody);
     if (hostedAttempt.ok && hostedAttempt.session) {
       const hostedSession = hostedAttempt.session;
@@ -489,44 +562,22 @@ function getStripePublishableKey(){
   }
 }
 
-function sendEmails(payload, shortRef, paymentUrl, whatsappUrl, eventLink){
-  const status = { clientSent: false, ownerSent: false };
+function sendOwnerRequestEmail(payload, shortRef, paymentUrl, whatsappUrl, eventLink){
+  const status = { ownerSent: false };
   try {
-    const customer = payload.customer || {};
-    const customerEmail = String(customer.email || '').trim();
-    const name = String(customer.name || '').trim();
     const quote = payload.quote || {};
     const total = Number(quote.total || 0) || 0;
     const totalLabel = 'EUR ' + total.toFixed(2);
     const trackingUrl = String(payload.trackingUrl || '').trim();
-
-    const subjectClient = 'Cargoworks - Solicitud recibida (' + shortRef + ')';
-    const subjectOwner = 'Nueva solicitud - ' + shortRef + ' (pendiente de pago)';
-
-    const linesClient = [];
-    linesClient.push('Hola ' + (name || ''));
-    linesClient.push('');
-    linesClient.push('Gracias por confiar en Cargoworks. Hemos recibido tu solicitud.');
-    linesClient.push('Para confirmar la reserva, completa el pago:');
-    if (paymentUrl) linesClient.push(paymentUrl);
-    if (whatsappUrl) {
-      linesClient.push('O abre WhatsApp con tu referencia lista:');
-      linesClient.push(whatsappUrl);
-    }
-    linesClient.push('');
-    linesClient.push('Referencia: ' + shortRef);
-    linesClient.push('Importe: ' + totalLabel);
-    if (trackingUrl) linesClient.push('Tracking: ' + trackingUrl);
-    linesClient.push('');
-    linesClient.push('Si necesitas ayuda, responde a este correo.');
+    const subjectOwner = 'New booking request - ' + shortRef + ' (payment pending)';
 
     const linesOwner = [];
-    linesOwner.push('Nueva solicitud recibida (pendiente de pago)');
-    linesOwner.push('Referencia: ' + shortRef);
-    linesOwner.push('Importe: ' + totalLabel);
-    if (paymentUrl) linesOwner.push('Pago: ' + paymentUrl);
+    linesOwner.push('New booking request received.');
+    linesOwner.push('Reference: ' + shortRef);
+    linesOwner.push('Amount: ' + totalLabel);
+    if (paymentUrl) linesOwner.push('Payment: ' + paymentUrl);
     if (whatsappUrl) linesOwner.push('WhatsApp: ' + whatsappUrl);
-    if (eventLink) linesOwner.push('Evento: ' + eventLink);
+    if (eventLink) linesOwner.push('Event: ' + eventLink);
     if (trackingUrl) linesOwner.push('Tracking: ' + trackingUrl);
     linesOwner.push('');
     linesOwner.push(buildEventDescription(Object.assign({}, payload, {
@@ -534,35 +585,188 @@ function sendEmails(payload, shortRef, paymentUrl, whatsappUrl, eventLink){
       paymentUrl: paymentUrl || ''
     })));
 
-    if (customerEmail) {
-      try {
-        MailApp.sendEmail({
-          to: customerEmail,
-          subject: subjectClient,
-          body: linesClient.join('\n'),
-          replyTo: REPLY_TO
-        });
-        status.clientSent = true;
-      } catch (err) {
-        status.clientSent = false;
-      }
-    }
     if (OWNER_EMAIL) {
-      try {
-        MailApp.sendEmail({
-          to: OWNER_EMAIL,
-          subject: subjectOwner,
-          body: linesOwner.join('\n')
-        });
-        status.ownerSent = true;
-      } catch (err) {
-        status.ownerSent = false;
-      }
+      MailApp.sendEmail({
+        to: OWNER_EMAIL,
+        subject: subjectOwner,
+        body: linesOwner.join('\n')
+      });
+      status.ownerSent = true;
     }
   } catch (err) {
-    status.error = 'Email send failed';
+    status.error = 'Owner email send failed';
   }
   return status;
+}
+
+function emailLocaleFromLanguage(language){
+  const key = String(language || '').trim().toLowerCase().slice(0, 2);
+  if (key === 'es' || key === 'ca' || key === 'pt' || key === 'en') return key;
+  return 'en';
+}
+
+function confirmationEmailCopy(locale){
+  const dict = {
+    en: {
+      subject: 'Your Cargoworks delivery is confirmed - Order {ref}',
+      header: 'Your delivery is booked 🚲',
+      orderId: 'Order ID',
+      trackIntro: 'You can track your delivery in real time.',
+      trackButton: 'Track delivery',
+      trackFallback: 'Tracking URL (if the button does not load):',
+      summaryTitle: 'Delivery summary',
+      pickup: 'Pickup address',
+      dropoff: 'Dropoff address',
+      pickupDate: 'Pickup date',
+      pickupTime: 'Pickup time',
+      updatesLine: 'We\'ll notify you when the rider is assigned and when the delivery is completed.',
+      supportLine: 'If you need to update delivery details or have questions, contact us at info@cargoworks.es or through WhatsApp and include your order ID.'
+    },
+    es: {
+      subject: 'Tu entrega Cargoworks está confirmada - Pedido {ref}',
+      header: 'Tu entrega está reservada 🚲',
+      orderId: 'ID de pedido',
+      trackIntro: 'Puedes seguir tu entrega en tiempo real.',
+      trackButton: 'Seguir entrega',
+      trackFallback: 'URL de seguimiento (si el botón no se carga):',
+      summaryTitle: 'Resumen de entrega',
+      pickup: 'Dirección de recogida',
+      dropoff: 'Dirección de entrega',
+      pickupDate: 'Fecha de recogida',
+      pickupTime: 'Hora de recogida',
+      updatesLine: 'Te avisaremos cuando se asigne el rider y cuando la entrega se complete.',
+      supportLine: 'Si necesitas actualizar datos de la entrega o tienes preguntas, contáctanos en info@cargoworks.es o por WhatsApp e incluye tu ID de pedido.'
+    },
+    ca: {
+      subject: 'La teva entrega de Cargoworks està confirmada - Comanda {ref}',
+      header: 'La teva entrega està reservada 🚲',
+      orderId: 'ID de comanda',
+      trackIntro: 'Pots fer seguiment de l\'entrega en temps real.',
+      trackButton: 'Seguiment de l\'entrega',
+      trackFallback: 'URL de seguiment (si el botó no es carrega):',
+      summaryTitle: 'Resum de lliurament',
+      pickup: 'Adreça de recollida',
+      dropoff: 'Adreça d\'entrega',
+      pickupDate: 'Data de recollida',
+      pickupTime: 'Hora de recollida',
+      updatesLine: 'T\'avisarem quan s\'assigni el rider i quan el lliurament s\'hagi completat.',
+      supportLine: 'Si necessites actualitzar dades del lliurament o tens preguntes, contacta\'ns a info@cargoworks.es o per WhatsApp i inclou el teu ID de comanda.'
+    },
+    pt: {
+      subject: 'Sua entrega da Cargoworks está confirmada - Pedido {ref}',
+      header: 'Sua entrega está reservada 🚲',
+      orderId: 'ID do pedido',
+      trackIntro: 'Você pode acompanhar sua entrega em tempo real.',
+      trackButton: 'Acompanhar entrega',
+      trackFallback: 'URL de rastreamento (se o botão não carregar):',
+      summaryTitle: 'Resumo da entrega',
+      pickup: 'Endereço de coleta',
+      dropoff: 'Endereço de entrega',
+      pickupDate: 'Data da coleta',
+      pickupTime: 'Horário de coleta',
+      updatesLine: 'Avisaremos quando o rider for atribuído e quando a entrega for concluída.',
+      supportLine: 'Se precisar atualizar detalhes da entrega ou tiver dúvidas, fale com info@cargoworks.es ou pelo WhatsApp e inclua o ID do pedido.'
+    }
+  };
+  return dict[locale] || dict.en;
+}
+
+function formatScheduleDateForEmail(dateKey){
+  const value = String(dateKey || '').trim();
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  return match[3] + '/' + match[2] + '/' + match[1];
+}
+
+function escapeHtml(value){
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function sendClientConfirmationEmail(payload, adminData){
+  try {
+    const data = payload || {};
+    const customer = data.customer || {};
+    const email = String(customer.email || '').trim();
+    if (!email) return false;
+
+    const reference = String(data.reference || '').trim();
+    const language = emailLocaleFromLanguage(data.language || 'en');
+    const copy = confirmationEmailCopy(language);
+    const trackingUrl = String((adminData && adminData.trackingUrl) || data.trackingUrl || '').trim();
+    const route = (data.quote && data.quote.route) ? data.quote.route : {};
+    const schedule = (data.quote && data.quote.schedule) ? data.quote.schedule : {};
+    const pickup = String((route.pickup && route.pickup.address) || '').trim();
+    const dropoff = String((route.dropoff && route.dropoff.address) || '').trim();
+    const pickupDate = formatScheduleDateForEmail(schedule.date || '');
+    const pickupTime = String(schedule.time || '').trim();
+    const whatsappUrl = buildWhatsAppUrl(reference);
+    const subjectTemplate = String(copy.subject || 'Your Cargoworks delivery is confirmed - Order {ref}');
+    const subject = subjectTemplate.replace(/\{ref\}/g, reference);
+
+    const summaryRows = [];
+    if (pickup) summaryRows.push('<tr><td style="padding:4px 0;font-weight:600;">' + escapeHtml(copy.pickup) + '</td><td style="padding:4px 0;">' + escapeHtml(pickup) + '</td></tr>');
+    if (dropoff) summaryRows.push('<tr><td style="padding:4px 0;font-weight:600;">' + escapeHtml(copy.dropoff) + '</td><td style="padding:4px 0;">' + escapeHtml(dropoff) + '</td></tr>');
+    if (pickupDate) summaryRows.push('<tr><td style="padding:4px 0;font-weight:600;">' + escapeHtml(copy.pickupDate) + '</td><td style="padding:4px 0;">' + escapeHtml(pickupDate) + '</td></tr>');
+    if (pickupTime) summaryRows.push('<tr><td style="padding:4px 0;font-weight:600;">' + escapeHtml(copy.pickupTime) + '</td><td style="padding:4px 0;">' + escapeHtml(pickupTime) + '</td></tr>');
+
+    const summaryHtml = summaryRows.length
+      ? ('<h3 style="margin:18px 0 8px;font-size:16px;color:#2b0f3a;">' + escapeHtml(copy.summaryTitle) + '</h3><table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px;color:#2d1a4d;">' + summaryRows.join('') + '</table>')
+      : '';
+
+    const htmlBody = [
+      '<div style="font-family:Inter,Segoe UI,Arial,sans-serif;color:#2d1a4d;line-height:1.55;max-width:640px;">',
+      '<h2 style="margin:0 0 12px;color:#2b0f3a;">' + escapeHtml(copy.header) + '</h2>',
+      '<p style="margin:0 0 10px;"><strong>' + escapeHtml(copy.orderId) + ':</strong> ' + escapeHtml(reference) + '</p>',
+      '<p style="margin:0 0 12px;">' + escapeHtml(copy.trackIntro) + '</p>',
+      trackingUrl ? ('<p style="margin:0 0 10px;"><a href="' + escapeHtml(trackingUrl) + '" style="display:inline-block;background:#2b0f3a;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;letter-spacing:0.02em;">' + escapeHtml(copy.trackButton) + '</a></p>') : '',
+      trackingUrl ? ('<p style="margin:0 0 14px;font-size:12px;color:#5a5470;">' + escapeHtml(copy.trackFallback) + '<br><a href="' + escapeHtml(trackingUrl) + '" style="color:#2b0f3a;">' + escapeHtml(trackingUrl) + '</a></p>') : '',
+      summaryHtml,
+      '<p style="margin:16px 0 10px;">' + escapeHtml(copy.updatesLine) + '</p>',
+      '<p style="margin:0;">' + escapeHtml(copy.supportLine) + '</p>',
+      '<p style="margin:8px 0 0;"><a href="mailto:info@cargoworks.es" style="color:#2b0f3a;">info@cargoworks.es</a> · <a href="' + escapeHtml(whatsappUrl) + '" style="color:#2b0f3a;">WhatsApp</a></p>',
+      '</div>'
+    ].join('');
+
+    const textLines = [];
+    textLines.push(copy.header);
+    textLines.push('');
+    textLines.push(copy.orderId + ': ' + reference);
+    textLines.push(copy.trackIntro);
+    if (trackingUrl) {
+      textLines.push(copy.trackButton + ': ' + trackingUrl);
+      textLines.push(copy.trackFallback);
+      textLines.push(trackingUrl);
+    }
+    if (pickup || dropoff || pickupDate || pickupTime) {
+      textLines.push('');
+      textLines.push(copy.summaryTitle);
+      if (pickup) textLines.push(copy.pickup + ': ' + pickup);
+      if (dropoff) textLines.push(copy.dropoff + ': ' + dropoff);
+      if (pickupDate) textLines.push(copy.pickupDate + ': ' + pickupDate);
+      if (pickupTime) textLines.push(copy.pickupTime + ': ' + pickupTime);
+    }
+    textLines.push('');
+    textLines.push(copy.updatesLine);
+    textLines.push(copy.supportLine);
+    textLines.push('info@cargoworks.es');
+    textLines.push(whatsappUrl);
+
+    MailApp.sendEmail({
+      to: email,
+      subject: subject,
+      body: textLines.join('\n'),
+      htmlBody: htmlBody,
+      replyTo: REPLY_TO
+    });
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 function getPickupAddress(quote){
@@ -690,6 +894,93 @@ function handleAdminPost(payload){
   return jsonResponse({ error: 'Unknown action' }, 400);
 }
 
+function handlePaymentReturn(payload){
+  try {
+    const reference = String(payload.reference || payload.ref || '').trim().toUpperCase();
+    if (!reference) return jsonResponse({ error: 'Missing reference' }, 400);
+    const paymentStatus = paymentStatusFromOutcome(payload.outcome);
+    if (!paymentStatus) return jsonResponse({ error: 'Invalid outcome' }, 400);
+
+    const event = findEventByReference(reference);
+    if (!event) return jsonResponse({ error: 'Not found' }, 404);
+
+    const desc = String(event.getDescription() || '');
+    const payloadData = extractPayloadFromDescription(desc) || {};
+    const adminData = ensureAdminData(desc, payloadData);
+    const previous = String(adminData.paymentStatus || '');
+    // Do not downgrade already-paid orders from public return parameters.
+    const resolvedPaymentStatus = (previous === 'Paid' && paymentStatus !== 'Paid') ? 'Paid' : paymentStatus;
+    adminData.paymentStatus = resolvedPaymentStatus;
+    if (!adminData.status) adminData.status = DEFAULT_STATUS_LABEL;
+
+    const incomingPaymentUrl = String(payload.paymentUrl || '').trim();
+    if (!adminData.paymentUrl && incomingPaymentUrl) adminData.paymentUrl = incomingPaymentUrl;
+
+    adminData.timeline = Array.isArray(adminData.timeline) ? adminData.timeline : [];
+    const ts = new Date().toISOString();
+    const outcome = normalizePaymentOutcome(payload.outcome);
+    const changed = previous !== resolvedPaymentStatus;
+    if (changed) {
+      adminData.timeline.push({
+        ts: ts,
+        status: adminData.status || DEFAULT_STATUS_LABEL,
+        message: 'Payment status changed from ' + (previous || '-') + ' to ' + resolvedPaymentStatus + ' (return: ' + outcome + ')',
+        via: 'system'
+      });
+      adminData.lastUpdateAt = ts;
+    }
+
+    let confirmationEmailSent = false;
+    if (adminData.paymentStatus === 'Paid' && !adminData.confirmationEmailSentAt) {
+      if (!payloadData.reference) payloadData.reference = reference;
+      if (!payloadData.trackingUrl && adminData.trackingUrl) payloadData.trackingUrl = adminData.trackingUrl;
+      confirmationEmailSent = sendClientConfirmationEmail(payloadData, adminData);
+      if (confirmationEmailSent) {
+        adminData.confirmationEmailSentAt = ts;
+        adminData.timeline.push({
+          ts: ts,
+          status: adminData.status || DEFAULT_STATUS_LABEL,
+          message: 'Confirmation email sent to client',
+          via: 'system'
+        });
+      } else {
+        adminData.timeline.push({
+          ts: ts,
+          status: adminData.status || DEFAULT_STATUS_LABEL,
+          message: 'Confirmation email could not be sent',
+          via: 'system'
+        });
+      }
+      adminData.lastUpdateAt = ts;
+    }
+
+    const updatedDesc = upsertAdminData(desc, adminData);
+    event.setDescription(updatedDesc);
+
+    appendOrderLogEntry({
+      action: 'payment_return',
+      eventId: event.getId(),
+      payload: payloadData,
+      adminData: adminData,
+      status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: 'Payment return: ' + outcome + (confirmationEmailSent ? ' (confirmation email sent)' : ''),
+      build: BUILD_ID
+    });
+
+    return jsonResponse({
+      ok: true,
+      reference: reference,
+      paymentStatus: adminData.paymentStatus,
+      changed: changed,
+      confirmationEmailSent: confirmationEmailSent
+    }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
 function handleAdminUpdate(payload){
   try {
     const eventId = String(payload.eventId || '').trim();
@@ -703,8 +994,15 @@ function handleAdminUpdate(payload){
     const adminData = ensureAdminData(desc, payloadData);
     const prevStatus = String(adminData.status || '');
     const prevPaymentStatus = String(adminData.paymentStatus || '');
-    const status = String(payload.status || '').trim();
-    const paymentStatus = String(payload.paymentStatus || '').trim();
+    const statusInput = String(payload.status || '').trim();
+    const status = statusInput ? normalizeOrderStatus(statusInput) : '';
+    if (statusInput && !status) return jsonResponse({ error: 'Invalid status' }, 400);
+
+    const paymentInput = String(payload.paymentStatus || '').trim();
+    const hasPaymentUrl = !!String(adminData.paymentUrl || payloadData.paymentUrl || '').trim();
+    const paymentStatus = paymentInput ? normalizePaymentStatus(paymentInput, hasPaymentUrl) : '';
+    if (paymentInput && !paymentStatus) return jsonResponse({ error: 'Invalid paymentStatus' }, 400);
+
     if (status) adminData.status = status;
     if (paymentStatus) adminData.paymentStatus = paymentStatus;
     const message = String(payload.message || payload.note || '').trim();
@@ -887,15 +1185,14 @@ function extractAdminData(desc){
 
 function ensureAdminData(desc, payload){
   const adminData = extractAdminData(desc) || {};
-  if (!adminData.status) adminData.status = DEFAULT_STATUS_LABEL;
-  if (!adminData.paymentStatus) {
-    const paymentUrl = payload && payload.paymentUrl ? String(payload.paymentUrl) : '';
-    adminData.paymentStatus = paymentUrl ? 'pending' : 'none';
-  }
-  if (!adminData.paymentUrl) {
-    const paymentUrl = payload && payload.paymentUrl ? String(payload.paymentUrl) : '';
-    if (paymentUrl) adminData.paymentUrl = paymentUrl;
-  }
+  const payloadPaymentUrl = payload && payload.paymentUrl ? String(payload.paymentUrl) : '';
+  const adminPaymentUrl = adminData.paymentUrl ? String(adminData.paymentUrl) : '';
+  const effectivePaymentUrl = adminPaymentUrl || payloadPaymentUrl;
+
+  adminData.status = normalizeOrderStatus(adminData.status) || DEFAULT_STATUS_LABEL;
+  adminData.paymentStatus = normalizePaymentStatus(adminData.paymentStatus, !!effectivePaymentUrl);
+  adminData.paymentUrl = effectivePaymentUrl;
+
   if (!adminData.trackingUrl) {
     const ref = payload && payload.reference ? String(payload.reference) : '';
     adminData.trackingUrl = ref ? buildTrackingUrl(payload || {}, ref) : '';
@@ -1228,7 +1525,7 @@ function sendProgressEmail(payload, adminData, message){
     if (updateMessage) lines.push('Update: ' + updateMessage);
     if (adminData && adminData.status) lines.push('Status: ' + adminData.status);
     if (adminData && adminData.paymentStatus) lines.push('Payment: ' + adminData.paymentStatus);
-    if (payload.paymentUrl && adminData && adminData.paymentStatus === 'pending') lines.push('Payment link: ' + payload.paymentUrl);
+    if (payload.paymentUrl && adminData && adminData.paymentStatus === 'Pending') lines.push('Payment link: ' + payload.paymentUrl);
     if (adminData && adminData.trackingUrl) lines.push('Tracking: ' + adminData.trackingUrl);
     if (adminData && adminData.podUrl) lines.push('POD: ' + adminData.podUrl);
     lines.push('');
@@ -1257,7 +1554,7 @@ function buildCustomerWhatsAppUrl(payload, adminData, message){
     if (adminData && adminData.status) parts.push('Status: ' + adminData.status);
     if (adminData && adminData.trackingUrl) parts.push('Tracking: ' + adminData.trackingUrl);
     if (adminData && adminData.podUrl) parts.push('POD: ' + adminData.podUrl);
-    if (payload.paymentUrl && adminData && adminData.paymentStatus === 'pending') parts.push('Payment: ' + payload.paymentUrl);
+    if (payload.paymentUrl && adminData && adminData.paymentStatus === 'Pending') parts.push('Payment: ' + payload.paymentUrl);
     const text = parts.join(' | ');
     return 'https://wa.me/' + phone + '?text=' + encodeURIComponent(text);
   } catch (err) {

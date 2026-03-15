@@ -9,6 +9,168 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css">
   <link rel="stylesheet" href="css/effects/layout.css"/>
+  <style>
+    .contact-main {
+      width: min(94vw, 1100px);
+      margin: clamp(1.2rem, 4vw, 2rem) auto;
+    }
+
+    .contact-hero-subtitle {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: clamp(1rem, 2.2vw, 1.2rem);
+      line-height: 1.65;
+      color: #3f3a44;
+      max-width: 64ch;
+      margin: 0.6rem auto 0;
+      text-align: center;
+    }
+
+    .contact-support {
+      margin-top: 0.75rem;
+      padding: clamp(1.2rem, 3vw, 2rem);
+      background: #fff;
+      border-radius: 14px;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    }
+
+    .contact-support h2 {
+      font-family: 'Oswald', system-ui, sans-serif;
+      font-size: clamp(1.4rem, 3.4vw, 1.8rem);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: #2b0f3a;
+      margin: 0 0 0.45rem 0;
+    }
+
+    .contact-support-intro {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1rem;
+      color: #575264;
+      line-height: 1.65;
+      margin: 0 0 1.15rem 0;
+    }
+
+    .contact-channels {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 0.8rem;
+      margin-bottom: 1.1rem;
+    }
+
+    .contact-channel {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.7rem;
+      background: #f8f9fb;
+      border-radius: 10px;
+      padding: 0.95rem;
+      text-decoration: none;
+      color: inherit;
+      transition: background 150ms ease, transform 150ms ease;
+    }
+
+    .contact-channel:hover {
+      background: #eff1f5;
+      transform: translateY(-1px);
+      color: inherit;
+    }
+
+    .contact-channel-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    .contact-channel-icon.phone {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+
+    .contact-channel-icon.whatsapp {
+      background: #e8f5e9;
+      color: #25d366;
+    }
+
+    .contact-channel-icon.email {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+
+    .contact-channel-content {
+      display: flex;
+      flex-direction: column;
+      gap: 0.12rem;
+      min-width: 0;
+    }
+
+    .contact-channel-label {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: #7a7686;
+    }
+
+    .contact-channel-value {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.98rem;
+      font-weight: 600;
+      color: #1e1b24;
+      overflow-wrap: anywhere;
+    }
+
+    .contact-channel-note {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.8rem;
+      color: #7a7686;
+      line-height: 1.4;
+    }
+
+    .contact-order-note {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.92rem;
+      color: #4f4a2d;
+      padding: 0.72rem 0.9rem;
+      background: #fffbe7;
+      border-left: 3px solid #ffbf3f;
+      border-radius: 8px;
+      margin: 0 0 0.85rem 0;
+    }
+
+    .contact-business-note {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.95rem;
+      color: #44527a;
+      padding: 0.72rem 0.9rem;
+      background: #f2f6ff;
+      border-left: 3px solid #8aa8ff;
+      border-radius: 8px;
+      margin: 0;
+      line-height: 1.6;
+    }
+
+    .contact-cta {
+      margin-top: 1.35rem;
+      text-align: center;
+      padding-top: 1.35rem;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .contact-cta p {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1rem;
+      color: #4a4552;
+      margin: 0 0 0.85rem 0;
+    }
+  </style>
 </head>
 <body>
   <header class="site-header">
@@ -20,8 +182,8 @@
         <li><a href="faq.html" data-i18n="siteFaq">FAQ</a></li>
       </ul>
       <div class="nav-controls">
-        <label for="langSelect" class="visually-hidden">🌐</label>
-        <select id="langSelect" class="lang-select">
+        <span class="lang-globe" aria-hidden="true">🌐</span>
+        <select id="langSelect" class="lang-select" data-i18n-aria-label="langSelectLabel">
           <option value="ca">Català</option>
           <option value="es">Castellano</option>
           <option value="pt">Português</option>
@@ -34,29 +196,80 @@
   <section class="hero-section" id="top">
     <div class="hero-inner">
       <h1 class="hero-title" data-i18n="contactPageTitle">Contact</h1>
+      <p class="contact-hero-subtitle" data-i18n="contactHeroDescription">Need help with a delivery? Reach us by email, WhatsApp, or phone and we will get back quickly.</p>
     </div>
   </section>
 
-  <main style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
-    <p data-i18n="pageNote" style="opacity:0.8; margin-top:0;"></p>
+  <main class="contact-main">
+    <section class="contact-support" aria-labelledby="contactSupportHeading">
+      <h2 id="contactSupportHeading" data-i18n="contactSupportTitle">Support channels</h2>
+      <p class="contact-support-intro" data-i18n="contactSupportIntro">For delivery support, route changes, or booking questions, contact us using one of these options.</p>
 
-    <p data-i18n="contactIntro">Send us:</p>
-    <ul data-i18n="contactList" style="margin:0 0 1rem 0; padding-left:1.25rem; line-height:1.6;">
-      <li>Pickup and delivery address(es)</li>
-      <li>Time window</li>
-      <li>What it is and approximate size/weight</li>
-      <li>Any special notes</li>
-    </ul>
-    <p data-i18n="contactOutro">We’ll reply quickly with next steps.</p>
+      <div class="contact-channels">
+        <a class="contact-channel" href="mailto:info@cargoworks.es">
+          <span class="contact-channel-icon email" aria-hidden="true"><i class="fa fa-envelope"></i></span>
+          <span class="contact-channel-content">
+            <span class="contact-channel-label" data-i18n="contactEmailLabel">Email</span>
+            <span class="contact-channel-value">info@cargoworks.es</span>
+            <span class="contact-channel-note" data-i18n="contactEmailNote">Best for detailed requests and attachments.</span>
+          </span>
+        </a>
 
-    <div class="cta-group" style="margin:1rem 0 0.5rem 0;">
-      <a class="btn" href="mailto:info@cargoworks.es" data-i18n="contactEmailCta">Email us</a>
-      <a class="btn btn--whatsapp" href="https://wa.me/34608081955?text=Hola%2C%20me%20gustar%C3%ADa%20solicitar%20una%20cotizaci%C3%B3n." target="_blank" rel="noopener" data-i18n="contactWhatsappCta">WhatsApp</a>
+        <a class="contact-channel" href="https://wa.me/34608081955?text=Hola%2C%20me%20gustar%C3%ADa%20solicitar%20una%20cotizaci%C3%B3n." target="_blank" rel="noopener">
+          <span class="contact-channel-icon whatsapp" aria-hidden="true"><i class="fa fa-whatsapp"></i></span>
+          <span class="contact-channel-content">
+            <span class="contact-channel-label" data-i18n="contactWhatsappLabel">WhatsApp</span>
+            <span class="contact-channel-value">+34 608 08 19 55</span>
+            <span class="contact-channel-note" data-i18n="contactWhatsappNote">Fastest option for active deliveries.</span>
+          </span>
+        </a>
+
+        <a class="contact-channel" href="tel:+34608081955">
+          <span class="contact-channel-icon phone" aria-hidden="true"><i class="fa fa-phone"></i></span>
+          <span class="contact-channel-content">
+            <span class="contact-channel-label" data-i18n="contactPhoneLabel">Phone</span>
+            <span class="contact-channel-value">+34 608 08 19 55</span>
+            <span class="contact-channel-note" data-i18n="contactPhoneNote">Ideal for urgent same-day issues.</span>
+          </span>
+        </a>
+      </div>
+
+      <p class="contact-order-note" data-i18n="contactOrderNote">Please include your <strong>order ID</strong> in every message so we can help you faster.</p>
+      <p class="contact-business-note" data-i18n="contactBusinessNote">For business partnerships, recurring deliveries, or large-volume requests, tell us your needs and we will prepare a tailored plan.</p>
+    </section>
+
+    <div class="contact-cta">
+      <p data-i18n="contactBookingPrompt">Need to book a new route right now?</p>
+      <a class="btn" href="index.html#zones" data-i18n="contactBookingCta">Back to booking tool</a>
     </div>
   </main>
 
-  <footer style="width:min(94vw,1100px);margin:clamp(1.2rem,4vw,2rem) auto;">
+  <section class="site-map" aria-label="Site map and contacts">
+    <div class="site-map__column">
+      <h3 data-i18n="siteExplore">Explore</h3>
+      <ul class="site-map__list">
+        <li><a href="index.html" data-i18n="navHome">Home</a></li>
+        <li><a href="about.html" data-i18n="siteAbout">About</a></li>
+        <li><a href="services.html" data-i18n="siteServices">Services</a></li>
+        <li><a href="faq.html" data-i18n="siteFaq">FAQ</a></li>
+        <li><a href="contact.html" data-i18n="siteContact">Contact</a></li>
+      </ul>
+    </div>
+    <div class="site-map__column">
+      <h3 data-i18n="siteContact">Contact</h3>
+      <p class="site-map__contact" data-i18n="siteContactBlurb">Best ways to reach us:</p>
+      <p class="site-map__contact">
+        <strong data-i18n="sitePhoneLabel">Call</strong>: <a href="tel:+34608081955">+34 608 08 19 55</a> <span data-i18n="sitePhoneNote">(may be out riding)</span><br>
+        <strong><a href="https://wa.me/34608081955" target="_blank" rel="noopener" data-i18n="siteWhatsappLabel">WhatsApp</a></strong> - <span data-i18n="siteWhatsappNote">5–10 min reply (usually)</span><br>
+        <strong data-i18n="siteEmailLabel">Email</strong>: <a href="mailto:info@cargoworks.es">info@cargoworks.es</a> <span data-i18n="siteEmailNote">(reply by next morning)</span>
+      </p>
+      <p class="site-map__contact"><strong data-i18n="siteHoursLabel">Hours</strong>: <span data-i18n="siteHoursText">Mon–Fri 7–17 · Sat–Sun 7–15</span></p>
+    </div>
+  </section>
+
+  <footer class="site-footer">
     <span data-i18n="footerCopy">© 2025 Cargoworks – Bike Logistics Barcelona</span>
+    <a href="faq.html" data-i18n="siteFaq">FAQ</a>
     <a href="https://instagram.com/cargoworks.es" target="_blank" rel="noopener" data-i18n="footerInstagram">Instagram</a>
   </footer>
 

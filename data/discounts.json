@@ -2,15 +2,26 @@
   "version": "2026-02-08",
   "codes": [
     {
-      "code": "WELCOME10",
+      "code": "yougotit100",
       "type": "percent",
-      "amount": 10,
+      "amount": 100,
       "minOrder": 0,
       "start": "2026-01-01",
       "end": "2026-12-31",
       "maxUses": 0,
       "active": true,
-      "notes": "Intro offer"
+      "notes": "code for 100 percent off"
+    },
+     {
+      "code": "test999",
+      "type": "percent",
+      "amount": 99.99,
+      "minOrder": 0,
+          "start": "2026-01-01",
+      "end": "2026-12-31",
+      "maxUses": 0,
+      "active": true,
+      "notes": "code for 99.99 percent off"
     },
     {
       "code": "SELF5",

@@ -19,13 +19,22 @@
     body { background: var(--track-bg); color: var(--track-ink); }
     .tracking-shell { max-width: 900px; margin: 6rem auto 4rem; padding: 0 1.5rem; }
     .tracking-card { background: var(--track-card); border-radius: 18px; padding: 1.5rem; border: 1px solid var(--track-border); box-shadow: 0 16px 40px rgba(17, 28, 43, 0.1); }
-    .tracking-card h1 { font-family: 'Barlow Condensed', 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; font-size: clamp(2rem, 4vw, 3rem); margin-bottom: 1rem; }
+    .tracking-card h1 { font-family: 'Barlow Condensed', 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; font-size: clamp(2rem, 4vw, 3rem); margin-bottom: 0.6rem; }
+    .tracking-card .tracking-intro { margin: 0 0 1rem; color: #3e4f64; }
     .tracking-form { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.4rem; }
     .tracking-form input { flex: 1 1 240px; padding: 0.55rem 0.7rem; border-radius: 10px; border: 1px solid var(--track-border); }
-    .tracking-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.6rem 1rem; margin-bottom: 1rem; }
-    .tracking-summary span { display: block; font-size: 0.95rem; }
+    .tracking-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.6rem 0.8rem; margin-bottom: 1rem; }
+    .tracking-summary-item { border: 1px solid var(--track-border); background: rgba(17, 28, 43, 0.03); border-radius: 10px; padding: 0.5rem 0.65rem; }
+    .tracking-summary-label { display: block; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.03em; color: #607089; margin-bottom: 0.15rem; }
+    .tracking-summary-value { display: block; font-size: 0.92rem; color: #1c2a3f; font-weight: 600; }
+    .tracking-links { display: grid; gap: 0.5rem; margin-bottom: 0.8rem; }
+    .tracking-link-row { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; flex-wrap: wrap; border: 1px solid var(--track-border); border-radius: 10px; padding: 0.5rem 0.65rem; background: rgba(17, 28, 43, 0.02); }
+    .tracking-link-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: #5f6f86; font-weight: 700; }
+    .tracking-link-actions { display: inline-flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; }
+    .tracking-copy-btn { padding: 0.28rem 0.55rem; font-size: 0.75rem; }
     .tracking-links a { color: var(--track-accent); text-decoration: none; font-weight: 600; }
     .tracking-links a:hover { text-decoration: underline; }
+    .tracking-status.is-error { color: #b00020; }
     .tracking-delivery-note {
       margin-top: 0.85rem;
       padding: 0.75rem 0.85rem;
@@ -73,24 +82,25 @@
   <header class="site-header">
     <nav class="hero-nav">
       <ul class="nav-links">
-        <li><a href="index.html#zones">Back to site</a></li>
+        <li><a href="https://cargoworks.es">cargoworks.es</a></li>
       </ul>
     </nav>
   </header>
 
   <main class="tracking-shell">
     <div class="tracking-card">
-      <h1>Order Tracking</h1>
-      <p>Enter your reference to see status, updates, and POD.</p>
+      <h1 data-i18n="trackingPageTitle">Order Tracking</h1>
+      <p class="tracking-intro" data-i18n="trackingPageIntro">Enter your reference to see status, updates, and proof of delivery.</p>
       <div class="tracking-form">
         <input id="trackingRef" type="text" placeholder="Reference (CW-DDMMYYYY-XXXX)" aria-label="Reference" />
-        <button id="trackingLoad" class="btn" type="button">Track</button>
-        <span id="trackingStatus" class="zones-result" aria-live="polite"></span>
+        <button id="trackingLoad" class="btn" type="button" data-i18n="trackingLoadButton">Track</button>
+        <span id="trackingStatus" class="zones-result tracking-status" aria-live="polite"></span>
       </div>
       <div id="trackingDetails"></div>
     </div>
   </main>
 
+  <script src="js/js/translations.js"></script>
   <script src="js/js/tracking.js"></script>
 </body>
 </html>

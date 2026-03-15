@@ -292,20 +292,21 @@
 
     const actions = el('div', 'dispatcher-actions');
     const statusSelect = buildSelect([
-      { value: 'Pending payment', label: 'Pending payment' },
+      { value: 'Confirmed', label: 'Confirmed' },
       { value: 'Assigned', label: 'Assigned' },
       { value: 'Picked up', label: 'Picked up' },
       { value: 'In transit', label: 'In transit' },
       { value: 'Delivered', label: 'Delivered' },
-      { value: 'Issue', label: 'Issue' }
+      { value: 'Failed', label: 'Failed' },
+      { value: 'Canceled', label: 'Canceled' },
+      { value: 'Delivery rejected', label: 'Delivery rejected' }
     ], order.status || '');
 
     const paymentSelect = buildSelect([
       { value: '', label: 'Payment status' },
-      { value: 'pending', label: 'Pending' },
-      { value: 'paid', label: 'Paid' },
-      { value: 'failed', label: 'Failed' },
-      { value: 'none', label: 'None' }
+      { value: 'Pending', label: 'Pending' },
+      { value: 'Paid', label: 'Paid' },
+      { value: 'Failed', label: 'Failed' }
     ], order.paymentStatus || '');
 
     const message = document.createElement('textarea');
