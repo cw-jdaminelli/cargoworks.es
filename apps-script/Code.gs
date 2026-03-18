@@ -390,6 +390,10 @@ function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference,
     updatesPreference: updatesPreference || '',
     trackingUrl: trackingUrl || '',
     trackingToken: String(trackingToken || '').trim(),
+    rider: { name: '', phone: '' },
+    internalNotes: '',
+    createdBy: 'system',
+    lastEditedBy: 'system',
     podUrl: '',
     timeline: [{
       ts: new Date().toISOString(),
@@ -978,9 +982,392 @@ function handleAdminPost(payload){
     return jsonResponse({ error: 'Unauthorized' }, 401);
   }
   const action = String(payload.action || '').trim();
+  if (action === 'adminCreateOrder') return handleAdminCreateOrder(payload);
+  if (action === 'adminEditOrder') return handleAdminEditOrder(payload);
+  if (action === 'adminDuplicateOrder') return handleAdminDuplicateOrder(payload);
+  if (action === 'adminCancelOrder') return handleAdminCancelOrder(payload);
   if (action === 'adminUpdate') return handleAdminUpdate(payload);
   if (action === 'adminPod') return handleAdminPod(payload);
   return jsonResponse({ error: 'Unknown action' }, 400);
+}
+
+function safeNumber(value, fallback){
+  const n = Number(value);
+  return Number.isFinite(n) ? n : (Number(fallback) || 0);
+}
+
+function cleanOrderText(value){
+  return String(value || '').trim();
+}
+
+function normalizeStopsForOrder(stops){
+  const items = Array.isArray(stops) ? stops : [];
+  return items.map(function(stop){
+    const address = cleanOrderText(stop && stop.address);
+    if (!address) return null;
+    return { address: address };
+  }).filter(Boolean);
+}
+
+function normalizePricingBreakdown(input, currentTotal){
+  const source = input && typeof input === 'object' ? input : {};
+  const base = safeNumber(source.base, 0);
+  const distance = safeNumber(source.distance, 0);
+  const stops = safeNumber(source.stops, 0);
+  const surcharge = safeNumber(source.surcharge, 0);
+  const discount = safeNumber(source.discount, 0);
+  const adjustment = safeNumber(source.adjustment, 0);
+  const computedTotal = base + distance + stops + surcharge - discount + adjustment;
+  const total = Number.isFinite(currentTotal) ? currentTotal : computedTotal;
+  return {
+    base: base,
+    distance: distance,
+    stops: stops,
+    surcharge: surcharge,
+    discount: discount,
+    adjustment: adjustment,
+    total: total
+  };
+}
+
+function mergeAdminOrderPayload(orderInput, existingPayload){
+  const base = existingPayload && typeof existingPayload === 'object' ? existingPayload : {};
+  const incoming = orderInput && typeof orderInput === 'object' ? orderInput : {};
+  const baseQuote = base.quote && typeof base.quote === 'object' ? base.quote : {};
+  const incomingQuote = incoming.quote && typeof incoming.quote === 'object' ? incoming.quote : {};
+  const baseCustomer = base.customer && typeof base.customer === 'object' ? base.customer : {};
+  const incomingCustomer = incoming.customer && typeof incoming.customer === 'object' ? incoming.customer : {};
+  const baseRoute = baseQuote.route && typeof baseQuote.route === 'object' ? baseQuote.route : {};
+  const incomingRoute = incomingQuote.route && typeof incomingQuote.route === 'object' ? incomingQuote.route : {};
+  const baseSchedule = baseQuote.schedule && typeof baseQuote.schedule === 'object' ? baseQuote.schedule : {};
+  const incomingSchedule = incomingQuote.schedule && typeof incomingQuote.schedule === 'object' ? incomingQuote.schedule : {};
+
+  const customer = {
+    name: cleanOrderText(incomingCustomer.name || baseCustomer.name || ''),
+    email: cleanOrderText(incomingCustomer.email || baseCustomer.email || ''),
+    phone: cleanOrderText(incomingCustomer.phone || baseCustomer.phone || '')
+  };
+
+  const pickupAddress = cleanOrderText((incomingRoute.pickup && incomingRoute.pickup.address) || (baseRoute.pickup && baseRoute.pickup.address) || '');
+  const dropoffAddress = cleanOrderText((incomingRoute.dropoff && incomingRoute.dropoff.address) || (baseRoute.dropoff && baseRoute.dropoff.address) || '');
+  const stops = normalizeStopsForOrder(
+    Array.isArray(incomingRoute.stops) ? incomingRoute.stops : (Array.isArray(baseRoute.stops) ? baseRoute.stops : [])
+  );
+
+  const schedule = {
+    date: cleanOrderText(incomingSchedule.date || baseSchedule.date || ''),
+    time: cleanOrderText(incomingSchedule.time || baseSchedule.time || '')
+  };
+
+  const total = safeNumber((incomingQuote.total != null ? incomingQuote.total : baseQuote.total), 0);
+  const quote = {
+    schedule: schedule,
+    route: {
+      pickup: { address: pickupAddress },
+      stops: stops,
+      dropoff: { address: dropoffAddress }
+    },
+    total: total,
+    etaMins: Math.max(15, safeNumber((incomingQuote.etaMins != null ? incomingQuote.etaMins : baseQuote.etaMins), DEFAULT_DURATION_MIN)),
+    totalKm: safeNumber((incomingQuote.totalKm != null ? incomingQuote.totalKm : baseQuote.totalKm), 0),
+    currency: cleanOrderText(incomingQuote.currency || baseQuote.currency || 'EUR'),
+    cargoType: cleanOrderText(incomingQuote.cargoType || baseQuote.cargoType || ''),
+    loadType: cleanOrderText(incomingQuote.loadType || baseQuote.loadType || ''),
+    vehicleType: cleanOrderText(incomingQuote.vehicleType || baseQuote.vehicleType || ''),
+    packageCount: safeNumber((incomingQuote.packageCount != null ? incomingQuote.packageCount : baseQuote.packageCount), 0),
+    weightKg: safeNumber((incomingQuote.weightKg != null ? incomingQuote.weightKg : baseQuote.weightKg), 0),
+    volumeM3: safeNumber((incomingQuote.volumeM3 != null ? incomingQuote.volumeM3 : baseQuote.volumeM3), 0)
+  };
+  quote.breakdown = normalizePricingBreakdown(
+    incomingQuote.breakdown || baseQuote.breakdown || {},
+    Number(quote.total)
+  );
+
+  return {
+    customer: customer,
+    quote: quote,
+    notes: cleanOrderText((incoming.notes != null ? incoming.notes : base.notes) || ''),
+    updatesPreference: cleanOrderText((incoming.updatesPreference != null ? incoming.updatesPreference : base.updatesPreference) || ''),
+    language: cleanOrderText((incoming.language != null ? incoming.language : base.language) || 'en'),
+    sourceUrl: cleanOrderText((incoming.sourceUrl != null ? incoming.sourceUrl : base.sourceUrl) || 'https://cargoworks.es/admin/dispatcher.html')
+  };
+}
+
+function validateAdminOrderPayload(payloadData){
+  const quote = payloadData && payloadData.quote ? payloadData.quote : {};
+  const schedule = quote.schedule || {};
+  const route = quote.route || {};
+  const dateKey = cleanOrderText(schedule.date);
+  const timeLabel = cleanOrderText(schedule.time);
+  if (!dateKey || !timeLabel) return 'Date and time are required.';
+  if (!dateTimeFromKey(dateKey, timeLabel, TIMEZONE)) return 'Invalid date or time.';
+  const pickup = cleanOrderText(route.pickup && route.pickup.address);
+  const dropoff = cleanOrderText(route.dropoff && route.dropoff.address);
+  if (!pickup || !dropoff) return 'Pickup and dropoff are required.';
+  return '';
+}
+
+function buildOrderTitle(status, customerName, reference){
+  const cleanStatus = normalizeOrderStatus(status) || DEFAULT_STATUS_LABEL;
+  const cleanName = cleanOrderText(customerName || 'Customer') || 'Customer';
+  return cleanStatus + ' - Cargoworks booking - ' + cleanName + ' - ' + String(reference || '').trim();
+}
+
+function applyOperatorMetadata(adminData, operator){
+  const who = cleanOrderText(operator || 'dispatcher') || 'dispatcher';
+  adminData.lastEditedBy = who;
+  if (!adminData.createdBy) adminData.createdBy = who;
+  return who;
+}
+
+function pushAdminTimeline(adminData, status, message, via){
+  adminData.timeline = Array.isArray(adminData.timeline) ? adminData.timeline : [];
+  adminData.timeline.push({
+    ts: new Date().toISOString(),
+    status: status || adminData.status || DEFAULT_STATUS_LABEL,
+    message: cleanOrderText(message),
+    via: cleanOrderText(via || 'dispatcher') || 'dispatcher'
+  });
+  adminData.lastUpdateAt = new Date().toISOString();
+}
+
+function handleAdminCreateOrder(payload){
+  try {
+    const draft = mergeAdminOrderPayload(payload.order || {}, {});
+    const validation = validateAdminOrderPayload(draft);
+    if (validation) return jsonResponse({ error: validation }, 400);
+
+    const quote = draft.quote || {};
+    const schedule = quote.schedule || {};
+    const dateKey = cleanOrderText(schedule.date);
+    const timeLabel = cleanOrderText(schedule.time);
+    const start = dateTimeFromKey(dateKey, timeLabel, TIMEZONE);
+    const etaMins = Math.max(15, safeNumber(quote.etaMins, DEFAULT_DURATION_MIN));
+    const end = new Date(start.getTime() + (etaMins * 60000));
+
+    const shortRef = buildShortRef(dateKey);
+    const trackingToken = generatePublicToken(24);
+    draft.reference = shortRef;
+    draft.whatsappUrl = buildWhatsAppUrl(shortRef);
+    draft.trackingUrl = buildTrackingUrl(draft, shortRef, trackingToken);
+    draft.paymentUrl = cleanOrderText(payload.paymentUrl || (payload.order && payload.order.paymentUrl) || '');
+
+    const status = normalizeOrderStatus(payload.status || (payload.order && payload.order.status) || '') || DEFAULT_STATUS_LABEL;
+    const paymentStatus = normalizePaymentStatus(payload.paymentStatus || (payload.order && payload.order.paymentStatus) || '', !!draft.paymentUrl) || 'Pending';
+    const updatesPreference = cleanOrderText(payload.updatesPreference || draft.updatesPreference || '');
+    const adminData = buildDefaultAdminData(draft, null, draft.trackingUrl, updatesPreference, trackingToken);
+    adminData.status = status;
+    adminData.paymentStatus = paymentStatus;
+    adminData.paymentUrl = draft.paymentUrl;
+    adminData.updatesPreference = updatesPreference;
+    adminData.rider = {
+      name: cleanOrderText(payload.riderName || (payload.order && payload.order.riderName) || ''),
+      phone: cleanOrderText(payload.riderPhone || (payload.order && payload.order.riderPhone) || '')
+    };
+    adminData.internalNotes = cleanOrderText(payload.internalNotes || (payload.order && payload.order.internalNotes) || '');
+    const operator = applyOperatorMetadata(adminData, payload.operator);
+    adminData.timeline = [];
+    pushAdminTimeline(adminData, status, 'Order created manually by ' + operator, 'dispatcher');
+
+    const description = buildEventDescription(draft, adminData);
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+    const event = cal.createEvent(buildOrderTitle(status, draft.customer && draft.customer.name, shortRef), start, end, {
+      description: description,
+      location: getPickupAddress(quote)
+    });
+
+    appendOrderLogEntry({
+      action: 'admin_create_order',
+      eventId: event.getId(),
+      payload: draft,
+      adminData: adminData,
+      status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: 'Order created manually',
+      build: BUILD_ID
+    });
+
+    return jsonResponse({ ok: true, order: buildOrderSummary(event) }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+function handleAdminEditOrder(payload){
+  try {
+    const eventId = cleanOrderText(payload.eventId);
+    if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+    const event = cal.getEventById(eventId);
+    if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+    const desc = String(event.getDescription() || '');
+    const existingPayload = extractPayloadFromDescription(desc) || {};
+    const adminData = ensureAdminData(desc, existingPayload);
+    const draft = mergeAdminOrderPayload(payload.order || {}, existingPayload);
+    draft.reference = cleanOrderText(existingPayload.reference || payload.reference || '');
+    if (!draft.reference) draft.reference = buildShortRef(String((draft.quote && draft.quote.schedule && draft.quote.schedule.date) || ''));
+    draft.trackingUrl = cleanOrderText(adminData.trackingUrl || draft.trackingUrl || buildTrackingUrl(draft, draft.reference, adminData.trackingToken));
+    draft.whatsappUrl = cleanOrderText(existingPayload.whatsappUrl || buildWhatsAppUrl(draft.reference));
+    draft.paymentUrl = cleanOrderText(payload.paymentUrl || (payload.order && payload.order.paymentUrl) || adminData.paymentUrl || existingPayload.paymentUrl || '');
+
+    const validation = validateAdminOrderPayload(draft);
+    if (validation) return jsonResponse({ error: validation }, 400);
+
+    const quote = draft.quote || {};
+    const schedule = quote.schedule || {};
+    const start = dateTimeFromKey(cleanOrderText(schedule.date), cleanOrderText(schedule.time), TIMEZONE);
+    const etaMins = Math.max(15, safeNumber(quote.etaMins, DEFAULT_DURATION_MIN));
+    const end = new Date(start.getTime() + (etaMins * 60000));
+
+    const status = normalizeOrderStatus(payload.status || (payload.order && payload.order.status) || adminData.status) || DEFAULT_STATUS_LABEL;
+    const paymentStatus = normalizePaymentStatus(payload.paymentStatus || (payload.order && payload.order.paymentStatus) || adminData.paymentStatus, !!draft.paymentUrl) || adminData.paymentStatus || 'Pending';
+    adminData.status = status;
+    adminData.paymentStatus = paymentStatus;
+    adminData.paymentUrl = draft.paymentUrl;
+    adminData.updatesPreference = cleanOrderText(payload.updatesPreference || draft.updatesPreference || adminData.updatesPreference || '');
+    adminData.rider = {
+      name: cleanOrderText(payload.riderName || (payload.order && payload.order.riderName) || (adminData.rider && adminData.rider.name) || ''),
+      phone: cleanOrderText(payload.riderPhone || (payload.order && payload.order.riderPhone) || (adminData.rider && adminData.rider.phone) || '')
+    };
+    adminData.internalNotes = cleanOrderText(payload.internalNotes || (payload.order && payload.order.internalNotes) || adminData.internalNotes || '');
+    const operator = applyOperatorMetadata(adminData, payload.operator);
+    const editMessage = cleanOrderText(payload.message || 'Order edited by ' + operator);
+    pushAdminTimeline(adminData, status, editMessage, 'dispatcher');
+
+    event.setTime(start, end);
+    event.setLocation(getPickupAddress(quote));
+    event.setTitle(buildOrderTitle(status, draft.customer && draft.customer.name, draft.reference));
+    event.setDescription(buildEventDescription(draft, adminData));
+
+    appendOrderLogEntry({
+      action: 'admin_edit_order',
+      eventId: event.getId(),
+      payload: draft,
+      adminData: adminData,
+      status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: editMessage,
+      build: BUILD_ID
+    });
+
+    return jsonResponse({ ok: true, order: buildOrderSummary(event) }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+function handleAdminDuplicateOrder(payload){
+  try {
+    const eventId = cleanOrderText(payload.eventId);
+    if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+    const event = cal.getEventById(eventId);
+    if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+    const desc = String(event.getDescription() || '');
+    const existingPayload = extractPayloadFromDescription(desc) || {};
+    const existingAdminData = ensureAdminData(desc, existingPayload);
+    const draft = mergeAdminOrderPayload(payload.order || {}, existingPayload);
+    const validation = validateAdminOrderPayload(draft);
+    if (validation) return jsonResponse({ error: validation }, 400);
+
+    const quote = draft.quote || {};
+    const schedule = quote.schedule || {};
+    const start = dateTimeFromKey(cleanOrderText(schedule.date), cleanOrderText(schedule.time), TIMEZONE);
+    const etaMins = Math.max(15, safeNumber(quote.etaMins, DEFAULT_DURATION_MIN));
+    const end = new Date(start.getTime() + (etaMins * 60000));
+
+    const shortRef = buildShortRef(cleanOrderText(schedule.date));
+    const trackingToken = generatePublicToken(24);
+    draft.reference = shortRef;
+    draft.whatsappUrl = buildWhatsAppUrl(shortRef);
+    draft.trackingUrl = buildTrackingUrl(draft, shortRef, trackingToken);
+    draft.paymentUrl = cleanOrderText(payload.paymentUrl || '');
+
+    const status = DEFAULT_STATUS_LABEL;
+    const paymentStatus = normalizePaymentStatus(payload.paymentStatus || 'Pending', !!draft.paymentUrl) || 'Pending';
+    const adminData = buildDefaultAdminData(draft, null, draft.trackingUrl, draft.updatesPreference || '', trackingToken);
+    adminData.status = status;
+    adminData.paymentStatus = paymentStatus;
+    adminData.paymentUrl = draft.paymentUrl;
+    adminData.rider = {
+      name: cleanOrderText((existingAdminData.rider && existingAdminData.rider.name) || ''),
+      phone: cleanOrderText((existingAdminData.rider && existingAdminData.rider.phone) || '')
+    };
+    adminData.internalNotes = cleanOrderText((existingAdminData.internalNotes || ''));
+    const operator = applyOperatorMetadata(adminData, payload.operator);
+    adminData.timeline = [];
+    const fromRef = cleanOrderText(existingPayload.reference || 'order');
+    pushAdminTimeline(adminData, status, 'Order duplicated from ' + fromRef + ' by ' + operator, 'dispatcher');
+
+    const duplicateEvent = cal.createEvent(buildOrderTitle(status, draft.customer && draft.customer.name, shortRef), start, end, {
+      description: buildEventDescription(draft, adminData),
+      location: getPickupAddress(quote)
+    });
+
+    appendOrderLogEntry({
+      action: 'admin_duplicate_order',
+      eventId: duplicateEvent.getId(),
+      payload: draft,
+      adminData: adminData,
+      status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: 'Order duplicated from ' + fromRef,
+      build: BUILD_ID
+    });
+
+    return jsonResponse({ ok: true, order: buildOrderSummary(duplicateEvent) }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+function handleAdminCancelOrder(payload){
+  try {
+    const eventId = cleanOrderText(payload.eventId);
+    if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
+    const reason = cleanOrderText(payload.reason || 'Canceled by dispatcher');
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+    const event = cal.getEventById(eventId);
+    if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+    const desc = String(event.getDescription() || '');
+    const payloadData = extractPayloadFromDescription(desc) || {};
+    const adminData = ensureAdminData(desc, payloadData);
+    adminData.status = 'Canceled';
+    adminData.canceledAt = new Date().toISOString();
+    adminData.canceledReason = reason;
+    adminData.isArchived = true;
+    const operator = applyOperatorMetadata(adminData, payload.operator);
+    pushAdminTimeline(adminData, 'Canceled', 'Order canceled by ' + operator + '. Reason: ' + reason, 'dispatcher');
+
+    event.setTitle(buildOrderTitle('Canceled', payloadData && payloadData.customer && payloadData.customer.name, payloadData.reference || extractReferenceFromText(event.getTitle() || '')));
+    event.setDescription(upsertAdminData(desc, adminData));
+
+    appendOrderLogEntry({
+      action: 'admin_cancel_order',
+      eventId: event.getId(),
+      payload: payloadData,
+      adminData: adminData,
+      status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: reason,
+      build: BUILD_ID
+    });
+
+    return jsonResponse({ ok: true, order: buildOrderSummary(event) }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
 }
 
 function handlePaymentReturn(payload){
@@ -1100,8 +1487,47 @@ function handleAdminUpdate(payload){
     const paymentStatus = paymentInput ? normalizePaymentStatus(paymentInput, hasPaymentUrl) : '';
     if (paymentInput && !paymentStatus) return jsonResponse({ error: 'Invalid paymentStatus' }, 400);
 
+    const riderName = cleanOrderText(payload.riderName || '');
+    const riderPhone = cleanOrderText(payload.riderPhone || '');
+    const prevRiderName = cleanOrderText(adminData.rider && adminData.rider.name || '');
+    const prevRiderPhone = cleanOrderText(adminData.rider && adminData.rider.phone || '');
+    const internalNotes = cleanOrderText(payload.internalNotes || '');
+    const operator = cleanOrderText(payload.operator || 'dispatcher') || 'dispatcher';
+    const scheduleDateInput = cleanOrderText(payload.scheduleDate || '');
+    const scheduleTimeInput = cleanOrderText(payload.scheduleTime || '');
+    const etaInput = payload.etaMins;
+
     if (status) adminData.status = status;
     if (paymentStatus) adminData.paymentStatus = paymentStatus;
+    if (!adminData.rider || typeof adminData.rider !== 'object') adminData.rider = { name: '', phone: '' };
+    if (riderName || riderPhone) {
+      adminData.rider.name = riderName || adminData.rider.name || '';
+      adminData.rider.phone = riderPhone || adminData.rider.phone || '';
+    }
+    if (internalNotes) adminData.internalNotes = internalNotes;
+    applyOperatorMetadata(adminData, operator);
+
+    let scheduleChanged = false;
+    const quoteData = (payloadData.quote && typeof payloadData.quote === 'object') ? payloadData.quote : {};
+    const quoteSchedule = (quoteData.schedule && typeof quoteData.schedule === 'object') ? quoteData.schedule : {};
+    const nextDate = scheduleDateInput || cleanOrderText(quoteSchedule.date || '');
+    const nextTime = scheduleTimeInput || cleanOrderText(quoteSchedule.time || '');
+    if ((scheduleDateInput || scheduleTimeInput) && (!nextDate || !nextTime || !dateTimeFromKey(nextDate, nextTime, TIMEZONE))) {
+      return jsonResponse({ error: 'Invalid schedule date/time' }, 400);
+    }
+    if (scheduleDateInput || scheduleTimeInput) {
+      if (!payloadData.quote || typeof payloadData.quote !== 'object') payloadData.quote = {};
+      if (!payloadData.quote.schedule || typeof payloadData.quote.schedule !== 'object') payloadData.quote.schedule = {};
+      payloadData.quote.schedule.date = nextDate;
+      payloadData.quote.schedule.time = nextTime;
+      scheduleChanged = true;
+    }
+    if (etaInput != null && etaInput !== '') {
+      if (!payloadData.quote || typeof payloadData.quote !== 'object') payloadData.quote = {};
+      payloadData.quote.etaMins = Math.max(15, safeNumber(etaInput, DEFAULT_DURATION_MIN));
+      scheduleChanged = true;
+    }
+
     const message = String(payload.message || payload.note || '').trim();
     const send = payload.send || {};
     const sendEmail = !!send.email;
@@ -1124,6 +1550,24 @@ function handleAdminUpdate(payload){
         ts: ts,
         status: adminData.status || '',
         message: 'Payment status changed from ' + (prevPaymentStatus || '-') + ' to ' + paymentStatus,
+        via: 'dispatcher'
+      });
+      adminData.lastUpdateAt = ts;
+    }
+    if ((riderName || riderPhone) && (cleanOrderText(adminData.rider && adminData.rider.name || '') !== prevRiderName || cleanOrderText(adminData.rider && adminData.rider.phone || '') !== prevRiderPhone)) {
+      adminData.timeline.push({
+        ts: ts,
+        status: adminData.status || '',
+        message: 'Rider assignment updated',
+        via: 'dispatcher'
+      });
+      adminData.lastUpdateAt = ts;
+    }
+    if (scheduleChanged) {
+      adminData.timeline.push({
+        ts: ts,
+        status: adminData.status || '',
+        message: 'Schedule updated by dispatcher',
         via: 'dispatcher'
       });
       adminData.lastUpdateAt = ts;
@@ -1155,13 +1599,28 @@ function handleAdminUpdate(payload){
         });
       }
     }
-    const updatedDesc = upsertAdminData(desc, adminData);
+    const mergedPayload = Object.assign({}, payloadData);
+    if (!mergedPayload.reference) mergedPayload.reference = extractReferenceFromText(event.getTitle() || '') || '';
+    const updatedDesc = buildEventDescription(mergedPayload, adminData);
     event.setDescription(updatedDesc);
+    if (scheduleChanged) {
+      const scheduleDate = cleanOrderText(mergedPayload && mergedPayload.quote && mergedPayload.quote.schedule && mergedPayload.quote.schedule.date || '');
+      const scheduleTime = cleanOrderText(mergedPayload && mergedPayload.quote && mergedPayload.quote.schedule && mergedPayload.quote.schedule.time || '');
+      const start = dateTimeFromKey(scheduleDate, scheduleTime, TIMEZONE);
+      if (start) {
+        const etaMins = Math.max(15, safeNumber(mergedPayload && mergedPayload.quote && mergedPayload.quote.etaMins, DEFAULT_DURATION_MIN));
+        const end = new Date(start.getTime() + (etaMins * 60000));
+        event.setTime(start, end);
+      }
+      if (mergedPayload && mergedPayload.quote && mergedPayload.quote.route) {
+        event.setLocation(getPickupAddress(mergedPayload.quote));
+      }
+    }
     if (status) setEventStatusTitle(event, status);
     appendOrderLogEntry({
       action: 'admin_update',
       eventId: event.getId(),
-      payload: payloadData,
+      payload: mergedPayload,
       adminData: adminData,
       status: adminData.status,
       paymentStatus: adminData.paymentStatus,
@@ -1290,6 +1749,12 @@ function ensureAdminData(desc, payload){
   adminData.paymentStatus = normalizePaymentStatus(adminData.paymentStatus, !!effectivePaymentUrl);
   adminData.paymentUrl = effectivePaymentUrl;
   adminData.trackingToken = String(adminData.trackingToken || '').trim();
+  if (!adminData.rider || typeof adminData.rider !== 'object') adminData.rider = { name: '', phone: '' };
+  adminData.rider.name = cleanOrderText(adminData.rider.name || '');
+  adminData.rider.phone = cleanOrderText(adminData.rider.phone || '');
+  adminData.internalNotes = cleanOrderText(adminData.internalNotes || '');
+  adminData.createdBy = cleanOrderText(adminData.createdBy || 'system') || 'system';
+  adminData.lastEditedBy = cleanOrderText(adminData.lastEditedBy || adminData.createdBy || 'system') || 'system';
 
   if (!adminData.trackingUrl) {
     const ref = payload && payload.reference ? String(payload.reference) : '';
@@ -1359,11 +1824,20 @@ function buildOrderSummary(event){
       trackingUrl: adminData.trackingUrl || payload.trackingUrl || '',
       trackingToken: adminData.trackingToken || '',
       updatesPreference: adminData.updatesPreference || payload.updatesPreference || '',
+      riderName: cleanOrderText(adminData.rider && adminData.rider.name || ''),
+      riderPhone: cleanOrderText(adminData.rider && adminData.rider.phone || ''),
+      internalNotes: cleanOrderText(adminData.internalNotes || ''),
+      canceledAt: cleanOrderText(adminData.canceledAt || ''),
+      canceledReason: cleanOrderText(adminData.canceledReason || ''),
+      isArchived: !!adminData.isArchived,
+      createdBy: cleanOrderText(adminData.createdBy || ''),
+      lastEditedBy: cleanOrderText(adminData.lastEditedBy || ''),
       podUrl: adminData.podUrl || '',
       timeline: timeline,
       dispatcherNotes: dispatcherNotes,
       deliveryNote: latestDispatcherNoteText(dispatcherNotes),
       schedule: schedule,
+      quote: payload.quote && typeof payload.quote === 'object' ? payload.quote : {},
       customer: {
         name: String(customer.name || ''),
         email: String(customer.email || ''),

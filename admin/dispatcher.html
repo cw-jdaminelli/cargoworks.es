@@ -6,136 +6,320 @@
   </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CARGOWORKS - Dispatcher Console</title>
+  <title>CARGOWORKS - Dispatcher Workspace</title>
   <link rel="stylesheet" href="../css/effects/layout.css"/>
   <style>
     :root {
-      --dispatch-ink: #172132;
+      --dispatch-ink: #182335;
+      --dispatch-muted: #50617a;
       --dispatch-accent: #f07b39;
-      --dispatch-bg: #f6efe7;
+      --dispatch-bg: #ece8f2;
       --dispatch-card: #ffffff;
-      --dispatch-border: rgba(23, 33, 50, 0.12);
+      --dispatch-border: rgba(22, 35, 54, 0.14);
+      --dispatch-soft: rgba(22, 35, 54, 0.04);
+      --dispatch-danger: #c53d3d;
+      --dispatch-ok: #1c8a5a;
+      --dispatch-header-height: min(30vh, 300px);
     }
     body { background: var(--dispatch-bg); color: var(--dispatch-ink); }
-    .dispatcher-shell { max-width: 1100px; margin: 5rem auto 4rem; padding: 0 1.5rem; }
-    .dispatcher-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
-    .dispatcher-header h1 { font-family: 'Barlow Condensed', 'Oswald', sans-serif; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: 0.04em; text-transform: uppercase; }
-    .dispatcher-filters { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
-    .dispatcher-tools {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 0.6rem;
-      margin-bottom: 1rem;
+    .dispatcher-shell { max-width: 1280px; margin: 0 auto 2rem; padding: 0 1rem 1rem; display: grid; gap: 0.65rem; }
+    .dispatcher-panel {
+      background: rgba(255,255,255,0.82);
+      border: 1px solid var(--dispatch-border);
+      border-radius: 12px;
+      padding: 0.6rem;
+      box-shadow: 0 18px 36px rgba(24, 35, 53, 0.08);
+      backdrop-filter: blur(8px);
     }
-    .dispatcher-tools input[type="text"],
-    .dispatcher-tools input[type="date"],
-    .dispatcher-tools select {
+    .dispatcher-header {
+      position: fixed;
+      top: 0.65rem;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(1280px, calc(100% - 2rem));
+      max-height: var(--dispatch-header-height);
+      overflow: auto;
+      z-index: 20;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.55rem;
+    }
+    .dispatcher-title-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .dispatcher-title h1 {
+      font-family: 'Barlow Condensed', 'Oswald', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: clamp(1.35rem, 2.2vw, 1.95rem);
+      margin: 0;
+    }
+    .dispatcher-title p { margin: 0.08rem 0 0; color: var(--dispatch-muted); font-size: 0.78rem; }
+    .dispatcher-primary-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .dispatcher-primary-actions .btn { padding: 0.35rem 0.58rem; font-size: 0.77rem; }
+    .dispatcher-primary-actions .dispatcher-status { font-size: 0.78rem; }
+
+    .dispatcher-grid-controls {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 0.35rem;
+      align-items: end;
+    }
+    .dispatcher-field {
+      display: grid;
+      gap: 0.15rem;
+      min-width: 0;
+    }
+    .dispatcher-field label {
+      font-size: 0.66rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--dispatch-muted);
+      font-weight: 700;
+    }
+    .dispatcher-field input,
+    .dispatcher-field select,
+    .dispatcher-field textarea {
       width: 100%;
-      padding: 0.5rem 0.6rem;
-      border-radius: 10px;
+      padding: 0.34rem 0.46rem;
+      border-radius: 8px;
       border: 1px solid var(--dispatch-border);
       background: #fff;
+      color: var(--dispatch-ink);
+      font-size: 0.78rem;
     }
-    .dispatcher-tools .dispatcher-controls-inline {
-      display: flex;
-      gap: 0.45rem;
-      align-items: center;
-      flex-wrap: wrap;
+    .dispatcher-field textarea { min-height: 56px; resize: vertical; }
+
+    .span-2 { grid-column: span 2; }
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+
+    .dispatcher-orders {
+      display: grid;
+      gap: 0.55rem;
+      margin-top: calc(var(--dispatch-header-height) + 0.75rem);
     }
-    .dispatcher-filters input[type="date"] { padding: 0.45rem 0.6rem; border-radius: 10px; border: 1px solid var(--dispatch-border); background: #fff; }
-    .dispatcher-filters input[type="text"] { padding: 0.45rem 0.6rem; border-radius: 10px; border: 1px solid var(--dispatch-border); background: #fff; }
-    .dispatcher-search { display: flex; align-items: center; gap: 0.35rem; background: #fff; border: 1px solid var(--dispatch-border); border-radius: 10px; padding: 0.2rem 0.5rem; }
-    .dispatcher-search-prefix { font-weight: 700; color: #39455f; letter-spacing: 0.03em; }
-    .dispatcher-search input { border: none; outline: none; padding: 0.3rem 0.2rem; min-width: 150px; }
-    .dispatcher-search input::placeholder { color: rgba(57, 69, 95, 0.6); }
-    .dispatcher-status { font-size: 0.9rem; color: #3a4a63; }
-    .dispatcher-orders { display: grid; gap: 1.2rem; }
-    .dispatcher-card { background: var(--dispatch-card); border-radius: 16px; padding: 1.2rem 1.4rem; border: 1px solid var(--dispatch-border); box-shadow: 0 16px 32px rgba(23, 33, 50, 0.08); }
-    .dispatcher-card h3 { font-family: 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.4rem; }
-    .dispatcher-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.4rem 1rem; font-size: 0.92rem; }
-    .dispatcher-meta span { display: block; }
-    .dispatcher-notes {
-      margin-top: 0.7rem;
-      padding: 0.65rem 0.75rem;
+    .dispatcher-card {
+      background: var(--dispatch-card);
       border-radius: 12px;
       border: 1px solid var(--dispatch-border);
-      background: rgba(23, 33, 50, 0.03);
-      font-size: 0.9rem;
-      color: #2f3f52;
+      box-shadow: 0 10px 22px rgba(22, 35, 54, 0.08);
+      padding: 0.62rem 0.68rem;
+      display: grid;
+      gap: 0.56rem;
     }
-    .dispatcher-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem; margin-top: 1rem; }
-    .dispatcher-actions select, .dispatcher-actions textarea, .dispatcher-actions input[type="text"] { width: 100%; padding: 0.5rem 0.6rem; border-radius: 10px; border: 1px solid var(--dispatch-border); }
-    .dispatcher-actions textarea { min-height: 86px; resize: vertical; }
-    .dispatcher-controls { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
-    .dispatcher-chip { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.6rem; border-radius: 999px; background: rgba(240, 123, 57, 0.12); color: #a44a1d; font-size: 0.82rem; }
-    .dispatcher-timeline { margin-top: 0.9rem; padding-left: 1rem; font-size: 0.88rem; color: #3a4a63; }
-    .dispatcher-timeline li { margin-bottom: 0.35rem; }
-    .dispatcher-links a { color: var(--dispatch-accent); text-decoration: none; font-weight: 600; }
-    .dispatcher-links a:hover { text-decoration: underline; }
-    .dispatcher-channel { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; }
-    .dispatcher-channel input { margin: 0; }
-    .dispatcher-pod { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-    .dispatcher-action-btn {
-      padding: 0.35rem 0.6rem;
+    .dispatcher-card-top { display: flex; justify-content: space-between; gap: 0.8rem; align-items: flex-start; flex-wrap: wrap; }
+    .dispatcher-card-title h3 { margin: 0; font-size: 0.94rem; letter-spacing: 0.02em; }
+    .dispatcher-subline { font-size: 0.76rem; color: var(--dispatch-muted); margin-top: 0.08rem; }
+    .dispatcher-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .dispatcher-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      border: 1px solid var(--dispatch-border);
+      background: var(--dispatch-soft);
+      color: #2c3e56;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      font-weight: 700;
+    }
+    .dispatcher-chip.is-danger { background: rgba(197, 61, 61, 0.12); color: #8d2525; border-color: rgba(197, 61, 61, 0.28); }
+    .dispatcher-chip.is-ok { background: rgba(28, 138, 90, 0.12); color: #1b6f49; border-color: rgba(28, 138, 90, 0.25); }
+
+    .dispatcher-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 0.22rem 0.5rem;
+      font-size: 0.78rem;
+      color: #2d3f57;
+    }
+    .dispatcher-meta strong { font-weight: 700; }
+
+    .dispatcher-quick {
+      display: grid;
+      gap: 0.32rem;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      align-items: end;
+      border-top: 1px dashed var(--dispatch-border);
+      padding-top: 0.4rem;
+    }
+    .dispatcher-inline-actions { display: flex; flex-wrap: wrap; gap: 0.24rem; }
+    .dispatcher-inline-actions .btn { padding: 0.3rem 0.52rem; font-size: 0.72rem; }
+
+    .dispatcher-pricing,
+    .dispatcher-history,
+    .dispatcher-notes {
+      border: 1px solid var(--dispatch-border);
+      border-radius: 8px;
+      background: rgba(22, 35, 54, 0.03);
+      padding: 0.42rem 0.48rem;
+    }
+    .dispatcher-block-title {
+      font-size: 0.69rem;
+      color: var(--dispatch-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+    .dispatcher-pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0.24rem;
+      font-size: 0.76rem;
+    }
+    .dispatcher-pricing-grid span { display: block; }
+    .dispatcher-pricing-grid .value { font-weight: 700; color: #21364d; }
+
+    .dispatcher-history ul { padding-left: 1rem; margin: 0; display: grid; gap: 0.24rem; }
+    .dispatcher-history li { font-size: 0.74rem; color: #334a64; }
+
+    .dispatcher-empty {
+      padding: 2rem 1rem;
+      border: 1px dashed var(--dispatch-border);
+      border-radius: 12px;
+      text-align: center;
+      color: var(--dispatch-muted);
+      background: rgba(255,255,255,0.55);
+    }
+
+    .dispatcher-status { font-size: 0.78rem; color: #2f4460; }
+    .dispatcher-status.is-error { color: var(--dispatch-danger); }
+
+    .dispatcher-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(14, 20, 31, 0.52);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 40;
+      padding: 1rem;
+    }
+    .dispatcher-modal.is-open { display: flex; }
+    .dispatcher-modal-card {
+      width: min(1120px, 100%);
+      max-height: calc(100vh - 2rem);
+      overflow: auto;
+      background: #fff;
+      border-radius: 14px;
+      border: 1px solid var(--dispatch-border);
+      box-shadow: 0 20px 42px rgba(7, 13, 24, 0.35);
+      padding: 1rem;
+      display: grid;
+      gap: 0.8rem;
+    }
+    .dispatcher-modal-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.7rem;
+      border-bottom: 1px solid var(--dispatch-border);
+      padding-bottom: 0.55rem;
+    }
+    .dispatcher-modal-head h2 {
+      margin: 0;
+      font-family: 'Oswald', sans-serif;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      font-size: 1.35rem;
+    }
+    .dispatcher-modal-sections {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 0.55rem;
+    }
+    .dispatcher-section {
+      border: 1px solid var(--dispatch-border);
+      border-radius: 11px;
+      padding: 0.6rem;
+      background: #fafbfd;
+      display: grid;
+      gap: 0.45rem;
+    }
+    .dispatcher-section h3 {
+      margin: 0;
       font-size: 0.82rem;
-      border-radius: 10px;
+      color: var(--dispatch-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      font-weight: 800;
     }
+    .dispatcher-notice {
+      border-radius: 9px;
+      padding: 0.45rem 0.6rem;
+      font-size: 0.82rem;
+      border: 1px solid rgba(240, 123, 57, 0.42);
+      background: rgba(240, 123, 57, 0.12);
+      color: #8f471f;
+      display: none;
+    }
+    .dispatcher-notice.is-visible { display: block; }
+
+    .dispatcher-modal-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.6rem;
+      align-items: center;
+      border-top: 1px solid var(--dispatch-border);
+      padding-top: 0.65rem;
+      flex-wrap: wrap;
+    }
+    .dispatcher-action-group { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+
     .dispatcher-toast {
       position: fixed;
-      right: 1.25rem;
-      bottom: 1.25rem;
+      right: 1rem;
+      bottom: 1rem;
       background: #1f2a3b;
       color: #fff;
-      padding: 0.75rem 1rem;
-      border-radius: 12px;
-      box-shadow: 0 12px 30px rgba(0,0,0,0.2);
-      font-size: 0.9rem;
+      border-radius: 10px;
+      padding: 0.7rem 0.9rem;
       opacity: 0;
-      transform: translateY(10px);
-      transition: opacity 0.25s ease, transform 0.25s ease;
-      z-index: 999;
+      transform: translateY(8px);
+      transition: opacity 0.22s ease, transform 0.22s ease;
+      z-index: 60;
       pointer-events: none;
-      max-width: min(320px, 90vw);
+      font-size: 0.87rem;
+      max-width: min(340px, 92vw);
     }
-    .dispatcher-toast.is-visible {
-      opacity: 1;
-      transform: translateY(0);
+    .dispatcher-toast.is-visible { opacity: 1; transform: translateY(0); }
+
+    .dispatcher-danger-copy {
+      font-size: 0.84rem;
+      color: #4f5360;
+      line-height: 1.45;
+      margin-top: 0.2rem;
     }
-    @media (max-width: 720px) {
-      .dispatcher-header { flex-direction: column; align-items: flex-start; }
-    }
-    @media (min-width: 721px) {
-      :root {
-        --dispatch-bg: #e7e4ee;
-      }
-      .dispatcher-shell {
-        display: grid;
-        gap: 1.4rem;
-      }
+
+    @media (max-width: 980px) {
+      .span-8, .span-6, .span-5, .span-4, .span-3, .span-2 { grid-column: span 12; }
+      :root { --dispatch-header-height: min(30vh, 250px); }
+      .dispatcher-shell { padding: 0 0.6rem 0.8rem; }
       .dispatcher-header {
-        margin-bottom: 0;
+        width: calc(100% - 1.2rem);
+        top: 0.35rem;
       }
-      .dispatcher-tools {
-        margin-bottom: 0;
-        gap: 0.8rem;
-        padding: 0.9rem;
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.58);
-        border: 1px solid rgba(74, 86, 114, 0.14);
-      }
-      .dispatcher-orders {
-        gap: 1.5rem;
-      }
-      .dispatcher-card {
-        padding: 1.35rem 1.55rem;
-      }
+      .dispatcher-orders { margin-top: calc(var(--dispatch-header-height) + 0.65rem); }
+      .dispatcher-modal-card { padding: 0.85rem; }
     }
   </style>
 </head>
 <body>
   <div class="admin-gate" id="dispatcherGate">
     <div class="admin-gate-card">
-      <h1>Dispatcher Console</h1>
+      <h1>Dispatcher Workspace</h1>
       <p>Enter the admin token to continue.</p>
       <div class="admin-gate-row">
         <input id="dispatcherTokenInput" type="password" placeholder="Admin token" aria-label="Admin token" />
@@ -145,66 +329,231 @@
     </div>
   </div>
 
-  <header class="site-header">
-    <nav class="hero-nav">
-      <ul class="nav-links">
-        <li><a href="../index.html#zones">Back to site</a></li>
-      </ul>
-    </nav>
-  </header>
-
   <main class="dispatcher-shell">
-    <div class="dispatcher-header">
-      <div>
-        <h1>Dispatcher Console</h1>
-        <p class="dispatcher-status" id="dispatcherSummary">Load a day to see bookings.</p>
-      </div>
-      <div class="dispatcher-filters">
-        <input id="dispatcherDate" type="date" aria-label="Date" />
-        <button id="dispatcherLoad" class="btn" type="button">Load day</button>
-        <button id="dispatcherLoadAll" class="btn btn--ghost" type="button">Load all orders</button>
-        <button id="dispatcherToday" class="btn btn--ghost" type="button">Today</button>
-        <div class="dispatcher-search" aria-label="Search by reference">
-          <span class="dispatcher-search-prefix">CW-</span>
-          <input id="dispatcherSearchInput" type="text" placeholder="DDMMYYYY-XXXX" aria-label="Reference suffix" />
+    <section class="dispatcher-panel dispatcher-header">
+      <div class="dispatcher-title-row">
+        <div class="dispatcher-title">
+          <h1>Dispatcher Workspace</h1>
+          <p id="dispatcherSummary">Load a day to start managing orders.</p>
         </div>
-        <button id="dispatcherSearchButton" class="btn btn--ghost" type="button">Search</button>
-        <button id="dispatcherLogSheet" class="btn btn--ghost" type="button">Orders log sheet</button>
-        <span id="dispatcherStatus" class="dispatcher-status" aria-live="polite"></span>
+        <div class="dispatcher-primary-actions">
+          <button id="dispatcherNewOrder" class="btn" type="button">New order</button>
+          <button id="dispatcherLogSheet" class="btn btn--ghost" type="button">Orders log sheet</button>
+          <span id="dispatcherStatus" class="dispatcher-status" aria-live="polite"></span>
+        </div>
       </div>
-    </div>
-    <div class="dispatcher-tools" aria-label="Order filters">
-      <input id="dispatcherKeyword" type="text" placeholder="Keyword in any order field" aria-label="Keyword search" />
-      <select id="dispatcherFilterStatus" aria-label="Filter by status">
-        <option value="">Any status</option>
-      </select>
-      <select id="dispatcherFilterUpdates" aria-label="Filter by updates preference">
-        <option value="">Any updates preference</option>
-      </select>
-      <select id="dispatcherFilterPayment" aria-label="Filter by payment status">
-        <option value="">Any payment status</option>
-        <option value="Pending">Payment pending</option>
-        <option value="Paid">Payment paid</option>
-        <option value="Failed">Payment failed</option>
-      </select>
-      <input id="dispatcherFromDate" type="date" aria-label="From date" />
-      <input id="dispatcherToDate" type="date" aria-label="To date" />
-      <select id="dispatcherSort" aria-label="Sort orders">
-        <option value="newest">Sort: Newest first</option>
-        <option value="oldest">Sort: Oldest first</option>
-        <option value="time-asc">Sort: Time ascending</option>
-        <option value="time-desc">Sort: Time descending</option>
-        <option value="status">Sort: Status A-Z</option>
-        <option value="customer">Sort: Customer A-Z</option>
-        <option value="reference">Sort: Reference A-Z</option>
-      </select>
-      <div class="dispatcher-controls-inline">
-        <button id="dispatcherApplyFilters" class="btn btn--ghost" type="button">Apply filters</button>
-        <button id="dispatcherClearFilters" class="btn btn--ghost" type="button">Clear filters</button>
+
+      <div class="dispatcher-grid-controls" aria-label="Dispatcher controls">
+        <div class="dispatcher-field span-2">
+          <label for="dispatcherDate">Date</label>
+          <input id="dispatcherDate" type="date" />
+        </div>
+        <div class="dispatcher-field span-2">
+          <label for="dispatcherOperator">Operator</label>
+          <input id="dispatcherOperator" type="text" placeholder="Dispatcher name" />
+        </div>
+        <div class="dispatcher-field span-4">
+          <label for="dispatcherKeyword">Quick search</label>
+          <input id="dispatcherKeyword" type="text" placeholder="Reference, customer, route, notes" />
+        </div>
+        <div class="dispatcher-field span-2">
+          <label for="dispatcherFilterStatus">Status</label>
+          <select id="dispatcherFilterStatus"><option value="">Any status</option></select>
+        </div>
+        <div class="dispatcher-field span-2">
+          <label for="dispatcherFilterPayment">Payment</label>
+          <select id="dispatcherFilterPayment">
+            <option value="">Any payment</option>
+            <option value="Pending">Pending</option>
+            <option value="Paid">Paid</option>
+            <option value="Failed">Failed</option>
+          </select>
+        </div>
+
+        <div class="dispatcher-field span-2">
+          <label for="dispatcherFilterUpdates">Updates</label>
+          <select id="dispatcherFilterUpdates"><option value="">Any updates</option></select>
+        </div>
+        <div class="dispatcher-field span-2">
+          <label for="dispatcherFromDate">From</label>
+          <input id="dispatcherFromDate" type="date" />
+        </div>
+        <div class="dispatcher-field span-2">
+          <label for="dispatcherToDate">To</label>
+          <input id="dispatcherToDate" type="date" />
+        </div>
+        <div class="dispatcher-field span-2">
+          <label for="dispatcherSort">Sort</label>
+          <select id="dispatcherSort">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="time-asc">Time ascending</option>
+            <option value="time-desc">Time descending</option>
+            <option value="status">Status A-Z</option>
+            <option value="customer">Customer A-Z</option>
+            <option value="reference">Reference A-Z</option>
+          </select>
+        </div>
+        <div class="dispatcher-field span-2">
+          <label for="dispatcherSearchInput">Reference lookup</label>
+          <input id="dispatcherSearchInput" type="text" placeholder="CW-DDMMYYYY-XXXX" />
+        </div>
+        <div class="dispatcher-field span-2">
+          <label>Load controls</label>
+          <div class="dispatcher-inline-actions">
+            <button id="dispatcherLoad" class="btn btn--ghost" type="button">Day</button>
+            <button id="dispatcherLoadAll" class="btn btn--ghost" type="button">All</button>
+            <button id="dispatcherToday" class="btn btn--ghost" type="button">Today</button>
+          </div>
+        </div>
+        <div class="dispatcher-field span-2">
+          <label>Filter controls</label>
+          <div class="dispatcher-inline-actions">
+            <button id="dispatcherApplyFilters" class="btn btn--ghost" type="button">Apply</button>
+            <button id="dispatcherClearFilters" class="btn btn--ghost" type="button">Clear</button>
+            <button id="dispatcherSearchButton" class="btn btn--ghost" type="button">Find</button>
+          </div>
+        </div>
       </div>
-    </div>
-    <div id="dispatcherOrders" class="dispatcher-orders"></div>
+    </section>
+
+    <section id="dispatcherOrders" class="dispatcher-orders" aria-live="polite"></section>
   </main>
+
+  <div id="dispatcherEditorModal" class="dispatcher-modal" aria-hidden="true">
+    <div class="dispatcher-modal-card" role="dialog" aria-modal="true" aria-labelledby="dispatcherEditorTitle">
+      <div class="dispatcher-modal-head">
+        <div>
+          <h2 id="dispatcherEditorTitle">Edit order</h2>
+          <p id="dispatcherEditorSubtitle" class="dispatcher-status">Update customer, route, timing and pricing details.</p>
+        </div>
+        <button id="dispatcherEditorClose" class="btn btn--ghost" type="button">Close</button>
+      </div>
+
+      <div id="dispatcherPriceNotice" class="dispatcher-notice">This change affects pricing. Quote will be recalculated on save.</div>
+
+      <form id="dispatcherEditorForm" class="dispatcher-modal-sections">
+        <section class="dispatcher-section span-4">
+          <h3>Customer</h3>
+          <div class="dispatcher-field"><label for="editCustomerName">Name</label><input id="editCustomerName" type="text" required /></div>
+          <div class="dispatcher-field"><label for="editCustomerEmail">Email</label><input id="editCustomerEmail" type="email" /></div>
+          <div class="dispatcher-field"><label for="editCustomerPhone">Phone</label><input id="editCustomerPhone" type="text" /></div>
+          <div class="dispatcher-field"><label for="editUpdatesPreference">Updates preference</label>
+            <select id="editUpdatesPreference">
+              <option value="">Default</option>
+              <option value="email">Email</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="dispatcher-section span-4">
+          <h3>Route</h3>
+          <div class="dispatcher-field"><label for="editPickupAddress">Pickup</label><input id="editPickupAddress" type="text" required /></div>
+          <div class="dispatcher-field"><label for="editRouteStops">Stops (one per line)</label><textarea id="editRouteStops" placeholder="Optional intermediate stops"></textarea></div>
+          <div class="dispatcher-field"><label for="editDropoffAddress">Dropoff</label><input id="editDropoffAddress" type="text" required /></div>
+          <div class="dispatcher-field"><label for="editNotes">Customer notes</label><textarea id="editNotes"></textarea></div>
+        </section>
+
+        <section class="dispatcher-section span-4">
+          <h3>Timing</h3>
+          <div class="dispatcher-field"><label for="editScheduleDate">Date</label><input id="editScheduleDate" type="date" required /></div>
+          <div class="dispatcher-field"><label for="editScheduleTime">Time</label><input id="editScheduleTime" type="time" required /></div>
+          <div class="dispatcher-field"><label for="editEtaMins">ETA minutes</label><input id="editEtaMins" type="number" min="15" step="5" /></div>
+          <div class="dispatcher-field"><label for="editTotalKm">Distance km</label><input id="editTotalKm" type="number" min="0" step="0.1" /></div>
+        </section>
+
+        <section class="dispatcher-section span-6">
+          <h3>Cargo / Load</h3>
+          <div class="dispatcher-field"><label for="editCargoType">Cargo type</label><input id="editCargoType" type="text" /></div>
+          <div class="dispatcher-field"><label for="editLoadType">Load type</label><input id="editLoadType" type="text" /></div>
+          <div class="dispatcher-field"><label for="editVehicleType">Vehicle type</label><input id="editVehicleType" type="text" /></div>
+          <div class="dispatcher-field"><label for="editPackageCount">Packages</label><input id="editPackageCount" type="number" min="0" step="1" /></div>
+          <div class="dispatcher-field"><label for="editWeightKg">Weight kg</label><input id="editWeightKg" type="number" min="0" step="0.1" /></div>
+          <div class="dispatcher-field"><label for="editVolumeM3">Volume m3</label><input id="editVolumeM3" type="number" min="0" step="0.01" /></div>
+        </section>
+
+        <section class="dispatcher-section span-6">
+          <h3>Pricing breakdown</h3>
+          <div class="dispatcher-field"><label for="editPriceBase">Base</label><input id="editPriceBase" type="number" step="0.01" /></div>
+          <div class="dispatcher-field"><label for="editPriceDistance">Distance</label><input id="editPriceDistance" type="number" step="0.01" /></div>
+          <div class="dispatcher-field"><label for="editPriceStops">Stops</label><input id="editPriceStops" type="number" step="0.01" /></div>
+          <div class="dispatcher-field"><label for="editPriceSurcharge">Surcharge</label><input id="editPriceSurcharge" type="number" step="0.01" /></div>
+          <div class="dispatcher-field"><label for="editPriceDiscount">Discount</label><input id="editPriceDiscount" type="number" step="0.01" /></div>
+          <div class="dispatcher-field"><label for="editPriceAdjustment">Adjustment</label><input id="editPriceAdjustment" type="number" step="0.01" /></div>
+          <div class="dispatcher-field"><label for="editPriceTotal">Final total</label><input id="editPriceTotal" type="number" step="0.01" /></div>
+        </section>
+
+        <section class="dispatcher-section span-6">
+          <h3>Delivery / Completion</h3>
+          <div class="dispatcher-field"><label for="editStatus">Order status</label>
+            <select id="editStatus">
+              <option value="Confirmed">Confirmed</option>
+              <option value="Assigned">Assigned</option>
+              <option value="Picked up">Picked up</option>
+              <option value="In transit">In transit</option>
+              <option value="Delivered">Delivered</option>
+              <option value="Failed">Failed</option>
+              <option value="Canceled">Canceled</option>
+              <option value="Delivery rejected">Delivery rejected</option>
+            </select>
+          </div>
+          <div class="dispatcher-field"><label for="editPaymentStatus">Payment status</label>
+            <select id="editPaymentStatus">
+              <option value="Pending">Pending</option>
+              <option value="Paid">Paid</option>
+              <option value="Failed">Failed</option>
+            </select>
+          </div>
+          <div class="dispatcher-field"><label for="editPaymentUrl">Payment URL</label><input id="editPaymentUrl" type="text" /></div>
+          <div class="dispatcher-field"><label for="editPodUrl">POD URL (read-only)</label><input id="editPodUrl" type="text" readonly /></div>
+        </section>
+
+        <section class="dispatcher-section span-6">
+          <h3>Internal Admin</h3>
+          <div class="dispatcher-field"><label for="editRiderName">Rider name</label><input id="editRiderName" type="text" /></div>
+          <div class="dispatcher-field"><label for="editRiderPhone">Rider phone</label><input id="editRiderPhone" type="text" /></div>
+          <div class="dispatcher-field"><label for="editInternalNotes">Internal notes</label><textarea id="editInternalNotes"></textarea></div>
+          <div class="dispatcher-field"><label for="editOperator">Operator</label><input id="editOperator" type="text" /></div>
+          <div class="dispatcher-field"><label for="editSaveNote">Save note / reason</label><textarea id="editSaveNote" placeholder="What changed?"></textarea></div>
+        </section>
+      </form>
+
+      <div class="dispatcher-modal-actions">
+        <div id="dispatcherEditorFeedback" class="dispatcher-status"></div>
+        <div class="dispatcher-action-group">
+          <button id="dispatcherEditorCancelOrder" class="btn btn--ghost" type="button">Cancel order</button>
+          <button id="dispatcherEditorCloseBottom" class="btn btn--ghost" type="button">Discard</button>
+          <button id="dispatcherEditorSave" class="btn" type="button">Save order</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="dispatcherCancelModal" class="dispatcher-modal" aria-hidden="true">
+    <div class="dispatcher-modal-card" role="dialog" aria-modal="true" aria-labelledby="dispatcherCancelTitle" style="max-width: 620px;">
+      <div class="dispatcher-modal-head">
+        <div>
+          <h2 id="dispatcherCancelTitle">Cancel order safely</h2>
+          <p class="dispatcher-status">This will soft-cancel the order and keep full operational history.</p>
+        </div>
+        <button id="dispatcherCancelClose" class="btn btn--ghost" type="button">Close</button>
+      </div>
+      <div class="dispatcher-danger-copy">Canceled orders are preserved for audit. They remain visible and marked as canceled. Provide a clear reason for operations history.</div>
+      <div class="dispatcher-field">
+        <label for="dispatcherCancelReason">Cancellation reason</label>
+        <textarea id="dispatcherCancelReason" placeholder="Reason for cancellation"></textarea>
+      </div>
+      <div class="dispatcher-modal-actions">
+        <div id="dispatcherCancelFeedback" class="dispatcher-status"></div>
+        <div class="dispatcher-action-group">
+          <button id="dispatcherCancelAbort" class="btn btn--ghost" type="button">Back</button>
+          <button id="dispatcherCancelConfirm" class="btn" type="button">Confirm cancellation</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="../js/js/dispatcher-admin.js"></script>
 </body>

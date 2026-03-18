@@ -1,0 +1,237 @@
+I want to upgrade my dispatcher UI from a read/search/filter dashboard into a true dispatch/admin workspace.
+
+Important constraints:
+- Keep the implementation practical and lightweight.
+- Do not over-engineer.
+- Assume this is an internal ops tool used by dispatchers, not a public customer-facing app.
+- Focus on speed, clarity, and safety.
+- Do not describe the solution in abstract terms only — make the changes fully implementable.
+- Keep the current structure and styling direction where possible, but improve usability.
+- I am vibe coding, so make sensible decisions and carry them through without asking for constant clarification.
+
+Main goal:
+Add the ability to manually edit orders, create new orders, duplicate existing orders, and delete/cancel orders from the dispatcher UI, while keeping the overall tool easy to use for daily operations.
+
+Product direction:
+The dispatcher page should become the single admin surface for managing orders after they enter the system. It should still be excellent for scanning, filtering, and finding orders quickly, but it also needs proper action flows for correcting data, making manual bookings, handling exceptions, and managing order lifecycle changes.
+
+What to build:
+
+1. Upgrade the dispatcher into a CRUD-style admin UI
+Add the following core capabilities:
+- Edit an existing order
+- Create a new order manually
+- Duplicate an order into a new one
+- Cancel/delete an order safely
+- View important operational details without leaving the page
+
+Do not make this feel like a raw database editor. It should feel like a dispatcher console designed for real-world ops work.
+
+2. Keep fast browsing/searching as the foundation
+Preserve and improve the current strengths of the page:
+- searching orders
+- filtering by status or other useful dimensions
+- scanning multiple orders quickly
+- sorting and narrowing down work in progress
+
+The new editing features should sit on top of that foundation, not replace it.
+
+3. Add quick actions directly on each order
+Each order card/row should support fast actions that dispatchers commonly need without opening a full editor.
+
+Useful quick actions:
+- change status
+- assign or reassign rider
+- update notes
+- adjust timing details
+- mark delivery/admin completion fields
+- duplicate
+- cancel/delete
+- open full edit view
+
+These actions should be easy to reach and optimized for repetitive operational use.
+
+4. Add a full edit experience
+Create a proper edit modal, drawer, or side panel for deeper changes.
+
+This full edit flow should be organized into logical sections such as:
+- Customer
+- Route
+- Timing
+- Cargo / load details
+- Pricing inputs
+- Delivery completion
+- Internal/admin notes
+
+Design principles for the edit flow:
+- make it obvious which fields are operational inputs
+- visually separate editable inputs from calculated or system-generated outputs
+- reduce the risk of accidental destructive edits
+- make save/cancel behavior clear
+- show loading, success, and error states properly
+- support unsaved-changes protection
+
+5. Add a “New order” flow
+Add a prominent “New order” button in the dispatcher header.
+
+The create flow should:
+- open a dedicated manual booking form
+- feel like an admin-created order, not a hacked version of an edit form
+- support all key details needed to create a valid order
+- allow the dispatcher to review the route and pricing-related inputs before saving
+- produce a clean new record that behaves like any other order in the system
+
+This is especially important for phone bookings, WhatsApp bookings, corrections, repeat jobs, and edge cases that don’t come neatly through the normal intake flow.
+
+6. Add duplicate-order workflow
+Dispatchers often need to recreate similar jobs quickly.
+
+Add a duplicate action that:
+- creates a new draft/order from an existing one
+- keeps customer, route, and cargo details that are useful to reuse
+- clears fields that should belong only to the original completion lifecycle
+- lets the dispatcher review before final save if needed
+
+This should be one of the easiest workflows in the UI.
+
+7. Add safe delete/cancel behavior
+Do not treat delete as a silent destructive action.
+
+Implement a safe cancellation/deletion flow with:
+- confirmation step
+- optional reason input
+- clear explanation of what happens
+- visible result after completion
+
+Prefer a soft-delete or cancellation-style workflow over irreversible destruction.
+This should preserve operational history and reduce mistakes.
+
+8. Show pricing/quote breakdown clearly
+One of the biggest usability improvements would be visibility into how a quote/order total is formed.
+
+Add a breakdown panel or expandable section that shows, in human-readable format:
+- route-related price components
+- delivery/drop components
+- discounts
+- surcharges
+- adjustments
+- final total
+
+The point is not to expose internal complexity for its own sake — it is to help dispatchers understand and explain pricing, spot mistakes, and confidently make edits.
+
+This breakdown should be easy to scan and clearly labeled.
+
+9. Make recalculation behavior understandable
+When a dispatcher changes something that affects route, timing, load, or pricing inputs, the UI should clearly indicate that the quote/price will be recalculated on save.
+
+Add a visible notice such as:
+- “This change affects pricing”
+- “Quote will be recalculated on save”
+
+This reduces confusion and makes manual editing safer.
+
+10. Add internal operational history / audit visibility
+Add a lightweight change history or activity feed for each order where practical.
+
+Useful events to show:
+- order created
+- order edited
+- status changed
+- rider changed
+- cancelled/deleted
+- duplicated
+- delivered/completed updates
+
+This does not need to be overbuilt, but it should help answer:
+- who changed this?
+- what changed?
+- when did it happen?
+
+11. Improve overall dispatcher usability
+While doing the CRUD upgrade, improve the UI quality in practical ways:
+- better visual hierarchy
+- clearer action grouping
+- less clutter on each order card
+- responsive layout that still works on smaller laptop screens
+- sticky controls/header if useful
+- cleaner forms
+- better empty states
+- better loading states
+- better error states
+- success toasts/messages
+- keyboard-friendly interactions where easy to add
+
+12. Recommended UI structure
+Use this general layout direction:
+
+Top header area:
+- page title
+- primary “New order” button
+- search
+- filters
+- sort controls
+- refresh/load controls if needed
+
+Main content:
+- order list / cards / rows
+- each order has high-signal summary info
+- quick actions available without too many clicks
+- option to open full details/edit
+
+Order details/edit experience:
+- use modal or side drawer
+- tabbed sections are acceptable if helpful
+- keep the most important operational info visible near the top
+- include pricing breakdown and admin history where useful
+
+13. Key experience principles
+Please optimize the final implementation for:
+- dispatcher speed
+- low cognitive load
+- high confidence when making manual changes
+- minimal accidental errors
+- clear distinction between editable inputs and system-calculated outputs
+- practical day-to-day operations use
+
+14. What to avoid
+Avoid these pitfalls:
+- turning the page into a messy all-fields-at-once admin form
+- exposing too much technical detail
+- making destructive actions too easy
+- requiring too many clicks for common tasks
+- hiding important pricing or route context
+- building a second disconnected logic path just for the UI
+- overly fancy architecture for a simple internal tool
+- unnecessary framework churn or big rewrites unless truly needed
+
+15. Implementation expectations
+Please make the changes directly and cohesively, not just as suggestions.
+
+I want:
+- the UI changes implemented
+- the create/edit/duplicate/cancel flows added
+- the main interaction logic wired up
+- sensible validation and feedback states included
+- practical structure and naming
+- minimal moving parts
+- clean, maintainable code
+
+Where a decision is ambiguous, choose the simplest robust option.
+
+16. Final deliverable expectations
+Please return the implementation as if you are updating the real project, with:
+- the upgraded dispatcher UI
+- all new interaction flows connected
+- clear comments only where they actually help
+- no unnecessary abstraction
+- no placeholder architecture
+- no TODO-heavy partial scaffolding unless absolutely unavoidable
+
+In addition, include a short summary of what changed, covering:
+- what was added to the UI
+- the new user flows
+- the main operational benefits
+- any assumptions you made to keep the implementation practical
+
+Build this as a serious internal dispatch tool upgrade, not just a cosmetic edit.
+The result should feel like a dispatcher can actually manage orders end-to-end from this screen.
