@@ -18,7 +18,7 @@ const ORDERS_LOG_TAB_NAME = 'OrdersLog';
 const ADMIN_DATA_START = '--- ADMIN DATA ---';
 const ADMIN_DATA_END = '--- END ADMIN DATA ---';
 const DEFAULT_STATUS_LABEL = 'Confirmed';
-const BUILD_ID = '2026-02-14-1';
+const BUILD_ID = '2026-03-19-1';
 const WHATSAPP_NUMBER = '34608081955';
 const WHATSAPP_DEFAULT_MESSAGE = 'Hola Cargoworks, necesito ayuda con mi pedido numero ';
 const ORDER_STATUS_VALUES = ['Confirmed', 'Assigned', 'Picked up', 'In transit', 'Delivered', 'Failed', 'Canceled', 'Delivery rejected'];
@@ -140,6 +140,10 @@ function doPost(e){
     const end = new Date(start.getTime() + (etaMins * 60000));
 
     const customer = payload.customer || {};
+    const promoValidation = validatePromoRedemption(payload);
+    if (!promoValidation.ok) {
+      return jsonResponse({ error: promoValidation.error || 'Promo code redemption not allowed' }, 400);
+    }
     const name = String(customer.name || '').trim() || 'Customer';
     const shortRef = buildShortRef(dateKey);
     const title = DEFAULT_STATUS_LABEL + ' - Cargoworks booking - ' + name + ' - ' + shortRef;
@@ -2149,6 +2153,171 @@ function normalizePhone(value){
   } catch (err) {
     return '';
   }
+}
+
+function normalizeCustomerEmail(value){
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizePromoCode(value){
+  return String(value || '').trim().toUpperCase();
+}
+
+function extractDiscountCodesFromPayload(payload){
+  const quote = payload && payload.quote ? payload.quote : {};
+  const out = [];
+  const seen = {};
+
+  function addCode(code){
+    const normalized = normalizePromoCode(code);
+    if (!normalized || seen[normalized]) return;
+    seen[normalized] = true;
+    out.push(normalized);
+  }
+
+  const discountCodes = Array.isArray(quote.discountCodes) ? quote.discountCodes : [];
+  discountCodes.forEach(addCode);
+
+  const discountItems = Array.isArray(quote.discountItems) ? quote.discountItems : [];
+  discountItems.forEach(function(item){
+    addCode(item && item.code);
+    addCode(item && item.discount && item.discount.code);
+  });
+
+  const discounts = Array.isArray(quote.discounts) ? quote.discounts : [];
+  discounts.forEach(function(item){
+    addCode(item && item.code);
+    addCode(item && item.discount && item.discount.code);
+  });
+
+  return out;
+}
+
+function shouldCountOrderAction(action){
+  const key = String(action || '').trim();
+  return key === 'booking_created' || key === 'admin_create_order' || key === 'admin_duplicate_order';
+}
+
+function forEachOrderPayloadByEmail(email, callback){
+  const targetEmail = normalizeCustomerEmail(email);
+  if (!targetEmail || typeof callback !== 'function') return;
+
+  let usedSheet = false;
+  let sheetHasData = false;
+  try {
+    const sheet = ensureOrdersLogSheet();
+    const rowCount = sheet.getLastRow();
+    if (rowCount >= 2) {
+      usedSheet = true;
+      sheetHasData = true;
+      const rows = sheet.getRange(2, 1, rowCount - 1, 23).getValues();
+      rows.forEach(function(row){
+        if (!shouldCountOrderAction(row[1])) return;
+        const rowEmail = normalizeCustomerEmail(row[7] || '');
+        if (!rowEmail || rowEmail !== targetEmail) return;
+        const payloadText = String(row[22] || '').trim();
+        if (!payloadText) return;
+        let parsed = null;
+        try { parsed = JSON.parse(payloadText); } catch (_) { parsed = null; }
+        if (!parsed) return;
+        callback(parsed);
+      });
+    }
+  } catch (_) {
+    // If sheet read fails, fall back to calendar scan below.
+  }
+
+  // Legacy fallback only when there is no log history yet.
+  if (usedSheet && sheetHasData) return;
+  try {
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return;
+    const start = new Date(new Date().getTime() - (3650 * 24 * 60 * 60 * 1000));
+    const end = new Date(new Date().getTime() + (24 * 60 * 60 * 1000));
+    const events = cal.getEvents(start, end);
+    events.forEach(function(event){
+      const desc = String(event.getDescription() || '');
+      const parsedPayload = extractPayloadFromDescription(desc);
+      if (!parsedPayload) return;
+      const eventEmail = normalizeCustomerEmail(parsedPayload && parsedPayload.customer && parsedPayload.customer.email || '');
+      if (!eventEmail || eventEmail !== targetEmail) return;
+      callback(parsedPayload);
+    });
+  } catch (_) {
+    // Ignore fallback failures.
+  }
+}
+
+function getPromoRedemptionCountsByEmail(email){
+  const counts = {};
+  forEachOrderPayloadByEmail(email, function(orderPayload){
+    const codes = extractDiscountCodesFromPayload(orderPayload);
+    codes.forEach(function(code){
+      counts[code] = Number(counts[code] || 0) + 1;
+    });
+  });
+
+  return counts;
+}
+
+function countOrdersByEmail(email){
+  let total = 0;
+  forEachOrderPayloadByEmail(email, function(){ total += 1; });
+  return total;
+}
+
+function isFirstOrderOnlyPromoCode(code, payload){
+  const normalized = normalizePromoCode(code);
+  if (!normalized) return false;
+  if (normalized === 'FIRST50') return true;
+
+  const quote = payload && payload.quote ? payload.quote : {};
+  const collections = [];
+  if (Array.isArray(quote.discountItems)) collections.push(quote.discountItems);
+  if (Array.isArray(quote.discounts)) collections.push(quote.discounts);
+  for (let c = 0; c < collections.length; c++) {
+    const items = collections[c];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i] || {};
+      const itemCode = normalizePromoCode(item.code || (item.discount && item.discount.code) || '');
+      if (!itemCode || itemCode !== normalized) continue;
+      if (item.firstOrderOnly === true) return true;
+      if (item.discount && item.discount.firstOrderOnly === true) return true;
+    }
+  }
+  return false;
+}
+
+function validatePromoRedemption(payload){
+  const customer = payload && payload.customer ? payload.customer : {};
+  const email = normalizeCustomerEmail(customer && customer.email || '');
+  if (!email) return { ok: true };
+
+  const appliedCodes = extractDiscountCodesFromPayload(payload);
+  if (!appliedCodes.length) return { ok: true };
+
+  const redemptionCounts = getPromoRedemptionCountsByEmail(email);
+  let previousOrders = null;
+  for (let i = 0; i < appliedCodes.length; i++) {
+    const code = appliedCodes[i];
+    if (isFirstOrderOnlyPromoCode(code, payload)) {
+      if (previousOrders == null) previousOrders = countOrdersByEmail(email);
+      if (previousOrders >= 1) {
+        return {
+          ok: false,
+          error: 'Promo code "' + code + '" is only valid on your first order with this email.'
+        };
+      }
+    }
+    const usedCount = Number(redemptionCounts[code] || 0) || 0;
+    if (usedCount >= 1) {
+      return {
+        ok: false,
+        error: 'Promo code "' + code + '" has already been redeemed with this email. Each code can only be used once per email.'
+      };
+    }
+  }
+  return { ok: true };
 }
 
 function setLastError(tag, message){

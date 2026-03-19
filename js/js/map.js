@@ -6,7 +6,7 @@ window.initZonesMap = function initZonesMap(){
   const ZONES_VERSION = '2026-01-24-1';
   const PRICES_VERSION = '2026-01-24-1';
   const HOLIDAYS_VERSION = '2026-03-18-1';
-  const DISCOUNTS_VERSION = '2026-02-08-1';
+  const DISCOUNTS_VERSION = '2026-03-19-1';
   const CALENDAR_API_KEY = '';
   const CALENDAR_ID = '';
   const CALENDAR_TIMEZONE = 'Europe/Madrid';
@@ -887,7 +887,7 @@ window.initZonesMap = function initZonesMap(){
   const qBookingStatus = document.getElementById('quoteBookingStatus');
   const qSummaryCard = document.querySelector('.quote-summary-card');
   const qSummaryHeading = document.querySelector('.quote-summary-heading');
-  const DEFAULT_DISCOUNT_CODE = 'SELF5';
+  const DEFAULT_DISCOUNT_CODE = 'FIRST50';
   const VAT_RATE = 0.21;
   let bookingDetailsRevealed = false;
   let paymentFrameVisible = false;
@@ -3450,12 +3450,15 @@ window.initZonesMap = function initZonesMap(){
         method: 'POST',
         body: form
       });
-      if (!res.ok) {
-        throw new Error('Booking request failed');
+      let json = null;
+      try {
+        json = await res.json();
+      } catch(_) {
+        json = null;
       }
-      const json = await res.json();
-      if (json && json.error) {
-        setBookingStatus(json.error, true);
+      if (!res.ok || (json && json.error)) {
+        const apiError = String((json && (json.error || json.detail)) || '').trim();
+        setBookingStatus(apiError || 'Booking request failed', true);
         return;
       }
       const ref = (json && (json.reference || json.id)) ? String(json.reference || json.id) : '';
@@ -3666,6 +3669,17 @@ window.initZonesMap = function initZonesMap(){
       const discountInfo = resolveDiscountsForEstimate(subtotalBeforeDiscount, surchargeInfo.dateKey, cur);
       const discountAmount = Math.round((discountInfo.totalDiscount || 0) * 100) / 100;
       const discountItems = Array.isArray(discountInfo.applied) ? discountInfo.applied : [];
+      const discountPayloadItems = discountItems.map(function(item){
+        const discountMeta = (item && item.discount && typeof item.discount === 'object') ? item.discount : {};
+        return {
+          code: normalizeDiscountCode(item && item.code || discountMeta.code || ''),
+          amount: Math.round((Number(item && item.amount || 0) || 0) * 100) / 100,
+          type: String(discountMeta.type || '').toLowerCase(),
+          promoAmount: Number(discountMeta.amount || 0) || 0,
+          maxUsesPerEmail: Number(discountMeta.maxUsesPerEmail || 0) || 0,
+          firstOrderOnly: !!discountMeta.firstOrderOnly
+        };
+      }).filter(function(item){ return !!item.code; });
       const preVatTotal = Math.max(0, Math.round((subtotalBeforeDiscount - discountAmount) * 100) / 100);
       const vatAmount = Math.round((preVatTotal * VAT_RATE) * 100) / 100;
       const total = Math.round((preVatTotal + vatAmount) * 100) / 100;
@@ -3779,6 +3793,8 @@ window.initZonesMap = function initZonesMap(){
         dropZone: dropZoneNum,
         cargoKey: cargoInfo.key,
         discountCodes: activeDiscountCodes.slice(),
+        discountItems: discountPayloadItems,
+        discounts: discountPayloadItems,
         discountTotal: discountAmount,
         surchargeRate: surchargeInfo.rate,
         isWeekendHoliday: surchargeInfo.isWeekendHoliday,

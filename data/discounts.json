@@ -1,5 +1,5 @@
 {
-  "version": "2026-02-08",
+  "version": "2026-03-19",
   "codes": [
     {
       "code": "yougotit100",
@@ -9,6 +9,7 @@
       "start": "2026-01-01",
       "end": "2026-12-31",
       "maxUses": 0,
+      "maxUsesPerEmail": 1,
       "active": true,
       "notes": "code for 100 percent off"
     },
@@ -20,19 +21,22 @@
           "start": "2026-01-01",
       "end": "2026-12-31",
       "maxUses": 0,
+      "maxUsesPerEmail": 1,
       "active": true,
       "notes": "code for 99.99 percent off"
     },
     {
-      "code": "SELF5",
+      "code": "FIRST50",
       "type": "percent",
-      "amount": 5,
+      "amount": 50,
       "minOrder": 0,
       "start": "2026-01-01",
       "end": "2026-12-31",
       "maxUses": 0,
+      "maxUsesPerEmail": 1,
+      "firstOrderOnly": true,
       "active": true,
-      "notes": "self filled order discount"
+      "notes": "50 percent off first order, one redemption per email"
     },
     {
       "code": "f&f30",
@@ -42,6 +46,7 @@
       "start": "2026-01-01",
       "end": "2026-12-31",
       "maxUses": 2,
+      "maxUsesPerEmail": 1,
       "active": true,
       "notes": "family and friends 30 percent"
     }

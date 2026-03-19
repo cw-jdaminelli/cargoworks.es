@@ -87,6 +87,7 @@
     row.appendChild(cell(item && item.start, 'start'));
     row.appendChild(cell(item && item.end, 'end'));
     row.appendChild(cell(item && item.maxUses, 'maxUses'));
+    row.appendChild(cell(item && item.maxUsesPerEmail, 'maxUsesPerEmail'));
     row.appendChild(checkboxCell(item && item.active));
     row.appendChild(cell(item && item.notes, 'notes'));
     row.appendChild(deleteCell());
@@ -116,6 +117,7 @@
         start: data.start || '',
         end: data.end || '',
         maxUses: Number(data.maxUses || 0) || 0,
+        maxUsesPerEmail: Number(data.maxUsesPerEmail || 0) || 0,
         active: !!data.active,
         notes: data.notes || ''
       };
@@ -142,12 +144,12 @@
       const codes = Array.isArray(json.codes) ? json.codes : [];
       if (tableBody) tableBody.innerHTML = '';
       codes.forEach(addRow);
-      if (!codes.length) addRow({ code: '', type: 'percent', amount: 0, minOrder: 0, start: '', end: '', maxUses: 0, active: true, notes: '' });
+      if (!codes.length) addRow({ code: '', type: 'percent', amount: 0, minOrder: 0, start: '', end: '', maxUses: 0, maxUsesPerEmail: 1, active: true, notes: '' });
       setStatus('Loaded ' + codes.length + ' code(s).');
     } catch(_) {
       setStatus('Could not load discounts.json.');
       if (tableBody && !tableBody.children.length) {
-        addRow({ code: '', type: 'percent', amount: 0, minOrder: 0, start: '', end: '', maxUses: 0, active: true, notes: '' });
+        addRow({ code: '', type: 'percent', amount: 0, minOrder: 0, start: '', end: '', maxUses: 0, maxUsesPerEmail: 1, active: true, notes: '' });
       }
     }
   }
