@@ -519,7 +519,7 @@
       quoteCargoChipLargeDesc: "More than standard in weight or size, max 80kg (+20% surcharge)",
       quoteDiscountPlaceholder: "Add discount code",
       quoteDiscountApply: "Apply",
-      quoteDiscountHelper: "Apply code <strong>FIRST50</strong> (50 percent off your first order, one redemption per email), plus any other codes you have. Hit apply for each code.",
+      quoteDiscountHelper: "Apply code FIRST50 for 50 percent off your first order. Done deal ;)",
       availabilityChecking: "Checking availability...",
       availabilityNone: "No availability on this date.",
       availabilityNextSlot: "Next available slot: {time}",
