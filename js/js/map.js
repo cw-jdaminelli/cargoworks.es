@@ -887,7 +887,6 @@ window.initZonesMap = function initZonesMap(){
   const qBookingStatus = document.getElementById('quoteBookingStatus');
   const qSummaryCard = document.querySelector('.quote-summary-card');
   const qSummaryHeading = document.querySelector('.quote-summary-heading');
-  const DEFAULT_DISCOUNT_CODE = 'FIRST50';
   const VAT_RATE = 0.21;
   let bookingDetailsRevealed = false;
   let paymentFrameVisible = false;
@@ -957,7 +956,6 @@ window.initZonesMap = function initZonesMap(){
       syncDateDisplay();
     } catch(_) {}
   }
-  if (qDiscount && !qDiscount.value) qDiscount.value = DEFAULT_DISCOUNT_CODE;
   function onDateTimeSelectionChange(){
     try {
       // Do not show datetime errors immediately while user is still choosing date/time.
@@ -2627,7 +2625,7 @@ window.initZonesMap = function initZonesMap(){
         syncDateDisplay();
         if (qCargo) qCargo.value = 'regular';
         if (qPhoneCountry) qPhoneCountry.value = 'Spain (+34)';
-        if (qDiscount) qDiscount.value = DEFAULT_DISCOUNT_CODE;
+        if (qDiscount) qDiscount.value = '';
         activeDiscountCodes = [];
         setDiscountStatus('');
       }
