@@ -596,75 +596,165 @@
     .eta-main { font-weight: 600; color: var(--orange); font-size: 0.9rem; }
     .eta-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 2px; }
 
-    /* ── SCAN LABEL ── */
-    .scan-section {
-      padding: 12px 14px 14px;
+    /* ── SCAN ROUTE SHEET ── */
+    .scan-section-wrap {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 16px 20px;
+      margin: 0 14px;
       display: block;
-      width: 100%;
+    }
+    .scan-section-header {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
     .scan-btn {
       width: 100%;
-      padding: 14px;
-      border: 1.5px dashed var(--accent-dim);
+      padding: 18px 16px;
+      border: 2px dashed var(--accent-dim);
       border-radius: var(--radius);
-      background: rgba(155,93,229,0.06);
+      background: rgba(155,93,229,0.08);
       color: var(--accent);
-      font-size: 0.9rem;
+      font-size: 0.95rem;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 10px;
       transition: all 0.15s;
-      min-height: 48px;
+      min-height: 60px;
       box-sizing: border-box;
     }
-    .scan-btn:active { background: rgba(155,93,229,0.15); transform: scale(0.98); }
-    .scan-btn:disabled { opacity: 0.5; }
-    .scan-result {
-      margin-top: 8px;
+    .scan-btn:active { background: rgba(155,93,229,0.18); transform: scale(0.98); }
+    .scan-btn:disabled { opacity: 0.6; cursor: wait; }
+
+    .scan-status {
+      font-size: 0.82rem;
+      margin-top: 14px;
       padding: 10px 12px;
+      border-radius: 8px;
+      text-align: center;
+      display: none;
+    }
+    .scan-status.visible { display: block; }
+    .scan-status.is-info {
+      background: rgba(155,93,229,0.1);
+      color: var(--accent);
+      border: 1px solid rgba(155,93,229,0.25);
+    }
+    .scan-status.is-error {
+      background: rgba(239,68,68,0.1);
+      color: var(--red);
+      border: 1px solid rgba(239,68,68,0.25);
+    }
+    .scan-status.is-success {
+      background: rgba(34,197,94,0.1);
+      color: var(--green);
+      border: 1px solid rgba(34,197,94,0.25);
+    }
+
+    .scan-result {
+      margin-top: 16px;
+      padding: 16px 14px;
       background: var(--bg-raised);
       border-radius: var(--radius);
       border: 1px solid var(--border);
+      display: none;
     }
-    .scan-result-addr {
+    .scan-result.visible { display: block; }
+    .scan-result-count {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+    }
+    .scan-addr-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .scan-addr-item:last-of-type { border-bottom: none; }
+    .scan-addr-num {
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+    .scan-addr-body { flex: 1; min-width: 0; }
+    .scan-addr-text {
       font-size: 0.88rem;
       color: var(--text);
       line-height: 1.4;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
+      word-break: break-word;
     }
-    .scan-result-actions {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-    .scan-result-actions a,
-    .scan-result-actions button {
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: 0.75rem;
+    .scan-addr-mini-btn {
+      display: inline-block;
+      padding: 5px 10px;
+      background: var(--bg-card);
+      color: var(--text-dim);
+      font-size: 0.72rem;
       font-weight: 600;
+      border-radius: 6px;
       text-decoration: none;
-      cursor: pointer;
-      border: none;
+      border: 1px solid var(--border);
     }
-    .scan-maps-btn {
+
+    .scan-actions {
+      margin-top: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .scan-action-btn {
+      width: 100%;
+      padding: 14px;
+      border-radius: var(--radius);
+      font-size: 0.88rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      display: block;
+      box-sizing: border-box;
+      min-height: 48px;
+    }
+    .scan-action-btn.primary {
       background: var(--green);
       color: #fff;
     }
-    .scan-retry-btn {
+    .scan-action-btn.secondary {
       background: var(--bg-card);
-      color: var(--text-dim);
-      border: 1px solid var(--border) !important;
+      color: var(--text);
+      border: 1px solid var(--border);
     }
-    .scan-status {
-      font-size: 0.75rem;
-      margin-top: 6px;
+    .scan-action-btn.tertiary {
+      background: transparent;
       color: var(--text-dim);
+      border: 1px dashed var(--border);
     }
-    .scan-status.is-error { color: var(--red); }
   </style>
 </head>
 <body>
@@ -1217,37 +1307,45 @@
     // ── Scan Label ────────────────────────────────────────────────────────────
 
     function buildScanSection(order) {
-      var sec = document.createElement('div');
-      sec.className = 'detail-section';
-      sec.innerHTML = '<div class="detail-section-title">Scan Route Sheet</div>';
-
       var wrap = document.createElement('div');
-      wrap.className = 'scan-section';
+      wrap.className = 'scan-section-wrap';
+      wrap.style.marginTop = '14px';
+      wrap.style.marginBottom = '14px';
+
+      var header = document.createElement('div');
+      header.className = 'scan-section-header';
+      header.textContent = '📷 Scan Route Sheet';
+      wrap.appendChild(header);
 
       var scanBtn = document.createElement('button');
       scanBtn.type = 'button';
       scanBtn.className = 'scan-btn';
-      scanBtn.innerHTML = '📷 Scan route sheet';
+      scanBtn.innerHTML = '📷 Tap to scan route sheet';
+      wrap.appendChild(scanBtn);
 
       var fileInput = document.createElement('input');
       fileInput.type = 'file';
       fileInput.accept = 'image/*';
       fileInput.capture = 'environment';
       fileInput.style.display = 'none';
+      wrap.appendChild(fileInput);
 
       var statusEl = document.createElement('div');
       statusEl.className = 'scan-status';
+      wrap.appendChild(statusEl);
 
       var resultEl = document.createElement('div');
       resultEl.className = 'scan-result';
-      resultEl.style.display = 'none';
+      wrap.appendChild(resultEl);
 
       scanBtn.addEventListener('click', function() { fileInput.click(); });
 
       fileInput.addEventListener('change', function() {
         if (!fileInput.files || !fileInput.files[0]) return;
         var file = fileInput.files[0];
-        // Compress via canvas before sending
+
+        showScanStatus(statusEl, 'Processing image…', 'info');
+
         var img = new Image();
         img.onload = function() {
           var canvas = document.createElement('canvas');
@@ -1261,23 +1359,30 @@
           var b64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
           doScanExtract(b64, 'image/jpeg', scanBtn, statusEl, resultEl);
         };
+        img.onerror = function() {
+          showScanStatus(statusEl, 'Could not read the image. Try again.', 'error');
+        };
         img.src = URL.createObjectURL(file);
       });
 
-      wrap.appendChild(scanBtn);
-      wrap.appendChild(fileInput);
-      wrap.appendChild(statusEl);
-      wrap.appendChild(resultEl);
-      sec.appendChild(wrap);
-      return sec;
+      return wrap;
+    }
+
+    function showScanStatus(statusEl, msg, type) {
+      statusEl.textContent = msg;
+      statusEl.className = 'scan-status visible is-' + (type || 'info');
+    }
+    function hideScanStatus(statusEl) {
+      statusEl.className = 'scan-status';
+      statusEl.textContent = '';
     }
 
     async function doScanExtract(b64, mime, scanBtn, statusEl, resultEl) {
       scanBtn.disabled = true;
-      scanBtn.innerHTML = '⏳ Extracting addresses…';
-      statusEl.textContent = '';
-      statusEl.className = 'scan-status';
-      resultEl.style.display = 'none';
+      scanBtn.innerHTML = '⏳ Sending to Claude…';
+      showScanStatus(statusEl, 'Extracting addresses — this can take 10–20 seconds…', 'info');
+      resultEl.className = 'scan-result';
+      resultEl.innerHTML = '';
 
       try {
         var res = await api('POST', {
@@ -1288,134 +1393,176 @@
         });
 
         if (res.error) {
-          statusEl.textContent = res.error;
-          statusEl.className = 'scan-status is-error';
+          showScanStatus(statusEl, 'Error: ' + res.error, 'error');
           scanBtn.disabled = false;
-          scanBtn.innerHTML = '📷 Scan route sheet';
+          scanBtn.innerHTML = '📷 Tap to scan route sheet';
           return;
         }
 
         if (!res.address) {
-          statusEl.textContent = 'No addresses found — try again with a clearer photo.';
-          statusEl.className = 'scan-status is-error';
+          showScanStatus(statusEl, 'No addresses found. Try a clearer photo with better lighting.', 'error');
           scanBtn.disabled = false;
-          scanBtn.innerHTML = '📷 Scan route sheet';
+          scanBtn.innerHTML = '📷 Tap to scan route sheet';
           return;
         }
 
-        // Parse addresses
         var addresses = res.address.split('\n').filter(function(a) { return a.trim(); });
 
-        // Build result HTML
-        var html = '<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;">' +
-          addresses.length + ' address' + (addresses.length > 1 ? 'es' : '') + ' found</div>';
-
-        addresses.forEach(function(addr, i) {
-          html += '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:6px;">' +
-            '<span style="color:var(--accent);font-weight:700;font-size:0.75rem;min-width:18px;">' + (i + 1) + '</span>' +
-            '<div style="flex:1;">' +
-              '<div class="scan-result-addr" style="margin-bottom:3px;">' + addr.trim() + '</div>' +
-              '<a class="scan-maps-btn" style="font-size:0.7rem;padding:4px 8px;" href="https://www.google.com/maps/search/' +
-                encodeURIComponent(addr.trim()) + '" target="_blank" rel="noopener">📍 Maps</a>' +
-            '</div>' +
-          '</div>';
-        });
-
-        // Full route link(s) — Google Maps caps at ~10 waypoints, so chunk if needed
-        if (addresses.length > 1) {
-          var maxPerChunk = 9;
-
-          // Build all chunk URLs for reuse
-          var chunkUrls = [];
-          var cs = 0;
-          while (cs < addresses.length) {
-            var ce = Math.min(cs + maxPerChunk, addresses.length);
-            var cp = addresses.slice(cs, ce).map(function(a) { return encodeURIComponent(a.trim()); });
-            chunkUrls.push({
-              url: 'https://www.google.com/maps/dir/' + cp.join('/'),
-              from: cs + 1,
-              to: ce
-            });
-            cs = ce - 1;
-            if (ce >= addresses.length) break;
-          }
-
-          html += '<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">';
-
-          if (chunkUrls.length === 1) {
-            html += '<a class="scan-maps-btn" style="width:100%;display:block;text-align:center;padding:12px;" ' +
-              'href="' + chunkUrls[0].url + '" target="_blank" rel="noopener">📍 Open route in Google Maps (' + addresses.length + ' stops)</a>';
-          } else {
-            chunkUrls.forEach(function(chunk, ci) {
-              html += '<a class="scan-maps-btn" style="width:100%;display:block;text-align:center;padding:10px;font-size:0.75rem;" ' +
-                'href="' + chunk.url + '" target="_blank" rel="noopener">📍 Open part ' + (ci + 1) + ' in Maps — stops ' + chunk.from + '–' + chunk.to + '</a>';
-            });
-          }
-
-          // Share button
-          html += '<button type="button" class="scan-retry-btn" id="scanShareBtn" style="width:100%;text-align:center;padding:10px;font-size:0.8rem;font-weight:600;">' +
-            '📤 Share route</button>';
-
-          html += '</div>';
-
-          // Wire up share after DOM insert
-          setTimeout(function() {
-            var shareBtn = document.getElementById('scanShareBtn');
-            if (!shareBtn) return;
-            shareBtn.addEventListener('click', function() {
-              var text = '🚲 Cargoworks route (' + addresses.length + ' stops)\n\n' +
-                addresses.map(function(a, i) { return (i + 1) + '. ' + a.trim(); }).join('\n') +
-                '\n\n📍 Maps:\n' +
-                chunkUrls.map(function(c, ci) {
-                  return chunkUrls.length > 1
-                    ? 'Part ' + (ci + 1) + ' (stops ' + c.from + '–' + c.to + '): ' + c.url
-                    : c.url;
-                }).join('\n');
-
-              if (navigator.share) {
-                navigator.share({ title: 'Cargoworks route', text: text }).catch(function(){});
-              } else {
-                navigator.clipboard.writeText(text).then(function() {
-                  shareBtn.textContent = '✓ Copied to clipboard';
-                  setTimeout(function() { shareBtn.textContent = '📤 Share route'; }, 2000);
-                }).catch(function() {
-                  window.prompt('Copy route:', text);
-                });
-              }
-            });
-          }, 50);
+        if (addresses.length === 0) {
+          showScanStatus(statusEl, 'No addresses found in the image.', 'error');
+          scanBtn.disabled = false;
+          scanBtn.innerHTML = '📷 Tap to scan route sheet';
+          return;
         }
 
-        html += '<div class="scan-result-actions" style="margin-top:8px;">' +
-          '<button type="button" class="scan-retry-btn" id="scanRetryBtn">📷 Scan another sheet</button>' +
-        '</div>';
-
-        resultEl.innerHTML = html;
-        resultEl.style.display = '';
-
-        var retryBtn = document.getElementById('scanRetryBtn');
-        if (retryBtn) {
-          retryBtn.addEventListener('click', function() {
-            resultEl.style.display = 'none';
-            statusEl.textContent = '';
-            scanBtn.disabled = false;
-            scanBtn.innerHTML = '📷 Scan route sheet';
-            var newInput = scanBtn.parentNode.querySelector('input[type="file"]');
-            if (newInput) newInput.value = '';
-            newInput.click();
-          });
-        }
+        hideScanStatus(statusEl);
+        renderScanResult(resultEl, addresses, scanBtn, statusEl);
+        showScanStatus(statusEl, '✓ ' + addresses.length + ' addresses extracted and optimized', 'success');
 
         scanBtn.disabled = false;
-        scanBtn.innerHTML = '📷 Scan route sheet';
-        statusEl.textContent = '';
+        scanBtn.innerHTML = '📷 Scan another sheet';
+
+        // Scroll result into view
+        setTimeout(function() {
+          resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
 
       } catch (err) {
-        statusEl.textContent = 'Request failed: ' + (err.message || String(err));
-        statusEl.className = 'scan-status is-error';
+        showScanStatus(statusEl, 'Request failed: ' + (err.message || String(err)), 'error');
         scanBtn.disabled = false;
-        scanBtn.innerHTML = '📷 Scan route sheet';
+        scanBtn.innerHTML = '📷 Tap to scan route sheet';
       }
+    }
+
+    function renderScanResult(resultEl, addresses, scanBtn, statusEl) {
+      resultEl.innerHTML = '';
+      resultEl.className = 'scan-result visible';
+
+      // Count header
+      var countEl = document.createElement('div');
+      countEl.className = 'scan-result-count';
+      countEl.textContent = addresses.length + ' stops — optimized order';
+      resultEl.appendChild(countEl);
+
+      // Address list
+      addresses.forEach(function(addr, i) {
+        var item = document.createElement('div');
+        item.className = 'scan-addr-item';
+
+        var num = document.createElement('div');
+        num.className = 'scan-addr-num';
+        num.textContent = String(i + 1);
+
+        var body = document.createElement('div');
+        body.className = 'scan-addr-body';
+
+        var txt = document.createElement('div');
+        txt.className = 'scan-addr-text';
+        txt.textContent = addr.trim();
+        body.appendChild(txt);
+
+        var mini = document.createElement('a');
+        mini.className = 'scan-addr-mini-btn';
+        mini.href = 'https://www.google.com/maps/search/' + encodeURIComponent(addr.trim());
+        mini.target = '_blank';
+        mini.rel = 'noopener';
+        mini.textContent = '📍 Open in Maps';
+        body.appendChild(mini);
+
+        item.appendChild(num);
+        item.appendChild(body);
+        resultEl.appendChild(item);
+      });
+
+      // Actions block
+      var actions = document.createElement('div');
+      actions.className = 'scan-actions';
+
+      // Build chunk URLs
+      var maxPerChunk = 9;
+      var chunkUrls = [];
+      var cs = 0;
+      while (cs < addresses.length) {
+        var ce = Math.min(cs + maxPerChunk, addresses.length);
+        var cp = addresses.slice(cs, ce).map(function(a) { return encodeURIComponent(a.trim()); });
+        chunkUrls.push({
+          url: 'https://www.google.com/maps/dir/' + cp.join('/'),
+          from: cs + 1,
+          to: ce
+        });
+        if (ce >= addresses.length) break;
+        cs = ce - 1;
+      }
+
+      // Open in Maps buttons
+      if (chunkUrls.length === 1) {
+        var openBtn = document.createElement('a');
+        openBtn.className = 'scan-action-btn primary';
+        openBtn.href = chunkUrls[0].url;
+        openBtn.target = '_blank';
+        openBtn.rel = 'noopener';
+        openBtn.textContent = '📍 Open full route in Google Maps';
+        actions.appendChild(openBtn);
+      } else {
+        chunkUrls.forEach(function(chunk, ci) {
+          var openBtn = document.createElement('a');
+          openBtn.className = 'scan-action-btn primary';
+          openBtn.href = chunk.url;
+          openBtn.target = '_blank';
+          openBtn.rel = 'noopener';
+          openBtn.textContent = '📍 Open part ' + (ci + 1) + ' in Maps (stops ' + chunk.from + '–' + chunk.to + ')';
+          actions.appendChild(openBtn);
+        });
+      }
+
+      // Share button
+      if (addresses.length > 0) {
+        var shareBtn = document.createElement('button');
+        shareBtn.type = 'button';
+        shareBtn.className = 'scan-action-btn secondary';
+        shareBtn.innerHTML = '📤 Share route';
+        shareBtn.addEventListener('click', function() {
+          var text = '🚲 Cargoworks route (' + addresses.length + ' stops)\n\n' +
+            addresses.map(function(a, i) { return (i + 1) + '. ' + a.trim(); }).join('\n') +
+            '\n\n📍 Maps:\n' +
+            chunkUrls.map(function(c, ci) {
+              return chunkUrls.length > 1
+                ? 'Part ' + (ci + 1) + ' (stops ' + c.from + '–' + c.to + '): ' + c.url
+                : c.url;
+            }).join('\n');
+
+          if (navigator.share) {
+            navigator.share({ title: 'Cargoworks route', text: text }).catch(function(){});
+          } else if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(function() {
+              shareBtn.innerHTML = '✓ Copied to clipboard';
+              setTimeout(function() { shareBtn.innerHTML = '📤 Share route'; }, 2000);
+            }).catch(function() {
+              window.prompt('Copy route:', text);
+            });
+          } else {
+            window.prompt('Copy route:', text);
+          }
+        });
+        actions.appendChild(shareBtn);
+      }
+
+      // Retry button
+      var retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.className = 'scan-action-btn tertiary';
+      retryBtn.innerHTML = '🔄 Scan a different sheet';
+      retryBtn.addEventListener('click', function() {
+        resultEl.className = 'scan-result';
+        resultEl.innerHTML = '';
+        hideScanStatus(statusEl);
+        scanBtn.innerHTML = '📷 Tap to scan route sheet';
+        var fi = scanBtn.parentNode.querySelector('input[type="file"]');
+        if (fi) { fi.value = ''; fi.click(); }
+      });
+      actions.appendChild(retryBtn);
+
+      resultEl.appendChild(actions);
     }
 
     // ── Action footer ──────────────────────────────────────────────────────────
