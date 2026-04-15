@@ -3,6 +3,7 @@
 <head>
   <script>
   window.CARGOWORKS_BOOKING_API = "https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec";
+  window.CARGOWORKS_MAPS_KEY = "AIzaSyB2-lL3jKtVa6ijgLs38NP2ag6fc4YoAE0";
   </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -19,7 +20,7 @@
       --dispatch-soft: rgba(22, 35, 54, 0.04);
       --dispatch-danger: #c53d3d;
       --dispatch-ok: #1c8a5a;
-      --dispatch-header-height: min(30vh, 300px);
+      --dispatch-header-height: auto;
     }
     body { background: var(--dispatch-bg); color: var(--dispatch-ink); }
     .dispatcher-shell { max-width: 1280px; margin: 0 auto 2rem; padding: 0 1rem 1rem; display: grid; gap: 0.65rem; }
@@ -37,13 +38,44 @@
       left: 50%;
       transform: translateX(-50%);
       width: min(1280px, calc(100% - 2rem));
-      max-height: var(--dispatch-header-height);
-      overflow: auto;
       z-index: 20;
       display: grid;
       grid-template-columns: 1fr;
       gap: 0.55rem;
+      transition: box-shadow 0.2s;
     }
+    .dispatcher-controls-wrap {
+      display: grid;
+      gap: 0.35rem;
+      overflow: hidden;
+      max-height: 500px;
+      transition: max-height 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.2s;
+      opacity: 1;
+    }
+    .dispatcher-header.is-collapsed .dispatcher-controls-wrap {
+      max-height: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .dispatcher-toggle-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.25rem 0.4rem;
+      border-radius: 6px;
+      color: var(--dispatch-muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      transition: background 0.15s;
+    }
+    .dispatcher-toggle-btn:hover { background: rgba(22,35,54,0.07); }
+    .dispatcher-toggle-icon { display: inline-block; transition: transform 0.25s; font-style: normal; }
+    .dispatcher-header.is-collapsed .dispatcher-toggle-icon { transform: rotate(-180deg); }
     .dispatcher-title-row {
       display: flex;
       flex-wrap: wrap;
@@ -94,6 +126,7 @@
     }
     .dispatcher-field textarea { min-height: 56px; resize: vertical; }
 
+    .span-1 { grid-column: span 1; }
     .span-2 { grid-column: span 2; }
     .span-3 { grid-column: span 3; }
     .span-4 { grid-column: span 4; }
@@ -105,7 +138,7 @@
     .dispatcher-orders {
       display: grid;
       gap: 0.55rem;
-      margin-top: calc(var(--dispatch-header-height) + 0.75rem);
+      margin-top: 0; /* set dynamically by JS */
     }
     .dispatcher-card {
       background: var(--dispatch-card);
@@ -303,16 +336,155 @@
       margin-top: 0.2rem;
     }
 
+    /* ── Stop Quick-add ──────────────────────────────────────────────── */
+    .stops-quick-panel {
+      border: 1px solid var(--dispatch-border);
+      border-radius: 8px;
+      background: #f9fafb;
+      padding: 0.5rem 0.55rem;
+      margin-bottom: 0.35rem;
+      display: grid;
+      gap: 0.3rem;
+    }
+    .stops-quick-panel .sqp-row { display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: center; }
+    .stops-quick-panel .sqp-btn { padding: 0.2rem 0.45rem; font-size: 0.72rem; }
+    .stops-quick-panel .sqp-input {
+      width: 100%;
+      padding: 0.3rem 0.45rem;
+      border: 1px solid var(--dispatch-border);
+      border-radius: 6px;
+      font-size: 0.78rem;
+      box-sizing: border-box;
+    }
+    .stops-quick-panel .sqp-confirm-row { display: flex; gap: 0.28rem; }
+    .stops-q-list { list-style: decimal; padding-left: 1.2rem; margin: 0.1rem 0 0; }
+    .stops-q-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.77rem;
+      padding: 0.1rem 0;
+      gap: 0.4rem;
+    }
+    .stops-q-list li button {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      color: var(--dispatch-danger);
+      cursor: pointer;
+      font-size: 0.72rem;
+      padding: 0.05rem 0.2rem;
+      border-radius: 4px;
+    }
+    .stops-q-list li button:hover { background: rgba(197,61,61,0.1); }
+    /* ── Pricing override ────────────────────────────────────────────── */
+    .pricing-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .pricing-section-head h3 { margin: 0; }
+    .pricing-override-label {
+      display: flex;
+      align-items: center;
+      gap: 0.28rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--dispatch-muted);
+      text-transform: none;
+      letter-spacing: 0;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .pricing-override-label input { margin: 0; cursor: pointer; }
+    /* ── Inline label actions ────────────────────────────────────────── */
+    .field-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.3rem;
+    }
+    .field-label-row .btn {
+      padding: 0.12rem 0.38rem;
+      font-size: 0.66rem;
+      line-height: 1.4;
+    }
+    /* ── Maps route link ─────────────────────────────────────────────── */
+    .maps-route-link {
+      display: none;
+      font-size: 0.72rem;
+      color: var(--dispatch-accent);
+      margin-top: 0.18rem;
+      text-decoration: none;
+    }
+    .maps-route-link:hover { text-decoration: underline; }
+
+    /* ── Address suggestion pill ─────────────────────────────────────── */
+    .address-suggestion {
+      display: none;
+      font-size: 0.71rem;
+      color: var(--dispatch-muted);
+      background: rgba(240,123,57,0.07);
+      border: 1px solid rgba(240,123,57,0.28);
+      border-radius: 6px;
+      padding: 0.22rem 0.42rem;
+      margin-top: 0.15rem;
+      line-height: 1.5;
+    }
+    .address-suggestion.is-visible { display: flex; align-items: baseline; gap: 0.3rem; flex-wrap: wrap; }
+    .address-suggestion-text { flex: 1; min-width: 0; word-break: break-word; }
+    .address-suggestion-use {
+      flex-shrink: 0;
+      background: var(--dispatch-accent);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 0.1rem 0.4rem;
+      font-size: 0.68rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .address-suggestion-use:hover { opacity: 0.88; }
+
     @media (max-width: 980px) {
-      .span-8, .span-6, .span-5, .span-4, .span-3, .span-2 { grid-column: span 12; }
-      :root { --dispatch-header-height: min(30vh, 250px); }
+      .span-1, .span-8, .span-6, .span-5, .span-4, .span-3, .span-2 { grid-column: span 12; }
       .dispatcher-shell { padding: 0 0.6rem 0.8rem; }
-      .dispatcher-header {
-        width: calc(100% - 1.2rem);
-        top: 0.35rem;
-      }
-      .dispatcher-orders { margin-top: calc(var(--dispatch-header-height) + 0.65rem); }
+      .dispatcher-header { width: calc(100% - 1.2rem); top: 0.35rem; }
       .dispatcher-modal-card { padding: 0.85rem; }
+    }
+
+    @media (max-width: 700px) {
+      .dispatcher-header {
+        max-height: calc(100dvh - 1rem);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .dispatcher-controls-wrap {
+        max-height: none;
+        overflow-y: auto;
+        flex: 1;
+        min-height: 0;
+        padding-bottom: 0.5rem;
+      }
+      .dispatcher-title-row {
+        flex-shrink: 0;
+      }
+      .dispatcher-modal { padding: 0; align-items: flex-end; }
+      .dispatcher-modal-card {
+        border-radius: 16px 16px 0 0;
+        max-height: 92dvh;
+        width: 100%;
+        padding: 0.8rem 0.75rem 0;
+      }
+      .dispatcher-modal-actions {
+        position: sticky; bottom: 0; background: #fff;
+        border-top: 1px solid var(--dispatch-border);
+        padding: 0.55rem 0.75rem max(0.55rem, env(safe-area-inset-bottom));
+        margin: 0 -0.75rem; z-index: 2;
+      }
     }
   </style>
 </head>
@@ -340,9 +512,13 @@
           <button id="dispatcherNewOrder" class="btn" type="button">New order</button>
           <button id="dispatcherLogSheet" class="btn btn--ghost" type="button">Orders log sheet</button>
           <span id="dispatcherStatus" class="dispatcher-status" aria-live="polite"></span>
+          <button id="dispatcherToggle" class="dispatcher-toggle-btn" type="button" title="Toggle controls">
+            <em class="dispatcher-toggle-icon">▲</em> Controls
+          </button>
         </div>
       </div>
 
+      <div class="dispatcher-controls-wrap">
       <div class="dispatcher-grid-controls" aria-label="Dispatcher controls">
         <div class="dispatcher-field span-2">
           <label for="dispatcherDate">Date</label>
@@ -415,6 +591,7 @@
           </div>
         </div>
       </div>
+      </div><!-- /.dispatcher-controls-wrap -->
     </section>
 
     <section id="dispatcherOrders" class="dispatcher-orders" aria-live="polite"></section>
@@ -433,7 +610,33 @@
       <div id="dispatcherPriceNotice" class="dispatcher-notice">This change affects pricing. Quote will be recalculated on save.</div>
 
       <form id="dispatcherEditorForm" class="dispatcher-modal-sections">
-        <section class="dispatcher-section span-4">
+
+        <!-- Quick Import Panel — visible only in create mode -->
+        <section class="dispatcher-section span-12" id="importPanel" style="display:none; background: rgba(240,123,57,0.05); border-color: rgba(240,123,57,0.28);">
+          <h3 style="color: var(--dispatch-accent);">⚡ Quick Import — WhatsApp or Label</h3>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.55rem;">
+            <div class="dispatcher-field">
+              <label for="importText">Paste message or text</label>
+              <textarea id="importText" placeholder="Paste a WhatsApp message, email, or any text with order details here…" style="min-height:96px; font-size:0.77rem;"></textarea>
+            </div>
+            <div class="dispatcher-field">
+              <label>Drop image or label photo</label>
+              <div id="importDropZone" style="border:2px dashed var(--dispatch-border); border-radius:8px; padding:0.8rem; text-align:center; cursor:pointer; font-size:0.77rem; color:var(--dispatch-muted); min-height:96px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:0.35rem; background:#fafbfd; transition:border-color 0.15s, background 0.15s;">
+                <span style="font-size:1.4rem;">📎</span>
+                <span id="importDropLabel">Click to select or drop an image</span>
+                <span id="importImageName" style="font-size:0.72rem; color:var(--dispatch-accent); display:none;"></span>
+                <input type="file" id="importImageInput" accept="image/*" style="display:none;" />
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap;">
+            <button type="button" id="importExtractBtn" class="btn">Extract order details</button>
+            <button type="button" id="importClearBtn" class="btn btn--ghost" style="font-size:0.72rem;">Clear</button>
+            <span id="importStatus" class="dispatcher-status" style="font-size:0.76rem;"></span>
+          </div>
+        </section>
+
+        <section class="dispatcher-section span-4" id="secCustomer">
           <h3>Customer</h3>
           <div class="dispatcher-field"><label for="editCustomerName">Name</label><input id="editCustomerName" type="text" required /></div>
           <div class="dispatcher-field"><label for="editCustomerEmail">Email</label><input id="editCustomerEmail" type="email" /></div>
@@ -448,15 +651,62 @@
           </div>
         </section>
 
-        <section class="dispatcher-section span-4">
+        <section class="dispatcher-section span-4" id="secRoute">
           <h3>Route</h3>
-          <div class="dispatcher-field"><label for="editPickupAddress">Pickup</label><input id="editPickupAddress" type="text" required /></div>
-          <div class="dispatcher-field"><label for="editRouteStops">Stops (one per line)</label><textarea id="editRouteStops" placeholder="Optional intermediate stops"></textarea></div>
-          <div class="dispatcher-field"><label for="editDropoffAddress">Dropoff</label><input id="editDropoffAddress" type="text" required /></div>
+          <div class="dispatcher-field">
+            <label for="editPickupAddress" class="field-label-row">
+              <span>Pickup</span>
+              <button type="button" id="editPickupLocBtn" class="btn btn--ghost">📍 My location</button>
+            </label>
+            <input id="editPickupAddress" type="text" required />
+          </div>
+          <div class="dispatcher-field">
+            <label for="editRouteStops" class="field-label-row">
+              <span>Stops (one per line)</span>
+              <button type="button" id="stopsQuickAddToggle" class="btn btn--ghost">⚡ Quick add</button>
+            </label>
+            <!-- Stop quick-add panel -->
+            <div id="stopsQuickPanel" class="stops-quick-panel" style="display:none;">
+              <div class="sqp-row">
+                <button type="button" id="stopsQCamera" class="btn btn--ghost sqp-btn">📷 Camera</button>
+                <button type="button" id="stopsQFile"   class="btn btn--ghost sqp-btn">🖼 File</button>
+                <button type="button" id="stopsQType"   class="btn btn--ghost sqp-btn">✎ Type</button>
+                <input type="file" id="stopsQFileInput" accept="image/*" style="display:none;" />
+              </div>
+              <!-- Type mode -->
+              <div id="stopsQTypeWrap" style="display:none;">
+                <div class="sqp-row">
+                  <input id="stopsQTypeInput" type="text" class="sqp-input" placeholder="Address…" style="flex:1;" />
+                  <button type="button" id="stopsQTypeAddBtn" class="btn sqp-btn">Add</button>
+                </div>
+              </div>
+              <!-- Confirm / discard (image extraction result) -->
+              <div id="stopsQConfirmWrap" style="display:none;">
+                <div style="font-size:0.7rem;color:var(--dispatch-muted);margin-bottom:0.2rem;">Extracted — confirm or edit:</div>
+                <input id="stopsQConfirmInput" type="text" class="sqp-input" />
+                <div class="sqp-confirm-row" style="margin-top:0.28rem;">
+                  <button type="button" id="stopsQConfirmBtn" class="btn sqp-btn">✓ Confirm</button>
+                  <button type="button" id="stopsQDiscardBtn" class="btn btn--ghost sqp-btn">✗ Discard</button>
+                </div>
+              </div>
+              <span id="stopsQStatus" class="dispatcher-status" style="font-size:0.72rem;"></span>
+              <!-- Confirmed stops list -->
+              <div id="stopsQListWrap" style="display:none;">
+                <div style="font-size:0.69rem;color:var(--dispatch-muted);font-weight:700;margin-bottom:0.15rem;">Confirmed stops:</div>
+                <ol id="stopsQListItems" class="stops-q-list"></ol>
+              </div>
+            </div>
+            <textarea id="editRouteStops" placeholder="Optional intermediate stops"></textarea>
+          </div>
+          <div class="dispatcher-field">
+            <label for="editDropoffAddress">Dropoff</label>
+            <input id="editDropoffAddress" type="text" required />
+            <a id="editMapsRouteLink" class="maps-route-link" href="#" target="_blank" rel="noopener">🗺 Open route in Google Maps</a>
+          </div>
           <div class="dispatcher-field"><label for="editNotes">Customer notes</label><textarea id="editNotes"></textarea></div>
         </section>
 
-        <section class="dispatcher-section span-4">
+        <section class="dispatcher-section span-4" id="secTiming">
           <h3>Timing</h3>
           <div class="dispatcher-field"><label for="editScheduleDate">Date</label><input id="editScheduleDate" type="date" required /></div>
           <div class="dispatcher-field"><label for="editScheduleTime">Time</label><input id="editScheduleTime" type="time" required /></div>
@@ -464,7 +714,7 @@
           <div class="dispatcher-field"><label for="editTotalKm">Distance km</label><input id="editTotalKm" type="number" min="0" step="0.1" /></div>
         </section>
 
-        <section class="dispatcher-section span-6">
+        <section class="dispatcher-section span-6" id="secCargo">
           <h3>Cargo / Load</h3>
           <div class="dispatcher-field"><label for="editCargoType">Cargo type</label><input id="editCargoType" type="text" /></div>
           <div class="dispatcher-field"><label for="editLoadType">Load type</label><input id="editLoadType" type="text" /></div>
@@ -474,23 +724,39 @@
           <div class="dispatcher-field"><label for="editVolumeM3">Volume m3</label><input id="editVolumeM3" type="number" min="0" step="0.01" /></div>
         </section>
 
-        <section class="dispatcher-section span-6">
-          <h3>Pricing breakdown</h3>
-          <div class="dispatcher-field"><label for="editPriceBase">Base</label><input id="editPriceBase" type="number" step="0.01" /></div>
-          <div class="dispatcher-field"><label for="editPriceDistance">Distance</label><input id="editPriceDistance" type="number" step="0.01" /></div>
-          <div class="dispatcher-field"><label for="editPriceStops">Stops</label><input id="editPriceStops" type="number" step="0.01" /></div>
-          <div class="dispatcher-field"><label for="editPriceSurcharge">Surcharge</label><input id="editPriceSurcharge" type="number" step="0.01" /></div>
-          <div class="dispatcher-field"><label for="editPriceDiscount">Discount</label><input id="editPriceDiscount" type="number" step="0.01" /></div>
-          <div class="dispatcher-field"><label for="editPriceAdjustment">Adjustment</label><input id="editPriceAdjustment" type="number" step="0.01" /></div>
-          <div class="dispatcher-field"><label for="editPriceTotal">Final total</label><input id="editPriceTotal" type="number" step="0.01" /></div>
+        <section class="dispatcher-section span-6" id="secPricing">
+            <h3>Pricing breakdown</h3>
+            <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
+              <button type="button" id="editGetSystemPricing" class="btn btn--ghost" style="font-size:0.7rem;padding:0.18rem 0.42rem;">⚙ Get system pricing</button>
+              <label class="pricing-override-label">
+                <input type="checkbox" id="editPriceOverride" />
+                Manual override
+              </label>
+            </div>
+          <div id="systemPricingStatus" style="display:none;font-size:0.71rem;color:var(--dispatch-muted);line-height:1.4;padding:0.1rem 0 0.2rem;"></div>
+          <div id="editPriceBreakdownFields">
+            <div class="dispatcher-field"><label for="editPriceBase">Base (zone)</label><input id="editPriceBase" type="number" step="0.01" /></div>
+            <div class="dispatcher-field"><label for="editPriceDistance">Distance</label><input id="editPriceDistance" type="number" step="0.01" /></div>
+            <div class="dispatcher-field"><label for="editPriceStops">Stops fee</label><input id="editPriceStops" type="number" step="0.01" /></div>
+            <div class="dispatcher-field"><label for="editPriceSurcharge">Surcharge (cargo / time)</label><input id="editPriceSurcharge" type="number" step="0.01" /></div>
+            <div class="dispatcher-field"><label for="editPriceDiscount">Discount</label><input id="editPriceDiscount" type="number" step="0.01" /></div>
+            <div class="dispatcher-field"><label for="editPriceAdjustment">VAT / Adjustment</label><input id="editPriceAdjustment" type="number" step="0.01" /></div>
+          </div>
+          <div class="dispatcher-field">
+            <label for="editPriceTotal" class="field-label-row">
+              <span>Final total (incl. VAT) <span id="editPriceManualHint" style="display:none; font-weight:400; color:var(--dispatch-accent); font-size:0.7rem;">✎ manual</span></span>
+            </label>
+            <input id="editPriceTotal" type="number" step="0.01" />
+          </div>
         </section>
 
-        <section class="dispatcher-section span-6">
+        <section class="dispatcher-section span-6" id="secDelivery">
           <h3>Delivery / Completion</h3>
           <div class="dispatcher-field"><label for="editStatus">Order status</label>
             <select id="editStatus">
               <option value="Confirmed">Confirmed</option>
               <option value="Assigned">Assigned</option>
+              <option value="OMW">OMW</option>
               <option value="Picked up">Picked up</option>
               <option value="In transit">In transit</option>
               <option value="Delivered">Delivered</option>
@@ -506,11 +772,18 @@
               <option value="Failed">Failed</option>
             </select>
           </div>
-          <div class="dispatcher-field"><label for="editPaymentUrl">Payment URL</label><input id="editPaymentUrl" type="text" /></div>
+          <div class="dispatcher-field">
+            <label for="editPaymentUrl" class="field-label-row">
+              <span>Payment URL</span>
+              <button type="button" id="editCreatePaymentBtn" class="btn btn--ghost">+ Link</button>
+            </label>
+            <input id="editPaymentUrl" type="text" />
+            <span id="editCreatePaymentStatus" class="dispatcher-status" style="font-size:0.72rem; margin-top:0.15rem; display:none;"></span>
+          </div>
           <div class="dispatcher-field"><label for="editPodUrl">POD URL (read-only)</label><input id="editPodUrl" type="text" readonly /></div>
         </section>
 
-        <section class="dispatcher-section span-6">
+        <section class="dispatcher-section span-6" id="secAdmin">
           <h3>Internal Admin</h3>
           <div class="dispatcher-field"><label for="editRiderName">Rider name</label><input id="editRiderName" type="text" /></div>
           <div class="dispatcher-field"><label for="editRiderPhone">Rider phone</label><input id="editRiderPhone" type="text" /></div>
@@ -552,6 +825,32 @@
           <button id="dispatcherCancelConfirm" class="btn" type="button">Confirm cancellation</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ── In-browser camera overlay (getUserMedia — no OS handoff, no reload) ── -->
+  <div id="stopsQCameraOverlay" aria-modal="true" role="dialog" aria-label="Camera"
+    style="display:none; position:fixed; inset:0; z-index:50; background:#000; flex-direction:column; align-items:stretch;">
+    <div style="flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+      <video id="stopsQCameraVideo" autoplay playsinline muted
+        style="width:100%; height:100%; object-fit:cover; display:block;"></video>
+      <canvas id="stopsQCameraCanvas" style="display:none;"></canvas>
+      <div id="stopsQCameraMsg"
+        style="position:absolute; bottom:0; left:0; right:0; text-align:center; font-size:0.8rem;
+               color:#fff; background:rgba(0,0,0,0.55); padding:0.4rem 0.6rem; display:none;"></div>
+    </div>
+    <div style="display:flex; gap:0.65rem; justify-content:center; padding:1rem 1.2rem;
+                background:#111; padding-bottom:max(1rem, env(safe-area-inset-bottom));">
+      <button type="button" id="stopsQCameraCapture"
+        style="flex:1; max-width:220px; padding:0.7rem; font-size:0.95rem; font-weight:700;
+               background:var(--dispatch-accent); color:#fff; border:none; border-radius:10px; cursor:pointer;">
+        📸 Capture
+      </button>
+      <button type="button" id="stopsQCameraCancel"
+        style="padding:0.7rem 1rem; font-size:0.9rem; background:#333; color:#ccc;
+               border:none; border-radius:10px; cursor:pointer;">
+        ✕
+      </button>
     </div>
   </div>
 

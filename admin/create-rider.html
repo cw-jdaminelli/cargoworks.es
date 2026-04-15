@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cargoworks — Create Rider</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0a0a14;
+      color: #e8e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .box {
+      background: #12121f;
+      border: 1px solid #2a2a40;
+      border-radius: 12px;
+      padding: 32px;
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    h1 { font-size: 1.1rem; font-weight: 700; margin: 0; }
+    label { font-size: 0.8rem; color: #888; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+    input {
+      width: 100%;
+      background: #1a1a2e;
+      border: 1px solid #2a2a40;
+      border-radius: 8px;
+      color: #e8e8f0;
+      font-size: 0.95rem;
+      padding: 10px 12px;
+      outline: none;
+      box-sizing: border-box;
+      margin-top: 4px;
+    }
+    input:focus { border-color: #9b5de5; }
+    button {
+      background: #9b5de5;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+    }
+    button:hover { background: #7c3fc0; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .result {
+      background: #1a1a2e;
+      border: 1px solid #2a2a40;
+      border-radius: 8px;
+      padding: 16px;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .result.visible { display: flex; }
+    .result-label { font-size: 0.75rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    .result-value { font-size: 0.9rem; word-break: break-all; }
+    .result-url { color: #9b5de5; font-size: 0.85rem; word-break: break-all; }
+    .copy-btn {
+      background: #1a1a2e;
+      border: 1px solid #2a2a40;
+      color: #9b5de5;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: auto;
+    }
+    .copy-btn:hover { background: #2a2a40; }
+    .error { color: #ef4444; font-size: 0.85rem; display: none; }
+    .error.visible { display: block; }
+    .riders-list { display: flex; flex-direction: column; gap: 6px; }
+    .rider-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #1a1a2e;
+      border: 1px solid #2a2a40;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+    }
+    .rider-status { font-size: 0.72rem; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+    .rider-status.active { background: rgba(34,197,94,.15); color: #4ade80; }
+    .rider-status.inactive { background: rgba(107,114,128,.15); color: #9ca3af; }
+    hr { border: none; border-top: 1px solid #2a2a40; margin: 0; }
+  </style>
+</head>
+<body>
+<div class="box">
+  <h1>Cargoworks — Rider Management</h1>
+
+  <div style="display:flex;flex-direction:column;gap:4px;">
+    <label>Apps Script URL</label>
+    <input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/…/exec">
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:4px;">
+    <label>Admin Token</label>
+    <input type="password" id="adminToken" placeholder="Your ADMIN_TOKEN from Script Properties">
+  </div>
+
+  <hr>
+
+  <div style="display:flex;flex-direction:column;gap:4px;">
+    <label>New Rider Name</label>
+    <input type="text" id="riderName" placeholder="e.g. Marcelo">
+  </div>
+
+  <button id="createBtn" onclick="createRider()">Create Rider ID</button>
+  <div class="error" id="createError"></div>
+
+  <div class="result" id="result">
+    <div class="result-label">Rider ID</div>
+    <div class="result-value" id="resultId"></div>
+    <div class="result-label">Rider Link</div>
+    <div class="result-url" id="resultUrl"></div>
+    <button class="copy-btn" onclick="copyLink()">Copy link</button>
+  </div>
+
+  <hr>
+
+  <button onclick="listRiders()" style="background:#1a1a2e;border:1px solid #2a2a40;color:#888;">List existing riders</button>
+  <div class="riders-list" id="ridersList"></div>
+</div>
+
+<script>
+  async function post(action, extra) {
+    const url = document.getElementById('apiUrl').value.trim();
+    const token = document.getElementById('adminToken').value.trim();
+    if (!url || !token) { alert('Fill in the URL and token first.'); return null; }
+    try {
+      // Send as form-encoded with payload field — avoids CORS preflight on Apps Script
+      const payload = JSON.stringify(Object.assign({ action: 'adminManageRiders', token: token }, extra));
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'payload=' + encodeURIComponent(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { error: String(e) };
+    }
+  }
+
+  async function createRider() {
+    const name = document.getElementById('riderName').value.trim();
+    const errEl = document.getElementById('createError');
+    const resultEl = document.getElementById('result');
+    errEl.className = 'error';
+    resultEl.className = 'result';
+    if (!name) { errEl.textContent = 'Enter a name.'; errEl.className = 'error visible'; return; }
+
+    const btn = document.getElementById('createBtn');
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+
+    const res = await post('adminManageRiders', { op: 'create', name: name });
+    btn.disabled = false;
+    btn.textContent = 'Create Rider ID';
+
+    if (!res || res.error) {
+      errEl.textContent = (res && res.error) || 'Request failed.';
+      errEl.className = 'error visible';
+      return;
+    }
+
+    const baseUrl = document.getElementById('apiUrl').value.trim().replace('script.google.com/macros/s/', '').split('/exec')[0];
+    const riderUrl = 'https://cargoworks.es/rider.html?id=' + res.id;
+    document.getElementById('resultId').textContent = res.id;
+    document.getElementById('resultUrl').textContent = riderUrl;
+    resultEl.className = 'result visible';
+    document.getElementById('riderName').value = '';
+  }
+
+  async function listRiders() {
+    const listEl = document.getElementById('ridersList');
+    listEl.innerHTML = '<div style="color:#888;font-size:.85rem;">Loading…</div>';
+    const res = await post('adminManageRiders', { op: 'list' });
+    if (!res || res.error) { listEl.innerHTML = '<div style="color:#ef4444;font-size:.85rem;">' + ((res && res.error) || 'Failed') + '</div>'; return; }
+    const riders = res.riders || [];
+    if (!riders.length) { listEl.innerHTML = '<div style="color:#888;font-size:.85rem;">No riders yet.</div>'; return; }
+    listEl.innerHTML = '';
+    riders.forEach(function(r) {
+      const riderUrl = 'https://cargoworks.es/rider.html?id=' + r.id;
+      const item = document.createElement('div');
+      item.className = 'rider-item';
+      item.style.flexWrap = 'wrap';
+
+      const info = document.createElement('div');
+      info.innerHTML = '<div style="font-weight:600;">' + r.name + '</div><div style="font-size:.72rem;color:#555;margin-top:2px;">' + r.id + '</div>';
+
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;';
+
+      const chip = document.createElement('span');
+      chip.className = 'rider-status ' + (r.active ? 'active' : 'inactive');
+      chip.textContent = r.active ? 'Active' : 'Revoked';
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'copy-btn';
+      copyBtn.textContent = 'Copy link';
+      copyBtn.onclick = function() {
+        navigator.clipboard.writeText(riderUrl).then(function() {
+          copyBtn.textContent = 'Copied ✓';
+          setTimeout(function() { copyBtn.textContent = 'Copy link'; }, 2000);
+        });
+      };
+
+      const toggleBtn = document.createElement('button');
+      toggleBtn.className = 'copy-btn';
+      toggleBtn.style.color = r.active ? '#f97316' : '#22c55e';
+      toggleBtn.textContent = r.active ? 'Revoke' : 'Restore';
+      toggleBtn.onclick = async function() {
+        const op2 = r.active ? 'revoke' : 'restore';
+        const r2 = await post('adminManageRiders', { op: op2, riderId: r.id });
+        if (r2 && r2.ok) listRiders();
+        else alert('Failed: ' + (r2 && r2.error || 'unknown'));
+      };
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'copy-btn';
+      deleteBtn.style.color = '#ef4444';
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.onclick = async function() {
+        if (!confirm('Permanently delete ' + r.name + '? Their link stops working immediately and cannot be recovered.')) return;
+        const r2 = await post('adminManageRiders', { op: 'delete', riderId: r.id });
+        if (r2 && r2.ok) listRiders();
+        else alert('Failed: ' + (r2 && r2.error || 'unknown'));
+      };
+
+      actions.appendChild(chip);
+      actions.appendChild(copyBtn);
+      actions.appendChild(toggleBtn);
+      actions.appendChild(deleteBtn);
+      item.appendChild(info);
+      item.appendChild(actions);
+      listEl.appendChild(item);
+    });
+  }
+
+  function copyLink() {
+    const url = document.getElementById('resultUrl').textContent;
+    navigator.clipboard.writeText(url).then(function() {
+      const btn = document.querySelector('.copy-btn');
+      btn.textContent = 'Copied ✓';
+      setTimeout(function() { btn.textContent = 'Copy link'; }, 2000);
+    });
+  }
+</script>
+</body>
+</html>

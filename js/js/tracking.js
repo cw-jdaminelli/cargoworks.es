@@ -202,6 +202,7 @@
     const key = String(value || '').trim().toLowerCase();
     if (key === 'confirmed') return i18n('orderStatusConfirmed') || 'Confirmed';
     if (key === 'assigned') return i18n('orderStatusAssigned') || 'Assigned';
+    if (key === 'omw') return i18n('orderStatusOMW') || 'On My Way 🚴';
     if (key === 'picked up') return i18n('orderStatusPickedUp') || 'Picked up';
     if (key === 'in transit') return i18n('orderStatusInTransit') || 'In transit';
     if (key === 'delivered') return i18n('orderStatusDelivered') || 'Delivered';
@@ -302,10 +303,62 @@
     return wrap;
   }
 
+  var _etaInterval = null;
+
+  function fetchAndShowEta(ref, container){
+    if (!API_BASE || !ref) return;
+    var existing = container.querySelector('.tracking-eta-banner');
+    if (existing) existing.remove();
+    var token = tokenForRef(ref);
+    var tokenParam = token ? ('&t=' + encodeURIComponent(token)) : '';
+    fetch(API_BASE + '?action=getRiderEta&ref=' + encodeURIComponent(ref) + tokenParam)
+      .then(function(res){ return res.json(); })
+      .then(function(json){
+        if (!json.eta || !json.eta.active) return;
+        var eta = json.eta;
+        var arrivalMs = new Date(eta.arrivalTime).getTime();
+        var banner = document.createElement('div');
+        banner.className = 'tracking-eta-banner';
+        banner.style.cssText = 'background:linear-gradient(135deg,rgba(249,115,22,.12),rgba(249,115,22,.04));border:1px solid rgba(249,115,22,.35);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin:12px 0;';
+        var icon = document.createElement('div');
+        icon.textContent = '🚴';
+        icon.style.cssText = 'font-size:1.4rem;flex-shrink:0;';
+        var text = document.createElement('div');
+        text.style.flex = '1';
+        var riderLine = document.createElement('div');
+        riderLine.style.cssText = 'font-weight:600;color:#fb923c;font-size:.9rem;';
+        riderLine.textContent = (eta.riderName || 'Your rider') + ' is on the way';
+        var countdownLine = document.createElement('div');
+        countdownLine.style.cssText = 'font-size:.8rem;color:#888;margin-top:3px;';
+        function updateCountdown(){
+          var remaining = Math.max(0, Math.ceil((arrivalMs - Date.now()) / 60000));
+          countdownLine.textContent = remaining <= 0
+            ? 'Arriving any moment\u2026'
+            : 'Estimated arrival in ' + remaining + ' min';
+        }
+        updateCountdown();
+        text.appendChild(riderLine);
+        text.appendChild(countdownLine);
+        banner.appendChild(icon);
+        banner.appendChild(text);
+        var timeline = container.querySelector('.tracking-timeline');
+        if (timeline) container.insertBefore(banner, timeline);
+        else container.appendChild(banner);
+        if (_etaInterval) clearInterval(_etaInterval);
+        _etaInterval = setInterval(function(){
+          updateCountdown();
+          if (Date.now() >= arrivalMs) clearInterval(_etaInterval);
+        }, 30000);
+      })
+      .catch(function(){});
+  }
+
   function renderDetails(order){
     if (!detailsEl) return;
     detailsEl.innerHTML = '';
     if (!order) return;
+
+    if (order.status === 'OMW') fetchAndShowEta(order.reference, detailsEl);
 
     const paymentStatus = normalizePaymentStatus(order.paymentStatus || '-');
     const when = order.schedule && order.schedule.time ? order.schedule.time : '-';

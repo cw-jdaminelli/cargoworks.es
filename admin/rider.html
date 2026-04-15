@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a14">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Cargoworks — Rider</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <script>
+    // Set API base — same pattern as other pages
+    window.CARGOWORKS_BOOKING_API = 'https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec';
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a14;
+      --bg-card:   #12121f;
+      --bg-raised: #1a1a2e;
+      --border:    #2a2a40;
+      --accent:    #9b5de5;
+      --accent-dim:#6b3fa0;
+      --pink:      #e0287d;
+      --text:      #e8e8f0;
+      --text-dim:  #888899;
+      --text-muted:#55556a;
+      --green:     #22c55e;
+      --orange:    #f97316;
+      --yellow:    #eab308;
+      --cyan:      #06b6d4;
+      --red:       #ef4444;
+      --radius:    12px;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 16px);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+    }
+
+    /* ── AUTH SCREEN ── */
+    #authScreen {
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      gap: 2rem;
+    }
+    .auth-logo {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 800;
+      font-size: 2.2rem;
+      letter-spacing: 0.05em;
+      color: var(--text);
+    }
+    .auth-logo span { color: var(--accent); }
+    .auth-tagline {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .auth-error {
+      color: var(--red);
+      font-size: 0.9rem;
+      text-align: center;
+      display: none;
+    }
+    .auth-error.visible { display: block; }
+
+    /* ── APP SHELL ── */
+    #app {
+      display: none;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
+    }
+    #app.visible { display: flex; }
+
+    /* ── HEADER ── */
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: calc(var(--safe-top) + 12px) 16px 12px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      gap: 12px;
+    }
+    .header-left { display: flex; flex-direction: column; gap: 2px; }
+    .header-logo {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 800;
+      font-size: 1.1rem;
+      letter-spacing: 0.06em;
+      color: var(--text);
+      line-height: 1;
+    }
+    .header-logo span { color: var(--accent); }
+    .header-rider-name {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .date-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .date-btn {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .date-btn:active { background: var(--border); }
+    .date-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text);
+      min-width: 56px;
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+
+    /* ── FILTER TABS ── */
+    .filter-tabs {
+      display: flex;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .filter-tab {
+      flex: 1;
+      padding: 10px 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-align: center;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .filter-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    /* ── ORDER LIST ── */
+    #orderList {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      height: 200px;
+      color: var(--text-muted);
+    }
+    .empty-state-icon { font-size: 2rem; }
+    .empty-state-text { font-size: 0.85rem; text-align: center; }
+
+    /* ── ORDER CARD ── */
+    .order-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .order-card:active { background: var(--bg-raised); }
+    .order-card.is-mine { border-left: 3px solid var(--accent); }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .card-ref {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: 0.04em;
+      color: var(--text);
+    }
+    .card-time {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .card-route {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .card-route-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 0.82rem;
+    }
+    .route-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+    .route-dot.pickup { background: var(--green); }
+    .route-dot.dropoff { background: var(--pink); }
+    .route-addr {
+      color: var(--text-dim);
+      line-height: 1.35;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+    }
+
+    .card-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .card-assigned {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .card-assigned.is-me { color: var(--accent); }
+
+    /* ── STATUS CHIP ── */
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .status-chip::before {
+      content: '';
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.7;
+    }
+    .chip-confirmed   { background: rgba(99,102,241,0.15); color: #818cf8; }
+    .chip-assigned    { background: rgba(234,179,8,0.15);  color: #fbbf24; }
+    .chip-omw         { background: rgba(249,115,22,0.15); color: #fb923c; }
+    .chip-picked-up   { background: rgba(6,182,212,0.15);  color: #22d3ee; }
+    .chip-in-transit  { background: rgba(6,182,212,0.15);  color: #22d3ee; }
+    .chip-delivered   { background: rgba(34,197,94,0.15);  color: #4ade80; }
+    .chip-failed      { background: rgba(239,68,68,0.15);  color: #f87171; }
+    .chip-canceled    { background: rgba(107,114,128,0.15);color: #9ca3af; }
+    .chip-default     { background: rgba(255,255,255,0.07);color: var(--text-dim); }
+
+    /* ── ORDER DETAIL PANEL ── */
+    #orderDetail {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+    }
+    #orderDetail.open { transform: translateX(0); }
+
+    .detail-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: calc(var(--safe-top) + 12px) 16px 12px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .back-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 1.4rem;
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .detail-ref {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 800;
+      font-size: 1.2rem;
+      letter-spacing: 0.05em;
+      flex: 1;
+    }
+
+    .detail-body {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding-bottom: calc(var(--safe-bottom) + 160px);
+    }
+
+    .detail-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .detail-section-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 10px 14px 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-row-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      width: 72px;
+      flex-shrink: 0;
+      padding-top: 1px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .detail-row-value {
+      font-size: 0.85rem;
+      color: var(--text);
+      flex: 1;
+      line-height: 1.45;
+    }
+
+    .maps-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+      margin-top: 6px;
+    }
+
+    /* ── NOTE INPUT ── */
+    .note-wrap {
+      padding: 10px 14px;
+    }
+    .note-input {
+      width: 100%;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.85rem;
+      padding: 10px 12px;
+      resize: none;
+      min-height: 72px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .note-input:focus { border-color: var(--accent); }
+    .note-input::placeholder { color: var(--text-muted); }
+
+    /* ── POD UPLOAD ── */
+    .pod-wrap {
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .pod-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-raised);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: var(--text-dim);
+      font-size: 0.82rem;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: border-color 0.15s;
+    }
+    .pod-btn.has-file { border-color: var(--green); color: var(--green); }
+    .pod-btn-icon { font-size: 1.1rem; }
+    #podFileInput { display: none; }
+    .pod-preview {
+      width: 80px;
+      height: 80px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      display: none;
+    }
+    .pod-preview.visible { display: block; }
+
+    /* ── ACTION FOOTER ── */
+    .action-footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      padding: 12px 16px calc(var(--safe-bottom) + 12px);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 101;
+    }
+
+    /* ── BUTTONS ── */
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 13px 16px;
+      width: 100%;
+      transition: opacity 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:active { transform: scale(0.98); opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .btn-primary  { background: var(--accent); color: #fff; }
+    .btn-omw      { background: var(--orange); color: #fff; }
+    .btn-success  { background: var(--green); color: #111; }
+    .btn-danger   { background: var(--red); color: #fff; }
+    .btn-ghost    { background: var(--bg-raised); color: var(--text-dim); border: 1px solid var(--border); }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-row .btn { flex: 1; }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed;
+      bottom: calc(var(--safe-bottom) + 90px);
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 10px 18px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text);
+      opacity: 0;
+      transition: opacity 0.25s, transform 0.25s;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 200;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    #toast.is-error { border-color: var(--red); color: var(--red); }
+    #toast.is-success { border-color: var(--green); color: var(--green); }
+
+    /* ── LOADING ── */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(10,10,20,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      display: none;
+    }
+    .loading-overlay.visible { display: flex; }
+
+    /* ── TIMELINE IN DETAIL ── */
+    .timeline-list {
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .timeline-item {
+      display: flex;
+      gap: 10px;
+      font-size: 0.78rem;
+    }
+    .timeline-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent-dim);
+      flex-shrink: 0;
+      margin-top: 3px;
+    }
+    .timeline-dot.latest { background: var(--accent); }
+    .timeline-content { flex: 1; }
+    .timeline-msg { color: var(--text); line-height: 1.35; }
+    .timeline-ts { color: var(--text-muted); font-size: 0.7rem; margin-top: 2px; }
+
+    /* ── ETA BANNER ── */
+    .eta-banner {
+      background: linear-gradient(135deg, rgba(249,115,22,0.15), rgba(249,115,22,0.05));
+      border: 1px solid rgba(249,115,22,0.3);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .eta-icon { font-size: 1.3rem; }
+    .eta-text { flex: 1; }
+    .eta-main { font-weight: 600; color: var(--orange); font-size: 0.9rem; }
+    .eta-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 2px; }
+
+    /* ── SCAN LABEL ── */
+    .scan-section { padding: 10px 14px; }
+    .scan-btn {
+      width: 100%;
+      padding: 12px;
+      border: 1.5px dashed var(--accent-dim);
+      border-radius: var(--radius);
+      background: rgba(155,93,229,0.06);
+      color: var(--accent);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.15s;
+    }
+    .scan-btn:active { background: rgba(155,93,229,0.15); transform: scale(0.98); }
+    .scan-btn:disabled { opacity: 0.5; }
+    .scan-result {
+      margin-top: 8px;
+      padding: 10px 12px;
+      background: var(--bg-raised);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+    .scan-result-addr {
+      font-size: 0.88rem;
+      color: var(--text);
+      line-height: 1.4;
+      margin-bottom: 8px;
+    }
+    .scan-result-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .scan-result-actions a,
+    .scan-result-actions button {
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+    }
+    .scan-maps-btn {
+      background: var(--green);
+      color: #fff;
+    }
+    .scan-retry-btn {
+      background: var(--bg-card);
+      color: var(--text-dim);
+      border: 1px solid var(--border) !important;
+    }
+    .scan-status {
+      font-size: 0.75rem;
+      margin-top: 6px;
+      color: var(--text-dim);
+    }
+    .scan-status.is-error { color: var(--red); }
+  </style>
+</head>
+<body>
+
+  <!-- Auth screen (shown when no valid ?id= or validation fails) -->
+  <div id="authScreen">
+    <div>
+      <div class="auth-logo">CARGO<span>WORKS</span></div>
+    </div>
+    <div class="auth-tagline">Rider Panel</div>
+    <div id="authError" class="auth-error">Rider ID not recognised. Check your link.</div>
+    <div id="authLoading" style="color: var(--text-dim); font-size: 0.85rem;">Verifying...</div>
+  </div>
+
+  <!-- Main app (shown after auth) -->
+  <div id="app">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="header-logo">CARGO<span>WORKS</span></div>
+        <div class="header-rider-name" id="headerRiderName">Rider</div>
+      </div>
+      <div class="date-nav">
+        <button class="date-btn" id="datePrev" aria-label="Previous day">‹</button>
+        <div class="date-label" id="dateLabel">Today</div>
+        <button class="date-btn" id="dateNext" aria-label="Next day">›</button>
+      </div>
+    </header>
+
+    <!-- Filter tabs -->
+    <div class="filter-tabs">
+      <div class="filter-tab active" data-filter="all">All</div>
+      <div class="filter-tab" data-filter="mine">Mine</div>
+      <div class="filter-tab" data-filter="open">Open</div>
+    </div>
+
+    <!-- Order list -->
+    <div id="orderList">
+      <div class="empty-state">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order detail panel (slides in from right) -->
+  <div id="orderDetail">
+    <div class="detail-header">
+      <button class="back-btn" id="backBtn" aria-label="Back">←</button>
+      <div class="detail-ref" id="detailRef">—</div>
+      <div id="detailStatusChip"></div>
+    </div>
+    <div class="detail-body" id="detailBody"></div>
+    <div class="action-footer" id="actionFooter"></div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast"></div>
+
+  <script>
+  (function() {
+    'use strict';
+
+    const API = (window.CARGOWORKS_BOOKING_API || '').replace(/\/$/, '');
+    let RIDER_ID = '';
+    let RIDER_NAME = '';
+    let currentDate = new Date();
+    let currentFilter = 'all';
+    let allOrders = [];
+    let activeOrder = null;
+    let podFile = null;
+    let podDataUrl = null;
+
+    // ── Utilities ──────────────────────────────────────────────────────────────
+
+    function formatDateKey(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + day;
+    }
+
+    function formatDateLabel(d) {
+      const today = formatDateKey(new Date());
+      const key = formatDateKey(d);
+      if (key === today) return 'Today';
+      const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+      if (key === formatDateKey(tomorrow)) return 'Tomorrow';
+      return d.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+
+    function toast(msg, type) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'show' + (type ? ' is-' + type : '');
+      clearTimeout(el._timer);
+      el._timer = setTimeout(function() { el.className = ''; }, 2800);
+    }
+
+    function statusChipClass(status) {
+      const map = {
+        'Confirmed': 'chip-confirmed', 'Assigned': 'chip-assigned',
+        'OMW': 'chip-omw', 'Picked up': 'chip-picked-up',
+        'In transit': 'chip-in-transit', 'Delivered': 'chip-delivered',
+        'Failed': 'chip-failed', 'Canceled': 'chip-canceled',
+        'Delivery rejected': 'chip-canceled'
+      };
+      return map[status] || 'chip-default';
+    }
+
+    function makeChip(status) {
+      const span = document.createElement('span');
+      span.className = 'status-chip ' + statusChipClass(status);
+      span.textContent = status;
+      return span;
+    }
+
+    function truncate(str, n) {
+      str = String(str || '');
+      return str.length > n ? str.slice(0, n) + '…' : str;
+    }
+
+    function mapsUrl(address) {
+      return 'https://maps.google.com/?q=' + encodeURIComponent(address || '');
+    }
+
+    function routeMapsUrl(order) {
+      const route = order.route || {};
+      const pickup = (route.pickup && route.pickup.address) || '';
+      const dropoff = (route.dropoff && route.dropoff.address) || '';
+      const stops = Array.isArray(route.stops) ? route.stops : [];
+      const waypoints = stops.map(function(s) { return s && s.address || ''; }).filter(Boolean);
+      const base = 'https://maps.google.com/maps/dir/';
+      const parts = [pickup].concat(waypoints).concat([dropoff]);
+      return base + parts.map(encodeURIComponent).join('/');
+    }
+
+    function formatIso(iso) {
+      if (!iso) return '';
+      try {
+        const d = new Date(iso);
+        return d.toLocaleString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      } catch (_) { return iso; }
+    }
+
+    // ── API calls ──────────────────────────────────────────────────────────────
+
+    async function api(method, data) {
+      try {
+        if (method === 'GET') {
+          const qs = Object.keys(data).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(data[k]);
+          }).join('&');
+          const res = await fetch(API + '?' + qs);
+          return await res.json();
+        } else {
+          // Send as form-encoded to avoid CORS preflight on Apps Script
+          const res = await fetch(API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'payload=' + encodeURIComponent(JSON.stringify(data))
+          });
+          return await res.json();
+        }
+      } catch (err) {
+        return { error: String(err && err.message || 'Network error') };
+      }
+    }
+
+    // ── Auth ───────────────────────────────────────────────────────────────────
+
+    async function init() {
+      const params = new URLSearchParams(location.search);
+      RIDER_ID = String(params.get('id') || '').trim();
+
+      if (!RIDER_ID) {
+        showAuthError('No rider ID in URL. Check your link.');
+        return;
+      }
+
+      const res = await api('GET', { action: 'riderValidate', id: RIDER_ID });
+
+      if (res.error || !res.ok) {
+        showAuthError('Rider ID not recognised. Check your link.');
+        return;
+      }
+
+      RIDER_NAME = res.name || 'Rider';
+      document.getElementById('authScreen').style.display = 'none';
+      document.getElementById('headerRiderName').textContent = RIDER_NAME;
+      document.getElementById('app').classList.add('visible');
+
+      setupDateNav();
+      setupFilterTabs();
+      loadOrders();
+    }
+
+    function showAuthError(msg) {
+      document.getElementById('authLoading').style.display = 'none';
+      const err = document.getElementById('authError');
+      err.textContent = msg;
+      err.classList.add('visible');
+    }
+
+    // ── Date navigation ────────────────────────────────────────────────────────
+
+    function setupDateNav() {
+      updateDateLabel();
+      document.getElementById('datePrev').addEventListener('click', function() {
+        currentDate.setDate(currentDate.getDate() - 1);
+        updateDateLabel();
+        loadOrders();
+      });
+      document.getElementById('dateNext').addEventListener('click', function() {
+        currentDate.setDate(currentDate.getDate() + 1);
+        updateDateLabel();
+        loadOrders();
+      });
+    }
+
+    function updateDateLabel() {
+      document.getElementById('dateLabel').textContent = formatDateLabel(currentDate);
+    }
+
+    // ── Filter tabs ────────────────────────────────────────────────────────────
+
+    function setupFilterTabs() {
+      document.querySelectorAll('.filter-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          document.querySelectorAll('.filter-tab').forEach(function(t) { t.classList.remove('active'); });
+          tab.classList.add('active');
+          currentFilter = tab.dataset.filter;
+          renderOrderList();
+        });
+      });
+    }
+
+    // ── Load orders ────────────────────────────────────────────────────────────
+
+    async function loadOrders() {
+      const listEl = document.getElementById('orderList');
+      listEl.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+
+      const res = await api('GET', {
+        action: 'riderGetOrders',
+        id: RIDER_ID,
+        date: formatDateKey(currentDate)
+      });
+
+      if (res.error) {
+        listEl.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">' + res.error + '</div></div>';
+        return;
+      }
+
+      allOrders = res.orders || [];
+      renderOrderList();
+    }
+
+    // ── Render list ────────────────────────────────────────────────────────────
+
+    function filterOrders() {
+      return allOrders.filter(function(order) {
+        if (currentFilter === 'mine') return order.riderName === RIDER_NAME;
+        if (currentFilter === 'open') return !order.riderName;
+        return true;
+      });
+    }
+
+    function renderOrderList() {
+      const listEl = document.getElementById('orderList');
+      const orders = filterOrders();
+
+      if (!orders.length) {
+        listEl.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No orders for this day</div></div>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      orders.forEach(function(order) {
+        listEl.appendChild(buildOrderCard(order));
+      });
+    }
+
+    function buildOrderCard(order) {
+      const card = document.createElement('div');
+      card.className = 'order-card' + (order.riderName === RIDER_NAME ? ' is-mine' : '');
+
+      const route = order.route || {};
+      const pickup = (route.pickup && route.pickup.address) || '—';
+      const dropoff = (route.dropoff && route.dropoff.address) || '—';
+      const time = (order.schedule && order.schedule.time) || '—';
+
+      card.innerHTML =
+        '<div class="card-top">' +
+          '<span class="card-ref">' + (order.reference || '—') + '</span>' +
+          '<span class="card-time">' + time + '</span>' +
+        '</div>' +
+        '<div class="card-route">' +
+          '<div class="card-route-item"><div class="route-dot pickup"></div><div class="route-addr">' + truncate(pickup, 50) + '</div></div>' +
+          '<div class="card-route-item"><div class="route-dot dropoff"></div><div class="route-addr">' + truncate(dropoff, 50) + '</div></div>' +
+        '</div>' +
+        '<div class="card-bottom">' +
+          '<span class="card-assigned' + (order.riderName === RIDER_NAME ? ' is-me' : '') + '">' +
+            (order.riderName ? '↗ ' + order.riderName : 'Unassigned') +
+          '</span>' +
+        '</div>';
+
+      const bottom = card.querySelector('.card-bottom');
+      bottom.appendChild(makeChip(order.status));
+
+      card.addEventListener('click', function() { openOrder(order); });
+      return card;
+    }
+
+    // ── Order detail ───────────────────────────────────────────────────────────
+
+    function openOrder(order) {
+      activeOrder = order;
+      podFile = null;
+      podDataUrl = null;
+
+      document.getElementById('detailRef').textContent = order.reference || '—';
+      const chipEl = document.getElementById('detailStatusChip');
+      chipEl.innerHTML = '';
+      chipEl.appendChild(makeChip(order.status));
+
+      renderDetailBody(order);
+      renderActionFooter(order);
+
+      document.getElementById('orderDetail').classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeOrder() {
+      document.getElementById('orderDetail').classList.remove('open');
+      document.body.style.overflow = '';
+      activeOrder = null;
+    }
+
+    document.getElementById('backBtn').addEventListener('click', closeOrder);
+
+    function renderDetailBody(order) {
+      const body = document.getElementById('detailBody');
+      body.innerHTML = '';
+
+      const route = order.route || {};
+      const quote = order.quote || {};
+      const schedule = order.schedule || {};
+      const customer = order.customer || {};
+
+      // Route section
+      const routeSec = document.createElement('div');
+      routeSec.className = 'detail-section';
+      routeSec.innerHTML = '<div class="detail-section-title">Route</div>';
+
+      const pickup = (route.pickup && route.pickup.address) || '';
+      const dropoff = (route.dropoff && route.dropoff.address) || '';
+      const stops = Array.isArray(route.stops) ? route.stops : [];
+
+      const addRouteRow = function(label, addr) {
+        if (!addr) return;
+        const row = document.createElement('div');
+        row.className = 'detail-row';
+        row.innerHTML =
+          '<div class="detail-row-label">' + label + '</div>' +
+          '<div class="detail-row-value">' +
+            addr +
+            '<br><a class="maps-link" href="' + mapsUrl(addr) + '" target="_blank" rel="noopener">📍 Open maps</a>' +
+          '</div>';
+        routeSec.appendChild(row);
+      };
+
+      addRouteRow('Pickup', pickup);
+      stops.forEach(function(stop, i) { addRouteRow('Stop ' + (i + 1), stop && stop.address); });
+      addRouteRow('Dropoff', dropoff);
+
+      // Full route link
+      if (pickup && dropoff) {
+        const linkRow = document.createElement('div');
+        linkRow.className = 'detail-row';
+        linkRow.innerHTML =
+          '<div class="detail-row-label">Full</div>' +
+          '<div class="detail-row-value"><a class="maps-link" href="' + routeMapsUrl(order) + '" target="_blank" rel="noopener">🗺 Full route in Maps</a></div>';
+        routeSec.appendChild(linkRow);
+      }
+
+      body.appendChild(routeSec);
+
+      // Scan label section — only for rider's own active orders
+      var activeStatuses = ['Assigned', 'OMW', 'Picked up', 'In transit'];
+      if (order.riderName === RIDER_NAME && activeStatuses.indexOf(order.status) >= 0) {
+        body.appendChild(buildScanSection(order));
+      }
+
+      // Schedule + order info
+      const infoSec = document.createElement('div');
+      infoSec.className = 'detail-section';
+      infoSec.innerHTML = '<div class="detail-section-title">Order</div>';
+
+      const rows = [
+        ['Time', schedule.time],
+        ['ETA', quote.etaMins ? quote.etaMins + ' min' : null],
+        ['Customer', customer.name],
+        ['Phone', customer.phone],
+        ['Notes', order.notes]
+      ];
+      rows.forEach(function(r) {
+        if (!r[1]) return;
+        const row = document.createElement('div');
+        row.className = 'detail-row';
+        row.innerHTML =
+          '<div class="detail-row-label">' + r[0] + '</div>' +
+          '<div class="detail-row-value">' + r[1] + '</div>';
+        infoSec.appendChild(row);
+      });
+      body.appendChild(infoSec);
+
+      // POD section — only for In transit on my orders (must come before notes for context)
+      if (order.riderName === RIDER_NAME && order.status === 'In transit') {
+        body.appendChild(buildPodSection());
+      }
+
+      // Notes section — for all active statuses on my orders
+      buildNotesSection(order, body);
+
+      // Timeline
+      const timeline = order.timeline || [];
+      if (timeline.length) {
+        const tlSec = document.createElement('div');
+        tlSec.className = 'detail-section';
+        tlSec.innerHTML = '<div class="detail-section-title">Timeline</div>';
+        const tlList = document.createElement('div');
+        tlList.className = 'timeline-list';
+        const sorted = timeline.slice().sort(function(a, b) { return String(a.ts) < String(b.ts) ? 1 : -1; });
+        sorted.forEach(function(item, i) {
+          const entry = document.createElement('div');
+          entry.className = 'timeline-item';
+          entry.innerHTML =
+            '<div class="timeline-dot' + (i === 0 ? ' latest' : '') + '"></div>' +
+            '<div class="timeline-content">' +
+              '<div class="timeline-msg">' + (item.message || item.status || '') + '</div>' +
+              '<div class="timeline-ts">' + formatIso(item.ts) + '</div>' +
+            '</div>';
+          tlList.appendChild(entry);
+        });
+        tlSec.appendChild(tlList);
+        body.appendChild(tlSec);
+      }
+    }
+
+    function buildPodSection() {
+      const podSec = document.createElement('div');
+      podSec.className = 'detail-section';
+      podSec.innerHTML = '<div class="detail-section-title">Proof of Delivery</div>';
+      const podW = document.createElement('div');
+      podW.className = 'pod-wrap';
+
+      const podBtn = document.createElement('div');
+      podBtn.className = 'pod-btn';
+      podBtn.id = 'podBtn';
+      podBtn.innerHTML = '<span class="pod-btn-icon">📷</span> Tap to add photo (optional)';
+      podBtn.addEventListener('click', function() { document.getElementById('podFileInput').click(); });
+
+      const podInput = document.createElement('input');
+      podInput.type = 'file';
+      podInput.accept = 'image/*';
+      podInput.capture = 'environment';
+      podInput.id = 'podFileInput';
+      podInput.addEventListener('change', function() {
+        if (podInput.files && podInput.files[0]) {
+          podFile = podInput.files[0];
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            podDataUrl = e.target.result;
+            const preview = document.getElementById('podPreview');
+            preview.src = podDataUrl;
+            preview.classList.add('visible');
+            podBtn.classList.add('has-file');
+            podBtn.innerHTML = '<span class="pod-btn-icon">✓</span> Photo added — tap to change';
+          };
+          reader.readAsDataURL(podFile);
+        }
+      });
+
+      const podPreview = document.createElement('img');
+      podPreview.id = 'podPreview';
+      podPreview.className = 'pod-preview';
+      podW.appendChild(podBtn);
+      podW.appendChild(podInput);
+      podW.appendChild(podPreview);
+      podSec.appendChild(podW);
+      return podSec;
+    }
+
+    function buildNotesSection(order, body) {
+      const finalStatuses = ['Delivered', 'Failed', 'Canceled', 'Delivery rejected'];
+      if (order.riderName !== RIDER_NAME) return;
+      if (finalStatuses.indexOf(order.status) >= 0) return;
+
+      const rawLang = String(order.language || 'es').split('-')[0].toLowerCase();
+      const clientLang = (['es', 'ca', 'pt', 'en'].indexOf(rawLang) >= 0) ? rawLang : 'es';
+
+      const clientNoteLabels = {
+        es: '👤 Nota al cliente (visible en seguimiento)',
+        ca: '👤 Nota al client (visible al seguiment)',
+        pt: '👤 Nota ao cliente (visível no rastreamento)',
+        en: '👤 Client note (visible on tracking)'
+      };
+      const clientNotePlaceholders = {
+        es: 'Ej. Dejé en la puerta, avisé al portero…',
+        ca: 'Ex. Deixat a la porta, avisat al porter…',
+        pt: 'Ex. Deixei na porta, avisei ao porteiro…',
+        en: 'e.g. Left at door, notified doorman…'
+      };
+
+      const noteWrap = document.createElement('div');
+      noteWrap.className = 'detail-section';
+      noteWrap.innerHTML = '<div class="detail-section-title">Notes</div>';
+      const nw = document.createElement('div');
+      nw.className = 'note-wrap';
+      nw.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
+
+      const clientLabel = document.createElement('div');
+      clientLabel.style.cssText = 'font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--green);';
+      clientLabel.textContent = clientNoteLabels[clientLang];
+
+      const textarea = document.createElement('textarea');
+      textarea.className = 'note-input';
+      textarea.id = 'noteInput';
+      textarea.lang = clientLang;
+      textarea.placeholder = clientNotePlaceholders[clientLang];
+
+      const dispatchLabel = document.createElement('div');
+      dispatchLabel.style.cssText = 'font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-top:4px;';
+      dispatchLabel.textContent = '🔒 Internal note (dispatch only, English)';
+
+      const dispatchTextarea = document.createElement('textarea');
+      dispatchTextarea.className = 'note-input';
+      dispatchTextarea.id = 'dispatchNoteInput';
+      dispatchTextarea.lang = 'en';
+      dispatchTextarea.placeholder = 'Internal note for dispatch only…';
+
+      nw.appendChild(clientLabel);
+      nw.appendChild(textarea);
+      nw.appendChild(dispatchLabel);
+      nw.appendChild(dispatchTextarea);
+      noteWrap.appendChild(nw);
+      body.appendChild(noteWrap);
+    }
+
+    // ── Scan Label ────────────────────────────────────────────────────────────
+
+    function buildScanSection(order) {
+      var sec = document.createElement('div');
+      sec.className = 'detail-section';
+      sec.innerHTML = '<div class="detail-section-title">Scan Route Sheet</div>';
+
+      var wrap = document.createElement('div');
+      wrap.className = 'scan-section';
+
+      var scanBtn = document.createElement('button');
+      scanBtn.type = 'button';
+      scanBtn.className = 'scan-btn';
+      scanBtn.innerHTML = '📷 Scan route sheet';
+
+      var fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = 'image/*';
+      fileInput.capture = 'environment';
+      fileInput.style.display = 'none';
+
+      var statusEl = document.createElement('div');
+      statusEl.className = 'scan-status';
+
+      var resultEl = document.createElement('div');
+      resultEl.className = 'scan-result';
+      resultEl.style.display = 'none';
+
+      scanBtn.addEventListener('click', function() { fileInput.click(); });
+
+      fileInput.addEventListener('change', function() {
+        if (!fileInput.files || !fileInput.files[0]) return;
+        var file = fileInput.files[0];
+        // Compress via canvas before sending
+        var img = new Image();
+        img.onload = function() {
+          var canvas = document.createElement('canvas');
+          var maxW = 1280;
+          var w = img.width;
+          var h = img.height;
+          if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          var b64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+          doScanExtract(b64, 'image/jpeg', scanBtn, statusEl, resultEl);
+        };
+        img.src = URL.createObjectURL(file);
+      });
+
+      wrap.appendChild(scanBtn);
+      wrap.appendChild(fileInput);
+      wrap.appendChild(statusEl);
+      wrap.appendChild(resultEl);
+      sec.appendChild(wrap);
+      return sec;
+    }
+
+    async function doScanExtract(b64, mime, scanBtn, statusEl, resultEl) {
+      scanBtn.disabled = true;
+      scanBtn.innerHTML = '⏳ Extracting addresses…';
+      statusEl.textContent = '';
+      statusEl.className = 'scan-status';
+      resultEl.style.display = 'none';
+
+      try {
+        var res = await api('POST', {
+          action: 'visionExtract',
+          id: RIDER_ID,
+          image: b64,
+          mime: mime
+        });
+
+        if (res.error) {
+          statusEl.textContent = res.error;
+          statusEl.className = 'scan-status is-error';
+          scanBtn.disabled = false;
+          scanBtn.innerHTML = '📷 Scan route sheet';
+          return;
+        }
+
+        if (!res.address) {
+          statusEl.textContent = 'No addresses found — try again with a clearer photo.';
+          statusEl.className = 'scan-status is-error';
+          scanBtn.disabled = false;
+          scanBtn.innerHTML = '📷 Scan route sheet';
+          return;
+        }
+
+        // Parse addresses
+        var addresses = res.address.split('\n').filter(function(a) { return a.trim(); });
+
+        // Build result HTML
+        var html = '<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;">' +
+          addresses.length + ' address' + (addresses.length > 1 ? 'es' : '') + ' found</div>';
+
+        addresses.forEach(function(addr, i) {
+          html += '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:6px;">' +
+            '<span style="color:var(--accent);font-weight:700;font-size:0.75rem;min-width:18px;">' + (i + 1) + '</span>' +
+            '<div style="flex:1;">' +
+              '<div class="scan-result-addr" style="margin-bottom:3px;">' + addr.trim() + '</div>' +
+              '<a class="scan-maps-btn" style="font-size:0.7rem;padding:4px 8px;" href="https://www.google.com/maps/search/' +
+                encodeURIComponent(addr.trim()) + '" target="_blank" rel="noopener">📍 Maps</a>' +
+            '</div>' +
+          '</div>';
+        });
+
+        // Full route link(s) — Google Maps caps at ~10 waypoints, so chunk if needed
+        if (addresses.length > 1) {
+          var maxPerChunk = 9;
+
+          // Build all chunk URLs for reuse
+          var chunkUrls = [];
+          var cs = 0;
+          while (cs < addresses.length) {
+            var ce = Math.min(cs + maxPerChunk, addresses.length);
+            var cp = addresses.slice(cs, ce).map(function(a) { return encodeURIComponent(a.trim()); });
+            chunkUrls.push({
+              url: 'https://www.google.com/maps/dir/' + cp.join('/'),
+              from: cs + 1,
+              to: ce
+            });
+            cs = ce - 1;
+            if (ce >= addresses.length) break;
+          }
+
+          html += '<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">';
+
+          if (chunkUrls.length === 1) {
+            html += '<a class="scan-maps-btn" style="width:100%;display:block;text-align:center;padding:12px;" ' +
+              'href="' + chunkUrls[0].url + '" target="_blank" rel="noopener">📍 Open route in Google Maps (' + addresses.length + ' stops)</a>';
+          } else {
+            chunkUrls.forEach(function(chunk, ci) {
+              html += '<a class="scan-maps-btn" style="width:100%;display:block;text-align:center;padding:10px;font-size:0.75rem;" ' +
+                'href="' + chunk.url + '" target="_blank" rel="noopener">📍 Open part ' + (ci + 1) + ' in Maps — stops ' + chunk.from + '–' + chunk.to + '</a>';
+            });
+          }
+
+          // Share button
+          html += '<button type="button" class="scan-retry-btn" id="scanShareBtn" style="width:100%;text-align:center;padding:10px;font-size:0.8rem;font-weight:600;">' +
+            '📤 Share route</button>';
+
+          html += '</div>';
+
+          // Wire up share after DOM insert
+          setTimeout(function() {
+            var shareBtn = document.getElementById('scanShareBtn');
+            if (!shareBtn) return;
+            shareBtn.addEventListener('click', function() {
+              var text = '🚲 Cargoworks route (' + addresses.length + ' stops)\n\n' +
+                addresses.map(function(a, i) { return (i + 1) + '. ' + a.trim(); }).join('\n') +
+                '\n\n📍 Maps:\n' +
+                chunkUrls.map(function(c, ci) {
+                  return chunkUrls.length > 1
+                    ? 'Part ' + (ci + 1) + ' (stops ' + c.from + '–' + c.to + '): ' + c.url
+                    : c.url;
+                }).join('\n');
+
+              if (navigator.share) {
+                navigator.share({ title: 'Cargoworks route', text: text }).catch(function(){});
+              } else {
+                navigator.clipboard.writeText(text).then(function() {
+                  shareBtn.textContent = '✓ Copied to clipboard';
+                  setTimeout(function() { shareBtn.textContent = '📤 Share route'; }, 2000);
+                }).catch(function() {
+                  window.prompt('Copy route:', text);
+                });
+              }
+            });
+          }, 50);
+        }
+
+        html += '<div class="scan-result-actions" style="margin-top:8px;">' +
+          '<button type="button" class="scan-retry-btn" id="scanRetryBtn">📷 Scan another sheet</button>' +
+        '</div>';
+
+        resultEl.innerHTML = html;
+        resultEl.style.display = '';
+
+        var retryBtn = document.getElementById('scanRetryBtn');
+        if (retryBtn) {
+          retryBtn.addEventListener('click', function() {
+            resultEl.style.display = 'none';
+            statusEl.textContent = '';
+            scanBtn.disabled = false;
+            scanBtn.innerHTML = '📷 Scan route sheet';
+            var newInput = scanBtn.parentNode.querySelector('input[type="file"]');
+            if (newInput) newInput.value = '';
+            newInput.click();
+          });
+        }
+
+        scanBtn.disabled = false;
+        scanBtn.innerHTML = '📷 Scan route sheet';
+        statusEl.textContent = '';
+
+      } catch (err) {
+        statusEl.textContent = 'Request failed: ' + (err.message || String(err));
+        statusEl.className = 'scan-status is-error';
+        scanBtn.disabled = false;
+        scanBtn.innerHTML = '📷 Scan route sheet';
+      }
+    }
+
+    // ── Action footer ──────────────────────────────────────────────────────────
+
+    function renderActionFooter(order) {
+      const footer = document.getElementById('actionFooter');
+      footer.innerHTML = '';
+
+      const isMine = order.riderName === RIDER_NAME;
+      const isUnassigned = !order.riderName;
+      const status = order.status;
+
+      // Assign button
+      if (isUnassigned || (isMine && status === 'Confirmed')) {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary';
+        btn.textContent = '＋ Assign to me';
+        btn.addEventListener('click', function() { doAssign(order.eventId); });
+        footer.appendChild(btn);
+        return;
+      }
+
+      if (!isMine) {
+        // Assigned to someone else — show info only
+        const info = document.createElement('div');
+        info.style.cssText = 'text-align:center;color:var(--text-muted);font-size:0.82rem;padding:8px;';
+        info.textContent = 'Assigned to ' + order.riderName;
+        footer.appendChild(info);
+        return;
+      }
+
+      // My order — show progression buttons based on status
+      if (status === 'Assigned') {
+        const omwBtn = document.createElement('button');
+        omwBtn.className = 'btn btn-omw';
+        omwBtn.innerHTML = '🚴 On My Way';
+        omwBtn.addEventListener('click', function() { doOMW(order.eventId); });
+
+        const row = document.createElement('div');
+        row.className = 'btn-row';
+        const unassignBtn = document.createElement('button');
+        unassignBtn.className = 'btn btn-ghost';
+        unassignBtn.textContent = 'Unassign';
+        unassignBtn.addEventListener('click', function() { doUnassign(order.eventId); });
+        row.appendChild(unassignBtn);
+        row.appendChild(omwBtn);
+        footer.appendChild(row);
+      }
+
+      if (status === 'OMW') {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary';
+        btn.textContent = '📦 Picked Up';
+        btn.addEventListener('click', function() { doStatusUpdate(order.eventId, 'Picked up'); });
+        footer.appendChild(btn);
+      }
+
+      if (status === 'Picked up') {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary';
+        btn.textContent = '🚲 In Transit';
+        btn.addEventListener('click', function() { doStatusUpdate(order.eventId, 'In transit'); });
+        footer.appendChild(btn);
+      }
+
+      if (status === 'In transit') {
+        const deliveredBtn = document.createElement('button');
+        deliveredBtn.className = 'btn btn-success';
+        deliveredBtn.textContent = '✓ Delivered';
+        deliveredBtn.addEventListener('click', function() { doDeliver(order.eventId); });
+
+        const row = document.createElement('div');
+        row.className = 'btn-row';
+        const failBtn = document.createElement('button');
+        failBtn.className = 'btn btn-danger';
+        failBtn.textContent = 'Failed';
+        failBtn.addEventListener('click', function() { doStatusUpdate(order.eventId, 'Failed'); });
+        row.appendChild(failBtn);
+        row.appendChild(deliveredBtn);
+        footer.appendChild(row);
+      }
+    }
+
+    // ── Actions ────────────────────────────────────────────────────────────────
+
+    function setFooterLoading(loading) {
+      const footer = document.getElementById('actionFooter');
+      footer.querySelectorAll('.btn').forEach(function(b) { b.disabled = loading; });
+    }
+
+    async function doAssign(eventId) {
+      setFooterLoading(true);
+      const res = await api('POST', { action: 'riderAssign', id: RIDER_ID, eventId: eventId });
+      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
+      toast('Assigned ✓', 'success');
+      updateAndRerender(res.order);
+    }
+
+    async function doUnassign(eventId) {
+      setFooterLoading(true);
+      const res = await api('POST', { action: 'riderUnassign', id: RIDER_ID, eventId: eventId });
+      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
+      toast('Unassigned');
+      updateAndRerender(res.order);
+    }
+
+    async function doOMW(eventId) {
+      setFooterLoading(true);
+      toast('Getting your location…');
+
+      let lat = 0;
+      let lng = 0;
+
+      try {
+        const pos = await new Promise(function(resolve, reject) {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 8000
+          });
+        });
+        lat = pos.coords.latitude;
+        lng = pos.coords.longitude;
+      } catch (_) {
+        toast('Location unavailable — using default ETA');
+      }
+
+      const note = (document.getElementById('noteInput') || {}).value || '';
+      const dispatchNote = (document.getElementById('dispatchNoteInput') || {}).value || '';
+      const res = await api('POST', {
+        action: 'riderSetEta',
+        id: RIDER_ID,
+        eventId: eventId,
+        lat: lat,
+        lng: lng,
+        note: note,
+        dispatchNote: dispatchNote
+      });
+
+      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
+      toast('On your way! ETA ~' + res.etaMinutes + ' min', 'success');
+      updateAndRerender(res.order || Object.assign({}, activeOrder, { status: 'OMW' }));
+    }
+
+    async function doStatusUpdate(eventId, status) {
+      setFooterLoading(true);
+      const note = (document.getElementById('noteInput') || {}).value || '';
+      const dispatchNote = (document.getElementById('dispatchNoteInput') || {}).value || '';
+      const res = await api('POST', {
+        action: 'riderUpdateStatus',
+        id: RIDER_ID,
+        eventId: eventId,
+        status: status,
+        note: note,
+        dispatchNote: dispatchNote
+      });
+      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
+      toast(status + ' ✓', 'success');
+      updateAndRerender(res.order);
+    }
+
+    async function doDeliver(eventId) {
+      setFooterLoading(true);
+      const note = (document.getElementById('noteInput') || {}).value || '';
+      const dispatchNote = (document.getElementById('dispatchNoteInput') || {}).value || '';
+      const payload = {
+        action: 'riderUpdateStatus',
+        id: RIDER_ID,
+        eventId: eventId,
+        status: 'Delivered',
+        note: note,
+        dispatchNote: dispatchNote
+      };
+
+      if (podDataUrl) {
+        payload.podData = podDataUrl;
+        payload.podFileName = 'pod-' + Date.now() + '.jpg';
+        payload.podContentType = 'image/jpeg';
+      }
+
+      const res = await api('POST', payload);
+      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
+      toast('Delivered ✓', 'success');
+      updateAndRerender(res.order);
+    }
+
+    function updateAndRerender(updatedOrder) {
+      if (!updatedOrder) { loadOrders(); closeOrder(); return; }
+
+      // Update in local array
+      const idx = allOrders.findIndex(function(o) { return o.eventId === updatedOrder.eventId; });
+      if (idx >= 0) allOrders[idx] = updatedOrder;
+      else allOrders.push(updatedOrder);
+
+      renderOrderList();
+      activeOrder = updatedOrder;
+
+      // Re-render detail
+      document.getElementById('detailRef').textContent = updatedOrder.reference || '—';
+      const chipEl = document.getElementById('detailStatusChip');
+      chipEl.innerHTML = '';
+      chipEl.appendChild(makeChip(updatedOrder.status));
+
+      const body = document.getElementById('detailBody');
+      body.innerHTML = '';
+      renderDetailBody(updatedOrder);
+      renderActionFooter(updatedOrder);
+    }
+
+    // ── Boot ───────────────────────────────────────────────────────────────────
+    init();
+  })();
+  </script>
+
+</body>
+</html>

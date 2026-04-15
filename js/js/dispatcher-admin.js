@@ -6,6 +6,7 @@
   const ORDER_STATUS_VALUES = [
     'Confirmed',
     'Assigned',
+    'OMW',
     'Picked up',
     'In transit',
     'Delivered',
@@ -14,6 +15,23 @@
     'Delivery rejected'
   ];
   const PAYMENT_STATUS_VALUES = ['Pending', 'Paid', 'Failed'];
+
+  let _ridersCache = []; // { id, name, active }
+
+  async function loadRidersCache() {
+    const token = currentToken();
+    if (!token || !API_BASE) return;
+    try {
+      const payload = JSON.stringify({ action: 'adminManageRiders', token: token, op: 'list' });
+      const res = await fetch(API_BASE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'payload=' + encodeURIComponent(payload)
+      });
+      const json = await res.json();
+      if (json.riders) _ridersCache = json.riders.filter(function(r){ return r.active !== false; });
+    } catch(_) {}
+  }
 
   const gate = document.getElementById('dispatcherGate');
   const tokenInput = document.getElementById('dispatcherTokenInput');
@@ -96,6 +114,74 @@
   const editOperator = document.getElementById('editOperator');
   const editSaveNote = document.getElementById('editSaveNote');
 
+  // Quick Import panel refs
+  const importPanel      = document.getElementById('importPanel');
+  const importText       = document.getElementById('importText');
+  const importDropZone   = document.getElementById('importDropZone');
+  const importImageInput = document.getElementById('importImageInput');
+  const importImageName  = document.getElementById('importImageName');
+  const importDropLabel  = document.getElementById('importDropLabel');
+  const importExtractBtn = document.getElementById('importExtractBtn');
+  const importClearBtn   = document.getElementById('importClearBtn');
+  const importStatus     = document.getElementById('importStatus');
+  const importApiKey     = 'cwAnthropicKey'; // sessionStorage key
+
+  // Stop quick-add refs
+  const stopsQuickAddToggle = document.getElementById('stopsQuickAddToggle');
+  const stopsQuickPanel     = document.getElementById('stopsQuickPanel');
+  const stopsQCamera        = document.getElementById('stopsQCamera');
+  const stopsQFile          = document.getElementById('stopsQFile');
+  const stopsQType          = document.getElementById('stopsQType');
+  const stopsQFileInput     = document.getElementById('stopsQFileInput');
+  const stopsQTypeWrap      = document.getElementById('stopsQTypeWrap');
+  const stopsQTypeInput     = document.getElementById('stopsQTypeInput');
+  const stopsQTypeAddBtn    = document.getElementById('stopsQTypeAddBtn');
+  const stopsQConfirmWrap   = document.getElementById('stopsQConfirmWrap');
+  const stopsQConfirmInput  = document.getElementById('stopsQConfirmInput');
+  const stopsQConfirmBtn    = document.getElementById('stopsQConfirmBtn');
+  const stopsQDiscardBtn    = document.getElementById('stopsQDiscardBtn');
+  const stopsQStatus        = document.getElementById('stopsQStatus');
+  const stopsQListWrap      = document.getElementById('stopsQListWrap');
+  const stopsQListItems     = document.getElementById('stopsQListItems');
+
+  // Camera overlay refs
+  const stopsQCameraOverlay  = document.getElementById('stopsQCameraOverlay');
+  const stopsQCameraVideo    = document.getElementById('stopsQCameraVideo');
+  const stopsQCameraCanvas   = document.getElementById('stopsQCameraCanvas');
+  const stopsQCameraCapture  = document.getElementById('stopsQCameraCapture');
+  const stopsQCameraCancel   = document.getElementById('stopsQCameraCancel');
+  const stopsQCameraMsg      = document.getElementById('stopsQCameraMsg');
+
+  var _cameraStream = null; // active MediaStream, if any
+
+  // Pickup geolocation
+  const editPickupLocBtn  = document.getElementById('editPickupLocBtn');
+
+  // Maps route link
+  const editMapsRouteLink = document.getElementById('editMapsRouteLink');
+
+  // Pricing override
+  const editPriceOverride        = document.getElementById('editPriceOverride');
+  const editPriceBreakdownFields = document.getElementById('editPriceBreakdownFields');
+  const editPriceManualHint      = document.getElementById('editPriceManualHint');
+
+  // Payment link button
+  const editCreatePaymentBtn    = document.getElementById('editCreatePaymentBtn');
+  const editCreatePaymentStatus = document.getElementById('editCreatePaymentStatus');
+
+  // System pricing
+  const editGetSystemPricing  = document.getElementById('editGetSystemPricing');
+  const systemPricingStatus   = document.getElementById('systemPricingStatus');
+
+  let importImageBase64  = null;
+  let importImageMime    = null;
+
+  // Stop quick-add state
+  let _stopsQList = []; // confirmed stop addresses
+
+  // Maps route link debounce
+  let _mapsLinkTimer = null;
+
   const editorInputs = [
     editCustomerName, editCustomerEmail, editCustomerPhone, editUpdatesPreference,
     editPickupAddress, editRouteStops, editDropoffAddress, editNotes,
@@ -154,10 +240,39 @@
 
   function unlockGate(){
     if (gate) gate.classList.add('hidden');
+    loadRidersCache();
+    initHeaderToggle();
   }
 
   function saveToken(token){
     try { sessionStorage.setItem(tokenKey, token); } catch(_) {}
+  }
+
+  function initHeaderToggle(){
+    const header = document.querySelector('.dispatcher-header');
+    const toggleBtn = document.getElementById('dispatcherToggle');
+    const orders = document.getElementById('dispatcherOrders');
+    if (!header || !toggleBtn) return;
+
+    const storageKey = 'cwDispatcherHeaderCollapsed';
+    const collapsed = sessionStorage.getItem(storageKey) === '1';
+    if (collapsed) header.classList.add('is-collapsed');
+
+    function updateMargin(){
+      if (!orders) return;
+      const h = header.getBoundingClientRect().height;
+      orders.style.marginTop = (h + 12) + 'px';
+    }
+    updateMargin();
+
+    const ro = new ResizeObserver(updateMargin);
+    ro.observe(header);
+
+    toggleBtn.addEventListener('click', function(){
+      const isCollapsed = header.classList.toggle('is-collapsed');
+      sessionStorage.setItem(storageKey, isCollapsed ? '1' : '0');
+      setTimeout(updateMargin, 300);
+    });
   }
 
   function loadToken(){
@@ -805,6 +920,7 @@
   }
 
   function recalculatePriceTotal(){
+    if (editPriceOverride && editPriceOverride.checked) return; // manual override — don't clobber
     const base = safeNumber(editPriceBase && editPriceBase.value, 0);
     const distance = safeNumber(editPriceDistance && editPriceDistance.value, 0);
     const stops = safeNumber(editPriceStops && editPriceStops.value, 0);
@@ -822,6 +938,7 @@
       const ok = window.confirm('Discard unsaved changes?');
       if (!ok) return;
     }
+    stopCameraStream();
     editorModal.classList.remove('is-open');
     editorModal.setAttribute('aria-hidden', 'true');
     editorState.open = false;
@@ -908,8 +1025,31 @@
       editorCancelOrderBtn.disabled = modeDuplicate;
     }
 
+    // Show / hide quick import panel
+    if (importPanel) {
+      importPanel.style.display = modeCreate ? '' : 'none';
+      if (modeCreate) clearImportPanel();
+    }
+
+    // Reset stops quick-add
+    _stopsQList = [];
+    if (stopsQuickPanel) stopsQuickPanel.style.display = 'none';
+    if (stopsQuickAddToggle) stopsQuickAddToggle.textContent = '⚡ Quick add';
+    if (stopsQTypeWrap) stopsQTypeWrap.style.display = 'none';
+    if (stopsQConfirmWrap) stopsQConfirmWrap.style.display = 'none';
+    if (stopsQStatus) stopsQStatus.textContent = '';
+    if (stopsQListWrap) stopsQListWrap.style.display = 'none';
+    if (stopsQListItems) stopsQListItems.innerHTML = '';
+
+    // Reset payment link status
+    if (editCreatePaymentStatus) { editCreatePaymentStatus.textContent = ''; editCreatePaymentStatus.style.display = 'none'; }
+    if (editCreatePaymentBtn) editCreatePaymentBtn.disabled = false;
+
     togglePriceNotice(false);
     setEditorFeedback('');
+    resetPriceOverride();
+    updateMapsRouteLink();
+    autoCalcStopsFee();
 
     editorState.open = true;
     editorState.mode = normalizedMode;
@@ -1287,6 +1427,63 @@
       const quickNote = document.createElement('textarea');
       quickNote.placeholder = 'Add dispatcher note or customer update...';
 
+      const riderDropdownWrap = document.createElement('div');
+      riderDropdownWrap.className = 'dispatcher-field span-3';
+      const riderDropdownLabel = document.createElement('label');
+      riderDropdownLabel.textContent = 'Assign rider';
+      const riderDropdown = document.createElement('select');
+      const riderOptNone = document.createElement('option');
+      riderOptNone.value = '';
+      riderOptNone.textContent = '— Unassigned —';
+      riderDropdown.appendChild(riderOptNone);
+      _ridersCache.forEach(function(r){
+        const opt = document.createElement('option');
+        opt.value = r.name;
+        opt.textContent = r.name;
+        if (r.name === normalizeText(order.riderName)) opt.selected = true;
+        riderDropdown.appendChild(opt);
+      });
+      riderDropdownWrap.appendChild(riderDropdownLabel);
+      riderDropdownWrap.appendChild(riderDropdown);
+      quick.appendChild(riderDropdownWrap);
+
+      riderDropdown.addEventListener('change', function(){
+        quickRiderName.value = riderDropdown.value;
+      });
+
+      const assignBtn = document.createElement('button');
+      assignBtn.type = 'button';
+      assignBtn.className = 'btn';
+      assignBtn.style.cssText = 'padding:0.3rem 0.52rem;font-size:0.72rem;align-self:flex-end;';
+      assignBtn.textContent = 'Assign';
+      assignBtn.addEventListener('click', async function(){
+        const name = riderDropdown.value;
+        quickRiderName.value = name;
+        const prevStatus = quickStatus.value;
+        if (name && prevStatus === 'Confirmed') quickStatus.value = 'Assigned';
+        if (!name && prevStatus === 'Assigned') quickStatus.value = 'Confirmed';
+        await quickUpdate(order, {
+          status: quickStatus,
+          payment: quickPayment,
+          riderName: quickRiderName,
+          riderPhone: quickRiderPhone,
+          date: quickDate,
+          time: quickTime,
+          eta: quickEta,
+          internalNotes: quickInternalNotes,
+          note: quickNote
+        }, false);
+        toast(name ? 'Assigned to ' + name : 'Rider unassigned');
+      });
+
+      const assignWrap = document.createElement('div');
+      assignWrap.className = 'dispatcher-field span-1';
+      assignWrap.style.justifyContent = 'flex-end';
+      assignWrap.style.display = 'flex';
+      assignWrap.style.flexDirection = 'column';
+      assignWrap.appendChild(assignBtn);
+      quick.appendChild(assignWrap);
+
       quickField('Status', 'span-2', quickStatus);
       quickField('Payment', 'span-2', quickPayment);
       quickField('Rider name', 'span-2', quickRiderName);
@@ -1385,26 +1582,11 @@
         podLink: podLink
       };
 
-      quickSaveBtn.addEventListener('click', function(){
-        quickUpdate(order, quickControls, false);
-      });
-
-      quickSendBtn.addEventListener('click', function(){
-        quickUpdate(order, quickControls, true);
-      });
-
-      fullEditBtn.addEventListener('click', function(){
-        openEditor('edit', order);
-      });
-
-      duplicateBtn.addEventListener('click', function(){
-        openEditor('duplicate', order);
-      });
-
-      cancelBtn.addEventListener('click', function(){
-        openCancelModal(order);
-      });
-
+      quickSaveBtn.addEventListener('click', function(){ quickUpdate(order, quickControls, false); });
+      quickSendBtn.addEventListener('click', function(){ quickUpdate(order, quickControls, true); });
+      fullEditBtn.addEventListener('click',  function(){ openEditor('edit', order); });
+      duplicateBtn.addEventListener('click', function(){ openEditor('duplicate', order); });
+      cancelBtn.addEventListener('click',    function(){ openCancelModal(order); });
       bindPodUpload(order, quickControls);
 
       card.appendChild(quick);
@@ -1416,7 +1598,6 @@
       notesTitle.className = 'dispatcher-block-title';
       notesTitle.textContent = 'Notes';
       notesBox.appendChild(notesTitle);
-
       const customerNotes = normalizeText(order.notes);
       const internalNotes = normalizeText(order.internalNotes);
       const cancelReasonText = normalizeText(order.canceledReason);
@@ -1454,6 +1635,1052 @@
     unlockGate();
     setStatus('Workspace unlocked.');
   }
+
+  // ── Quick Import ─────────────────────────────────────────────────────────
+
+  function setupImportPanel() {
+    if (!importDropZone || !importImageInput) return;
+
+    // Click to open file picker
+    importDropZone.addEventListener('click', function() {
+      importImageInput.click();
+    });
+
+    // File selected via input
+    importImageInput.addEventListener('change', function() {
+      const file = importImageInput.files && importImageInput.files[0];
+      if (file) loadImportImage(file);
+    });
+
+    // Drag and drop
+    importDropZone.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      importDropZone.style.borderColor = 'var(--dispatch-accent)';
+      importDropZone.style.background  = 'rgba(240,123,57,0.06)';
+    });
+    importDropZone.addEventListener('dragleave', function() {
+      importDropZone.style.borderColor = '';
+      importDropZone.style.background  = '';
+    });
+    importDropZone.addEventListener('drop', function(e) {
+      e.preventDefault();
+      importDropZone.style.borderColor = '';
+      importDropZone.style.background  = '';
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) loadImportImage(file);
+    });
+
+    // Paste image anywhere in modal
+    document.addEventListener('paste', function(e) {
+      if (!importPanel || importPanel.style.display === 'none') return;
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          loadImportImage(items[i].getAsFile());
+          break;
+        }
+      }
+    });
+
+    if (importExtractBtn) importExtractBtn.addEventListener('click', handleQuickImport);
+    if (importClearBtn)   importClearBtn.addEventListener('click', clearImportPanel);
+  }
+
+  function loadImportImage(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      importImageBase64 = e.target.result.split(',')[1];
+      importImageMime   = file.type || 'image/jpeg';
+      if (importImageName) { importImageName.textContent = file.name; importImageName.style.display = 'block'; }
+      if (importDropLabel)   importDropLabel.textContent = '✓ Image loaded';
+      importDropZone.style.borderColor = 'var(--dispatch-accent)';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearImportPanel() {
+    if (importText)        importText.value     = '';
+    if (importImageInput)  importImageInput.value = '';
+    if (importImageName)   { importImageName.textContent = ''; importImageName.style.display = 'none'; }
+    if (importDropLabel)   importDropLabel.textContent = 'Click to select or drop an image';
+    if (importStatus)      importStatus.textContent    = '';
+    if (importDropZone)    importDropZone.style.borderColor = '';
+    importImageBase64 = null;
+    importImageMime   = null;
+  }
+
+  function setImportStatus(msg, isError) {
+    if (!importStatus) return;
+    importStatus.textContent = msg;
+    importStatus.className   = 'dispatcher-status' + (isError ? ' is-error' : '');
+  }
+
+  async function handleQuickImport() {
+    const text  = importText  ? importText.value.trim() : '';
+    const image = importImageBase64;
+
+    if (!text && !image) {
+      setImportStatus('Paste a message or add an image first.', true);
+      return;
+    }
+
+    // API key — prompt once per session
+    let apiKey = sessionStorage.getItem(importApiKey) || '';
+    if (!apiKey) {
+      apiKey = window.prompt('Enter your Anthropic API key to enable Quick Import.\nStored for this browser session only.') || '';
+      if (!apiKey) { setImportStatus('API key required.', true); return; }
+      sessionStorage.setItem(importApiKey, apiKey.trim());
+      apiKey = apiKey.trim();
+    }
+
+    setImportStatus('Extracting order details…');
+    if (importExtractBtn) importExtractBtn.disabled = true;
+
+    const today = formatDateKey(new Date());
+
+    const systemPrompt =
+      'You are a logistics dispatcher assistant for a cargo bike delivery company in Barcelona. ' +
+      'Extract order details from the provided content and return ONLY a valid JSON object. ' +
+      'No explanation, no markdown, no preamble — just the raw JSON.';
+
+    const userPrompt =
+      'Extract order details and return ONLY this JSON (use null for any field you cannot determine):\n' +
+      '{\n' +
+      '  "customerName": string,\n' +
+      '  "customerPhone": string,\n' +
+      '  "customerEmail": string,\n' +
+      '  "pickupAddress": string,\n' +
+      '  "dropoffAddress": string,\n' +
+      '  "stops": string (one address per line, empty string if none),\n' +
+      '  "scheduleDate": string (YYYY-MM-DD; interpret "today"/"hoy"/"hoje" as ' + today + '),\n' +
+      '  "scheduleTime": string (HH:MM 24h format),\n' +
+      '  "notes": string (customer instructions or special requirements),\n' +
+      '  "cargoType": string,\n' +
+      '  "packageCount": number or null,\n' +
+      '  "weightKg": number or null,\n' +
+      '  "internalNotes": string (any operational info not for the customer)\n' +
+      '}\n\n' +
+      'Today\'s date: ' + today + '.\n' +
+      (text ? 'Text content:\n' + text : '');
+
+    // Build message content
+    const contentBlocks = [];
+    if (image) {
+      contentBlocks.push({ type: 'image', source: { type: 'base64', media_type: importImageMime, data: image } });
+    }
+    contentBlocks.push({ type: 'text', text: userPrompt });
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type':         'application/json',
+          'x-api-key':            apiKey,
+          'anthropic-version':    '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model:      'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          system:     systemPrompt,
+          messages:   [{ role: 'user', content: contentBlocks }]
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(function(){ return {}; });
+        if (res.status === 401) {
+          sessionStorage.removeItem(importApiKey); // clear bad key
+          setImportStatus('Invalid API key — cleared. Try again.', true);
+        } else {
+          setImportStatus('API error ' + res.status + ': ' + (err.error && err.error.message || 'unknown'), true);
+        }
+        return;
+      }
+
+      const data   = await res.json();
+      const raw    = (data.content || []).map(function(b){ return b.type === 'text' ? b.text : ''; }).join('');
+      const clean  = raw.replace(/```json|```/g, '').trim();
+      let parsed;
+      try { parsed = JSON.parse(clean); }
+      catch(_) { setImportStatus('Could not parse response. Try again.', true); return; }
+
+      applyImportedFields(parsed);
+      setImportStatus('✓ Fields populated — review and adjust before saving.');
+
+    } catch(err) {
+      setImportStatus('Request failed: ' + (err.message || err), true);
+    } finally {
+      if (importExtractBtn) importExtractBtn.disabled = false;
+    }
+  }
+
+  function applyImportedFields(d) {
+    if (!d) return;
+    function fill(el, val) {
+      if (el && val != null && val !== '') el.value = String(val);
+    }
+    fill(editCustomerName,   d.customerName);
+    fill(editCustomerPhone,  d.customerPhone);
+    fill(editCustomerEmail,  d.customerEmail);
+    fill(editPickupAddress,  d.pickupAddress);
+    fill(editDropoffAddress, d.dropoffAddress);
+    fill(editRouteStops,     d.stops);
+    fill(editNotes,          d.notes);
+    fill(editScheduleDate,   d.scheduleDate);
+    fill(editScheduleTime,   d.scheduleTime);
+    fill(editCargoType,      d.cargoType);
+    fill(editInternalNotes,  d.internalNotes);
+    if (editPackageCount && d.packageCount != null) editPackageCount.value = String(d.packageCount);
+    if (editWeightKg     && d.weightKg     != null) editWeightKg.value     = String(d.weightKg);
+  }
+
+  // ── Stop Quick-add ───────────────────────────────────────────────────────
+
+  function stopCameraStream() {
+    if (_cameraStream) {
+      try { _cameraStream.getTracks().forEach(function(t){ t.stop(); }); } catch(_) {}
+      _cameraStream = null;
+    }
+    if (stopsQCameraVideo) stopsQCameraVideo.srcObject = null;
+    if (stopsQCameraOverlay) stopsQCameraOverlay.style.display = 'none';
+  }
+
+  function setupStopsQuickAdd() {
+    if (!stopsQuickAddToggle || !stopsQuickPanel) return;
+
+    // ── Panel toggle ──
+    stopsQuickAddToggle.addEventListener('click', function() {
+      const open = stopsQuickPanel.style.display === 'none' || !stopsQuickPanel.style.display;
+      stopsQuickPanel.style.display = open ? '' : 'none';
+      stopsQuickAddToggle.textContent = open ? '⚡ Close' : '⚡ Quick add';
+      if (open) {
+        _stopsQList = editRouteStops ? editRouteStops.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+        renderStopsQList();
+      }
+    });
+
+    // ── 📷 Camera — getUserMedia, no OS handoff ──
+    if (stopsQCamera) stopsQCamera.addEventListener('click', function() {
+      openCameraOverlay();
+    });
+
+    // ── 🖼 File — gallery / file picker only ──
+    if (stopsQFile) stopsQFile.addEventListener('click', function() {
+      if (stopsQFileInput) stopsQFileInput.click();
+    });
+    if (stopsQFileInput) stopsQFileInput.addEventListener('change', function() {
+      const file = stopsQFileInput.files && stopsQFileInput.files[0];
+      if (file) extractAddressFromFile(file);
+      stopsQFileInput.value = ''; // reset so same file can be picked again
+    });
+
+    // ── ✎ Type ──
+    if (stopsQType) stopsQType.addEventListener('click', function() {
+      if (stopsQTypeWrap) stopsQTypeWrap.style.display = stopsQTypeWrap.style.display === 'none' ? '' : 'none';
+      if (stopsQConfirmWrap) stopsQConfirmWrap.style.display = 'none';
+      if (stopsQTypeInput) { stopsQTypeInput.value = ''; stopsQTypeInput.focus(); }
+    });
+    if (stopsQTypeInput) stopsQTypeInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); commitStopFromType(); }
+    });
+    if (stopsQTypeAddBtn) stopsQTypeAddBtn.addEventListener('click', commitStopFromType);
+
+    // ── Confirm / Discard ──
+    if (stopsQConfirmBtn) stopsQConfirmBtn.addEventListener('click', function() {
+      const addr = stopsQConfirmInput ? stopsQConfirmInput.value.trim() : '';
+      if (!addr) return;
+      _stopsQList.push(addr);
+      syncStopsTextarea();
+      renderStopsQList();
+      if (stopsQConfirmWrap) stopsQConfirmWrap.style.display = 'none';
+      setStopsQStatus('✓ Stop added. Tap Camera for next stop.');
+    });
+    if (stopsQDiscardBtn) stopsQDiscardBtn.addEventListener('click', function() {
+      if (stopsQConfirmWrap) stopsQConfirmWrap.style.display = 'none';
+      setStopsQStatus('');
+    });
+
+    // ── Camera overlay controls ──
+    if (stopsQCameraCapture) stopsQCameraCapture.addEventListener('click', captureFromCamera);
+    if (stopsQCameraCancel)  stopsQCameraCancel.addEventListener('click',  stopCameraStream);
+  }
+
+  function setStopsQStatus(msg, isError) {
+    if (!stopsQStatus) return;
+    stopsQStatus.textContent = msg || '';
+    stopsQStatus.className = 'dispatcher-status' + (isError ? ' is-error' : '');
+  }
+
+  async function openCameraOverlay() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStopsQStatus('Camera API not available in this browser.', true);
+      return;
+    }
+    if (!stopsQCameraOverlay || !stopsQCameraVideo) return;
+
+    // Stop any previous stream first
+    stopCameraStream();
+    if (stopsQCameraMsg) { stopsQCameraMsg.textContent = 'Starting camera…'; stopsQCameraMsg.style.display = 'block'; }
+    if (stopsQCameraCapture) stopsQCameraCapture.disabled = true;
+
+    stopsQCameraOverlay.style.display = 'flex';
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      });
+      _cameraStream = stream;
+      stopsQCameraVideo.srcObject = stream;
+      await stopsQCameraVideo.play();
+      if (stopsQCameraMsg) stopsQCameraMsg.style.display = 'none';
+      if (stopsQCameraCapture) stopsQCameraCapture.disabled = false;
+    } catch(err) {
+      stopCameraStream();
+      setStopsQStatus('Camera error: ' + (err.message || String(err)), true);
+    }
+  }
+
+  function captureFromCamera() {
+    if (!stopsQCameraVideo || !stopsQCameraCanvas) return;
+    const video = stopsQCameraVideo;
+    const canvas = stopsQCameraCanvas;
+    const w = video.videoWidth  || 1280;
+    const h = video.videoHeight || 720;
+    canvas.width  = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    const b64 = dataUrl.split(',')[1];
+
+    // Stop stream before showing confirm so camera LED goes off
+    stopCameraStream();
+
+    extractAddressFromB64(b64, 'image/jpeg');
+  }
+
+  async function extractAddressFromFile(file) {
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      const b64 = ev.target.result.split(',')[1];
+      extractAddressFromB64(b64, file.type || 'image/jpeg');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function extractAddressFromB64(b64, mime) {
+    let apiKey = sessionStorage.getItem(importApiKey) || '';
+    if (!apiKey) {
+      apiKey = (window.prompt('Enter your Anthropic API key to enable AI address extraction.\nStored for this browser session only.') || '').trim();
+      if (!apiKey) { setStopsQStatus('API key required.', true); return; }
+      sessionStorage.setItem(importApiKey, apiKey);
+    }
+
+    setStopsQStatus('Extracting address…');
+    if (stopsQConfirmWrap) stopsQConfirmWrap.style.display = 'none';
+    if (stopsQTypeWrap)    stopsQTypeWrap.style.display    = 'none';
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 200,
+          system: 'You are a logistics dispatcher. Extract the delivery address from the image. Return ONLY the street address as plain text — no explanation, no JSON, no labels. If you cannot find an address, return the word NONE.',
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
+            { type: 'text', text: 'Extract the delivery address from this image.' }
+          ]}]
+        })
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) sessionStorage.removeItem(importApiKey);
+        const err = await res.json().catch(function(){ return {}; });
+        setStopsQStatus('API error ' + res.status + (err.error ? ': ' + err.error.message : ''), true);
+        return;
+      }
+
+      const data = await res.json();
+      const raw = (data.content || []).map(function(b){ return b.type === 'text' ? b.text : ''; }).join('').trim();
+
+      if (!raw || raw.toUpperCase() === 'NONE') {
+        setStopsQStatus('No address found — try again or use ✎ Type.', true);
+        return;
+      }
+
+      if (stopsQConfirmInput) stopsQConfirmInput.value = raw;
+      if (stopsQConfirmWrap) stopsQConfirmWrap.style.display = '';
+      setStopsQStatus('');
+      if (stopsQConfirmInput) stopsQConfirmInput.focus();
+
+    } catch(err) {
+      setStopsQStatus('Request failed: ' + (err.message || err), true);
+    }
+  }
+
+  function commitStopFromType() {
+    const addr = stopsQTypeInput ? stopsQTypeInput.value.trim() : '';
+    if (!addr) return;
+    _stopsQList.push(addr);
+    syncStopsTextarea();
+    renderStopsQList();
+    if (stopsQTypeInput) stopsQTypeInput.value = '';
+    if (stopsQTypeWrap) stopsQTypeWrap.style.display = 'none';
+    if (stopsQStatus) { stopsQStatus.textContent = '✓ Stop added.'; stopsQStatus.className = 'dispatcher-status'; }
+  }
+
+  function syncStopsTextarea() {
+    if (editRouteStops) editRouteStops.value = _stopsQList.join('\n');
+    updateEditorDirtyFromForm();
+    updateMapsRouteLink();
+    autoCalcStopsFee();
+  }
+
+  function renderStopsQList() {
+    if (!stopsQListItems || !stopsQListWrap) return;
+    stopsQListItems.innerHTML = '';
+    _stopsQList.forEach(function(addr, idx) {
+      const li = document.createElement('li');
+      const text = document.createTextNode(addr);
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = '✕';
+      removeBtn.title = 'Remove';
+      removeBtn.addEventListener('click', function() {
+        _stopsQList.splice(idx, 1);
+        syncStopsTextarea();
+        renderStopsQList();
+      });
+      li.appendChild(text);
+      li.appendChild(removeBtn);
+      stopsQListItems.appendChild(li);
+    });
+    stopsQListWrap.style.display = _stopsQList.length ? '' : 'none';
+  }
+
+  // ── Pickup — My Location ─────────────────────────────────────────────────
+
+  function handlePickupMyLocation() {
+    if (!navigator.geolocation) {
+      setEditorFeedback('Geolocation not supported by this browser.', true);
+      return;
+    }
+    if (editPickupLocBtn) { editPickupLocBtn.disabled = true; editPickupLocBtn.textContent = '📍 Locating…'; }
+    navigator.geolocation.getCurrentPosition(
+      async function(pos) {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const mapsKey = window.CARGOWORKS_MAPS_KEY || '';
+        if (!mapsKey) {
+          if (editPickupAddress) editPickupAddress.value = lat.toFixed(6) + ',' + lng.toFixed(6);
+          if (editPickupLocBtn) { editPickupLocBtn.disabled = false; editPickupLocBtn.textContent = '📍 My location'; }
+          updateMapsRouteLink();
+          return;
+        }
+        try {
+          const url = 'https://maps.googleapis.com/maps/api/geocode/json?latlng=' + lat + ',' + lng + '&key=' + encodeURIComponent(mapsKey);
+          const res = await fetch(url);
+          const data = await res.json();
+          let address = '';
+          if (data && data.results && data.results[0]) {
+            address = data.results[0].formatted_address || '';
+          }
+          if (editPickupAddress) editPickupAddress.value = address || (lat.toFixed(6) + ',' + lng.toFixed(6));
+          updateEditorDirtyFromForm();
+          updateMapsRouteLink();
+        } catch(err) {
+          if (editPickupAddress) editPickupAddress.value = lat.toFixed(6) + ',' + lng.toFixed(6);
+          updateMapsRouteLink();
+        } finally {
+          if (editPickupLocBtn) { editPickupLocBtn.disabled = false; editPickupLocBtn.textContent = '📍 My location'; }
+        }
+      },
+      function(err) {
+        setEditorFeedback('Location error: ' + (err.message || 'denied.'), true);
+        if (editPickupLocBtn) { editPickupLocBtn.disabled = false; editPickupLocBtn.textContent = '📍 My location'; }
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  }
+
+  // ── Auto-calculate stops fee ─────────────────────────────────────────────
+  // Mirrors map.js logic: addressFeeCount = stops + 1 (dropoff), fee = €1.25 × count if count >= 3
+
+  function autoCalcStopsFee() {
+    if (!editRouteStops || !editPriceStops) return;
+    if (editPriceOverride && editPriceOverride.checked) return; // manual override — leave it alone
+    const stopLines = editRouteStops.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+    const stopCount = stopLines.length;
+    const addressFeeCount = stopCount + 1; // stops + dropoff
+    const addressFeePer = addressFeeCount >= 3 ? 1.25 : 0;
+    const addressFee = Math.round(addressFeePer * addressFeeCount * 100) / 100;
+    editPriceStops.value = addressFee.toFixed(2);
+    recalculatePriceTotal();
+  }
+
+  // ── Maps route link ──────────────────────────────────────────────────────
+
+  function updateMapsRouteLink() {
+    if (!editMapsRouteLink) return;
+    const pickup  = normalizeText(editPickupAddress  && editPickupAddress.value);
+    const dropoff = normalizeText(editDropoffAddress && editDropoffAddress.value);
+    if (!pickup || !dropoff) {
+      editMapsRouteLink.style.display = 'none';
+      return;
+    }
+    const stops = editRouteStops
+      ? editRouteStops.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean)
+      : [];
+    const parts = [pickup].concat(stops).concat([dropoff]);
+    const encoded = parts.map(function(p){ return encodeURIComponent(p); }).join('/');
+    editMapsRouteLink.href = 'https://www.google.com/maps/dir/' + encoded;
+    editMapsRouteLink.style.display = 'inline';
+  }
+
+  // ── Pricing manual override ──────────────────────────────────────────────
+
+  function applyPriceOverride() {
+    if (!editPriceOverride) return;
+    const manual = editPriceOverride.checked;
+    if (editPriceBreakdownFields) editPriceBreakdownFields.style.display = manual ? 'none' : '';
+    if (editPriceManualHint) editPriceManualHint.style.display = manual ? 'inline' : 'none';
+    if (editGetSystemPricing) editGetSystemPricing.style.display = manual ? 'none' : '';
+    if (manual && systemPricingStatus) { systemPricingStatus.style.display = 'none'; systemPricingStatus.textContent = ''; }
+  }
+
+  function resetPriceOverride() {
+    if (editPriceOverride) editPriceOverride.checked = false;
+    if (systemPricingStatus) { systemPricingStatus.style.display = 'none'; systemPricingStatus.textContent = ''; }
+    applyPriceOverride();
+  }
+
+  // ── Create payment link ──────────────────────────────────────────────────
+
+  async function handleCreatePaymentLink() {
+    if (!editorState.open) return;
+    const eventId = normalizeText(editorState.sourceEventId);
+
+    function setPayStatus(msg, isError) {
+      if (!editCreatePaymentStatus) return;
+      editCreatePaymentStatus.textContent = msg || '';
+      editCreatePaymentStatus.className = 'dispatcher-status' + (isError ? ' is-error' : '');
+      editCreatePaymentStatus.style.display = msg ? 'block' : 'none';
+    }
+
+    setPayStatus('Creating payment link…');
+    if (editCreatePaymentBtn) editCreatePaymentBtn.disabled = true;
+
+    try {
+      const res = await postAdmin({
+        action: 'adminCreatePayment',
+        eventId: eventId || '',
+        order: {
+          customer: {
+            name: normalizeText(editCustomerName && editCustomerName.value),
+            email: normalizeText(editCustomerEmail && editCustomerEmail.value)
+          },
+          quote: {
+            total: safeNumber(editPriceTotal && editPriceTotal.value, 0),
+            route: {
+              pickup:  { address: normalizeText(editPickupAddress  && editPickupAddress.value) },
+              dropoff: { address: normalizeText(editDropoffAddress && editDropoffAddress.value) }
+            },
+            schedule: {
+              date: normalizeText(editScheduleDate && editScheduleDate.value),
+              time: normalizeText(editScheduleTime && editScheduleTime.value)
+            }
+          }
+        },
+        reference: normalizeText(editorState.order && editorState.order.reference)
+      });
+
+      const url = (res && res.paymentUrl) ? normalizeText(res.paymentUrl) : '';
+      if (!url) throw new Error('No payment URL returned.');
+      if (editPaymentUrl) editPaymentUrl.value = url;
+      updateEditorDirtyFromForm();
+      setPayStatus('✓ Payment link created.');
+    } catch (err) {
+      setPayStatus(err && err.message ? err.message : 'Failed to create link.', true);
+    } finally {
+      if (editCreatePaymentBtn) editCreatePaymentBtn.disabled = false;
+    }
+  }
+
+  // ── System pricing engine ────────────────────────────────────────────────
+  // Mirrors map.js runEstimate exactly. Uses haversine × 1.25 for route
+  // distance (same as map.js's own Directions API fallback). Zone detection
+  // uses the same ray-casting algorithm and geojson as the booking UI.
+
+  var _spCache = { prices: null, zones: null, holidays: null };
+
+  async function _spLoadData() {
+    const [prices, zones, holidays] = await Promise.all([
+      _spCache.prices  || fetch('/data/prices.json').then(function(r){ return r.json(); }).then(function(d){ _spCache.prices = d; return d; }),
+      _spCache.zones   || fetch('/data/zones.geojson').then(function(r){ return r.json(); }).then(function(d){ _spCache.zones = d; return d; }),
+      _spCache.holidays|| fetch('/data/holidays.json').then(function(r){ return r.text(); }).then(function(t){
+        const dates = new Set((String(t||'').match(/\d{4}-\d{2}-\d{2}/g) || []));
+        _spCache.holidays = dates; return dates;
+      })
+    ]);
+    return { prices, zones, holidays };
+  }
+
+  // Plain-object haversine (no google.maps dependency)
+  function _spHaversine(lat1, lng1, lat2, lng2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const s1 = Math.sin(dLat/2), s2 = Math.sin(dLng/2);
+    const a = s1*s1 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * s2*s2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  // Ray-casting point-in-polygon using plain {lat, lng} ring arrays
+  function _spPointInRing(lat, lng, ring) {
+    let inside = false;
+    const n = ring.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1]; // [lng, lat] GeoJSON order
+      const xj = ring[j][0], yj = ring[j][1];
+      const intersect = ((yi > lat) !== (yj > lat)) &&
+        (lng < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-12) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  // Shoelace area on GeoJSON [lng,lat] ring — just for zone comparison, not real m²
+  function _spRingArea(ring) {
+    let area = 0;
+    const n = ring.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      area += ring[i][0] * ring[j][1];
+      area -= ring[j][0] * ring[i][1];
+    }
+    return Math.abs(area / 2);
+  }
+
+  // Bounding-box centroid of a GeoJSON ring
+  function _spRingCentroid(ring) {
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    ring.forEach(function(c) {
+      if (c[1] < minLat) minLat = c[1]; if (c[1] > maxLat) maxLat = c[1];
+      if (c[0] < minLng) minLng = c[0]; if (c[0] > maxLng) maxLng = c[0];
+    });
+    return { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 };
+  }
+
+  // Parse geojson into [{name, outerRing, holes, area}]
+  function _spParseZones(geojson) {
+    const features = [];
+    (geojson.features || []).forEach(function(f) {
+      const name = f.properties && f.properties.name;
+      const m = String(name||'').match(/(\d+)/);
+      const num = m ? m[1] : '';
+      const geom = f.geometry;
+      if (!geom || !num) return;
+      function addPolygon(coords) {
+        if (!coords || !coords[0] || !coords[0].length) return;
+        const outerRing = coords[0];
+        const holes = coords.slice(1);
+        const area = _spRingArea(outerRing);
+        features.push({ num: num, outerRing: outerRing, holes: holes, area: area });
+      }
+      if (geom.type === 'Polygon') {
+        addPolygon(geom.coordinates);
+      } else if (geom.type === 'MultiPolygon') {
+        geom.coordinates.forEach(addPolygon);
+      }
+    });
+    return features;
+  }
+
+  // Find innermost zone number for a lat/lng point (mirrors map.js findZoneForLatLng)
+  function _spFindZone(lat, lng, parsedZones) {
+    let best = null, bestArea = Infinity;
+    parsedZones.forEach(function(f) {
+      if (!_spPointInRing(lat, lng, f.outerRing)) return;
+      // Check not in any hole
+      for (let k = 0; k < f.holes.length; k++) {
+        if (_spPointInRing(lat, lng, f.holes[k])) return;
+      }
+      if (f.area < bestArea) { bestArea = f.area; best = f.num; }
+    });
+    return best || '';
+  }
+
+  // Geocode via Apps Script proxy — no CORS, handles both place names and addresses.
+  // Returns { lat, lng, label } or null (zero results), throws on API/network errors.
+  async function _spGeocode(address) {
+    const res = await postAdmin({ action: 'adminGeocode', query: address });
+    // postAdmin throws on non-ok or json.error, so if we're here it succeeded
+    if (res && res.result) return res.result;
+    return null; // ZERO_RESULTS
+  }
+
+  // Determine cargo rate from cargo type text (mirrors map.js getCargoAdjustment)
+  function _spCargoRate(cargoTypeText, stopCount) {
+    if (stopCount >= 5) return { rate: 0.20, label: 'large (auto, ≥5 stops)' };
+    const t = String(cargoTypeText || '').toLowerCase();
+    if (t.indexOf('small') >= 0 || t.indexOf('shoebox') >= 0) return { rate: -0.15, label: 'small' };
+    if (t.indexOf('large') >= 0 || t.indexOf('heavy') >= 0 || t.indexOf('bulky') >= 0) return { rate: 0.20, label: 'large' };
+    return { rate: 0, label: 'regular' };
+  }
+
+  // Determine surcharge from date/time (mirrors map.js computeSurchargeInfo)
+  function _spSurcharge(dateStr, timeStr, prices, holidays) {
+    if (!dateStr) return { rate: 0, label: '' };
+    const sur = (prices && prices.surcharges) || {};
+    const bh = (prices && prices.businessHours) || {};
+    const dateBase = new Date(dateStr + 'T00:00:00');
+    const isWeekend = dateBase.getDay() === 0 || dateBase.getDay() === 6;
+    const isHoliday = holidays instanceof Set ? holidays.has(dateStr) : false;
+    const isWeekendHoliday = isWeekend || isHoliday;
+    const hours = isWeekendHoliday
+      ? (bh.weekendHoliday || { start: '07:00', end: '14:00' })
+      : (bh.weekday || { start: '07:00', end: '17:00' });
+    function toMins(hhmm) {
+      const p = String(hhmm||'').split(':');
+      return p.length === 2 ? (Number(p[0])||0)*60 + (Number(p[1])||0) : null;
+    }
+    const startMin = toMins(hours.start) || 0;
+    const endMin   = toMins(hours.end)   || 1020;
+    const timeMin  = timeStr ? toMins(timeStr) : null;
+    const afterHours = timeMin != null && (timeMin < startMin || timeMin >= endMin);
+    const weekendRate = Number(sur.weekend_holiday || 0) || 0;
+    const afterRate   = Number(sur.after_hours || 0) || 0;
+    const rate = (isWeekendHoliday ? weekendRate : 0) + (afterHours ? afterRate : 0);
+    const parts = [];
+    if (isWeekendHoliday) parts.push('weekend/holiday +' + Math.round(weekendRate*100) + '%');
+    if (afterHours) parts.push('after-hours +' + Math.round(afterRate*100) + '%');
+    return { rate: rate, label: parts.join(', ') };
+  }
+
+  function _spSetSystemPricingStatus(msg) {
+    if (!systemPricingStatus) return;
+    systemPricingStatus.textContent = msg || '';
+    systemPricingStatus.style.display = msg ? 'block' : 'none';
+  }
+
+  async function handleGetSystemPricing() {
+    const pickup  = normalizeText(editPickupAddress  && editPickupAddress.value);
+    const dropoff = normalizeText(editDropoffAddress && editDropoffAddress.value);
+    if (!pickup || !dropoff) {
+      _spSetSystemPricingStatus('⚠ Pickup and dropoff are required.');
+      return;
+    }
+
+    if (editGetSystemPricing) { editGetSystemPricing.disabled = true; editGetSystemPricing.textContent = '⚙ Calculating…'; }
+    _spSetSystemPricingStatus('Geocoding addresses…');
+
+    try {
+      const { prices, zones, holidays } = await _spLoadData();
+      const parsedZones = _spParseZones(zones);
+
+      // Geocode all addresses
+      const stopLines = editRouteStops
+        ? editRouteStops.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean)
+        : [];
+
+      _spSetSystemPricingStatus('Geocoding ' + (2 + stopLines.length) + ' address(es)…');
+
+      // Geocode all addresses — resolve sequentially so error messages are specific
+      let pickupLoc, dropoffLoc, stopLocs = [];
+      try { pickupLoc  = await _spGeocode(pickup);  } catch(e) { _spSetSystemPricingStatus('⚠ Pickup: ' + e.message); return; }
+      try { dropoffLoc = await _spGeocode(dropoff); } catch(e) { _spSetSystemPricingStatus('⚠ Dropoff: ' + e.message); return; }
+      for (var si = 0; si < stopLines.length; si++) {
+        try { stopLocs.push(await _spGeocode(stopLines[si])); }
+        catch(e) { _spSetSystemPricingStatus('⚠ Stop ' + (si+1) + ' ("' + stopLines[si] + '"): ' + e.message); return; }
+      }
+
+      if (!pickupLoc)  { _spSetSystemPricingStatus('⚠ No result for pickup: "' + pickup + '" — try a more complete address.'); return; }
+      if (!dropoffLoc) { _spSetSystemPricingStatus('⚠ No result for dropoff: "' + dropoff + '" — try a more complete address.'); return; }
+      for (var sj = 0; sj < stopLocs.length; sj++) {
+        if (!stopLocs[sj]) { _spSetSystemPricingStatus('⚠ No result for stop ' + (sj+1) + ': "' + stopLines[sj] + '" — try a more complete address.'); return; }
+      }
+
+      // ── Coordinates resolved — do NOT rewrite address fields.
+      // Field values stay exactly as the dispatcher typed them.
+      // Resolved labels are shown in the status line only.
+
+      // Zone detection
+      const pickupZone = _spFindZone(pickupLoc.lat, pickupLoc.lng, parsedZones);
+      if (!pickupZone) { _spSetSystemPricingStatus('⚠ Pickup is outside the Cargoworks service area.'); return; }
+
+      // ── Real route distance via Routes API ──
+      _spSetSystemPricingStatus('Fetching route distance…');
+      let totalRouteKm, distanceNote;
+      try {
+        const routePoints = [pickupLoc].concat(stopLocs).concat([dropoffLoc])
+          .map(function(p){ return { lat: p.lat, lng: p.lng }; });
+        const routeRes = await postAdmin({ action: 'adminRoute', points: routePoints });
+        totalRouteKm = routeRes && routeRes.totalKm ? Math.round(routeRes.totalKm * 100) / 100 : null;
+        distanceNote = totalRouteKm ? (totalRouteKm.toFixed(1) + 'km routed') : null;
+      } catch(_) {}
+
+      // Fallback to haversine × 1.25 if Routes API fails
+      if (!totalRouteKm) {
+        const waypoints = [pickupLoc].concat(stopLocs).concat([dropoffLoc]);
+        let haversineKm = 0;
+        for (var hi = 0; hi < waypoints.length - 1; hi++) {
+          haversineKm += _spHaversine(waypoints[hi].lat, waypoints[hi].lng, waypoints[hi+1].lat, waypoints[hi+1].lng) * 1.25;
+        }
+        totalRouteKm = Math.round(haversineKm * 100) / 100;
+        distanceNote = totalRouteKm.toFixed(1) + 'km est. (haversine ×1.25)';
+      }
+
+      // Zone 1 centroid — used for distanceBasisKm floor, same as map.js
+      const zone1Features = parsedZones.filter(function(f){ return f.num === '1'; });
+      const origin = zone1Features.length
+        ? _spRingCentroid(zone1Features[0].outerRing)
+        : { lat: 41.3874, lng: 2.1686 };
+
+      const dropCenterKm = Math.round(_spHaversine(origin.lat, origin.lng, dropoffLoc.lat, dropoffLoc.lng) * 100) / 100;
+      const distanceBasisKm = Math.max(totalRouteKm, dropCenterKm);
+
+      // Pricing from prices.json
+      const dp = (prices && prices.distance) || {};
+      const perKmMap = dp.perKm || {};
+      const rawPerKm = Number(perKmMap[pickupZone]) || 1.5;
+      const perKm = Math.round(rawPerKm * 1.1 * 100) / 100; // ×1.1 markup (same as map.js line 3613)
+      const minimum = Number(dp.minimum) || 8;
+
+      // Base: prices.zones[zone].base * 0.88 (same as map.js basePriceForZone)
+      const zoneData = (prices && prices.zones && prices.zones[pickupZone]) || {};
+      const pickupCharge = Math.round(Number(zoneData.base || 0) * 0.88 * 100) / 100;
+
+      const distanceTotal = Math.round(distanceBasisKm * perKm * 100) / 100;
+
+      // Stops fee
+      const addressFeeCount = stopLocs.length + 1; // stops + dropoff
+      const addressFeePer   = addressFeeCount >= 3 ? 1.25 : 0;
+      const addressFee      = Math.round(addressFeePer * addressFeeCount * 100) / 100;
+
+      // Subtotal with minimum
+      let subtotal = Math.round((distanceTotal + pickupCharge) * 100) / 100;
+      if (minimum && subtotal < minimum) subtotal = minimum;
+      subtotal = Math.round((subtotal + addressFee) * 100) / 100;
+
+      // Cargo
+      const cargoText = normalizeText(editCargoType && editCargoType.value);
+      const cargo = _spCargoRate(cargoText, stopLocs.length);
+      const cargoAmount = Math.round(subtotal * cargo.rate * 100) / 100;
+      subtotal = Math.round((subtotal + cargoAmount) * 100) / 100;
+
+      // Surcharge
+      const dateStr = normalizeText(editScheduleDate && editScheduleDate.value);
+      const timeStr = normalizeText(editScheduleTime && editScheduleTime.value);
+      const surcharge = _spSurcharge(dateStr, timeStr, prices, holidays);
+      const surchargeAmount = Math.round(subtotal * surcharge.rate * 100) / 100;
+      const subtotalPreVat = Math.round((subtotal + surchargeAmount) * 100) / 100;
+
+      // VAT 21%
+      const VAT_RATE = 0.21;
+      const vatAmount = Math.round(subtotalPreVat * VAT_RATE * 100) / 100;
+      const total = Math.round((subtotalPreVat + vatAmount) * 100) / 100;
+
+      // Fill breakdown fields
+      if (editPriceBase)       editPriceBase.value       = pickupCharge.toFixed(2);
+      if (editPriceDistance)   editPriceDistance.value   = distanceTotal.toFixed(2);
+      if (editPriceStops)      editPriceStops.value      = addressFee.toFixed(2);
+      if (editPriceSurcharge)  editPriceSurcharge.value  = (cargoAmount + surchargeAmount).toFixed(2);
+      if (editPriceDiscount)   editPriceDiscount.value   = '0';
+      if (editPriceAdjustment) editPriceAdjustment.value = vatAmount.toFixed(2);
+      if (editPriceTotal)      editPriceTotal.value      = total.toFixed(2);
+      updateEditorDirtyFromForm();
+
+      // Status summary
+      const notes = [
+        'Zone ' + pickupZone,
+        distanceNote,
+        '€' + perKm.toFixed(2) + '/km',
+        cargo.rate !== 0 ? ('cargo ' + cargo.label) : null,
+        surcharge.label || null,
+        'VAT 21% → €' + vatAmount.toFixed(2)
+      ].filter(Boolean).join(' · ');
+
+      // Show resolved addresses so dispatcher can verify what was matched
+      const resolvedLines = ['✓ ' + notes];
+      if (pickupLoc.label && pickupLoc.label !== pickup) resolvedLines.push('Pickup → ' + pickupLoc.label);
+      if (dropoffLoc.label && dropoffLoc.label !== dropoff) resolvedLines.push('Dropoff → ' + dropoffLoc.label);
+      stopLocs.forEach(function(loc, i) {
+        if (loc && loc.label && loc.label !== stopLines[i]) resolvedLines.push('Stop ' + (i+1) + ' → ' + loc.label);
+      });
+      _spSetSystemPricingStatus(resolvedLines.join('\n'));
+
+    } catch(err) {
+      _spSetSystemPricingStatus('⚠ Error: ' + (err.message || String(err)));
+    } finally {
+      if (editGetSystemPricing) { editGetSystemPricing.disabled = false; editGetSystemPricing.textContent = '⚙ Get system pricing'; }
+    }
+  }
+
+  // ── Live address inference on pickup / dropoff fields ───────────────────
+  // Debounced 700ms — calls adminGeocode and shows a suggestion pill the
+  // dispatcher can accept with one tap. Never rewrites the field automatically.
+
+  function setupAddressLookup() {
+    var DEBOUNCE_MS = 700;
+    var MIN_CHARS   = 3;
+
+    function attachTo(inputEl) {
+      if (!inputEl || !inputEl.parentNode) return;
+
+      // Insert suggestion div after the input
+      var sug = document.createElement('div');
+      sug.className = 'address-suggestion';
+      // Insert after input (but before any existing siblings like the maps link)
+      inputEl.parentNode.insertBefore(sug, inputEl.nextSibling);
+
+      var timer = null;
+      var lastQuery = '';
+      var pendingAccept = false;
+
+      function hideSug() { sug.className = 'address-suggestion'; sug.innerHTML = ''; }
+
+      function showSuggestion(resolved, query) {
+        if (!resolved || resolved === query) { hideSug(); return; }
+        sug.innerHTML = '';
+
+        var textSpan = document.createElement('span');
+        textSpan.className = 'address-suggestion-text';
+        textSpan.textContent = '→ ' + resolved;
+
+        var useBtn = document.createElement('button');
+        useBtn.type = 'button';
+        useBtn.className = 'address-suggestion-use';
+        useBtn.textContent = '✓ Use';
+        useBtn.addEventListener('mousedown', function(e) {
+          // mousedown fires before blur so we can prevent the hide
+          e.preventDefault();
+          pendingAccept = true;
+        });
+        useBtn.addEventListener('click', function() {
+          inputEl.value = resolved;
+          pendingAccept = false;
+          hideSug();
+          updateEditorDirtyFromForm();
+          updateMapsRouteLink();
+          autoCalcStopsFee();
+        });
+
+        sug.appendChild(textSpan);
+        sug.appendChild(useBtn);
+        sug.className = 'address-suggestion is-visible';
+      }
+
+      async function lookup(query) {
+        if (!currentToken()) return; // not unlocked yet
+        try {
+          var res = await postAdmin({ action: 'adminGeocode', query: query });
+          if (query !== lastQuery) return; // stale
+          if (res && res.result && res.result.label) {
+            showSuggestion(res.result.label, query);
+          } else {
+            hideSug();
+          }
+        } catch(_) { hideSug(); }
+      }
+
+      inputEl.addEventListener('input', function() {
+        var val = inputEl.value.trim();
+        hideSug();
+        if (timer) clearTimeout(timer);
+        if (val.length < MIN_CHARS) return;
+        lastQuery = val;
+        timer = setTimeout(function() { lookup(val); }, DEBOUNCE_MS);
+      });
+
+      inputEl.addEventListener('blur', function() {
+        if (pendingAccept) return; // user is clicking Use button
+        setTimeout(hideSug, 150);
+      });
+
+      inputEl.addEventListener('focus', function() {
+        pendingAccept = false;
+      });
+    }
+
+    attachTo(editPickupAddress);
+    attachTo(editDropoffAddress);
+
+    // Stops textarea: resolve each line on blur and show corrections below
+    if (editRouteStops && editRouteStops.parentNode) {
+      var stopsSug = document.createElement('div');
+      stopsSug.className = 'address-suggestion';
+      stopsSug.style.flexDirection = 'column';
+      stopsSug.style.gap = '0.25rem';
+      editRouteStops.parentNode.insertBefore(stopsSug, editRouteStops.nextSibling);
+
+      editRouteStops.addEventListener('blur', async function() {
+        if (!currentToken()) return;
+        var lines = editRouteStops.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+        if (!lines.length) { stopsSug.className = 'address-suggestion'; stopsSug.innerHTML = ''; return; }
+
+        var corrections = []; // { idx, original, resolved }
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].length < 3) continue;
+          try {
+            var res = await postAdmin({ action: 'adminGeocode', query: lines[i] });
+            if (res && res.result && res.result.label && res.result.label !== lines[i]) {
+              corrections.push({ idx: i, original: lines[i], resolved: res.result.label });
+            }
+          } catch(_) {}
+        }
+
+        stopsSug.innerHTML = '';
+        if (!corrections.length) { stopsSug.className = 'address-suggestion'; return; }
+
+        corrections.forEach(function(c) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:baseline;gap:0.3rem;flex-wrap:wrap;';
+
+          var t = document.createElement('span');
+          t.className = 'address-suggestion-text';
+          t.textContent = 'Stop ' + (c.idx + 1) + ' → ' + c.resolved;
+
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'address-suggestion-use';
+          btn.textContent = '✓ Use';
+          btn.addEventListener('click', function() {
+            lines[c.idx] = c.resolved;
+            editRouteStops.value = lines.join('\n');
+            _stopsQList = lines.filter(Boolean);
+            renderStopsQList();
+            updateMapsRouteLink();
+            autoCalcStopsFee();
+            updateEditorDirtyFromForm();
+            // Remove this row
+            row.remove();
+            if (!stopsSug.children.length) stopsSug.className = 'address-suggestion';
+          });
+
+          row.appendChild(t);
+          row.appendChild(btn);
+          stopsSug.appendChild(row);
+        });
+        stopsSug.className = 'address-suggestion is-visible';
+        stopsSug.style.flexDirection = 'column';
+        stopsSug.style.gap = '0.25rem';
+      });
+    }
+  }
+
+  // ── End system pricing ────────────────────────────────────────────────────
+
+
 
   async function handleNewOrder(){
     if (!currentToken()) {
@@ -1566,6 +2793,27 @@
     e.returnValue = '';
   });
 
+  if (editCreatePaymentBtn) editCreatePaymentBtn.addEventListener('click', handleCreatePaymentLink);
+
+  // Pickup geolocation
+  if (editPickupLocBtn) editPickupLocBtn.addEventListener('click', handlePickupMyLocation);
+
+  // Maps route link — live update on any route field change
+  [editPickupAddress, editRouteStops, editDropoffAddress].forEach(function(el){
+    if (!el) return;
+    el.addEventListener('input', updateMapsRouteLink);
+  });
+
+  // Auto-calc stops fee when textarea is edited manually
+  if (editRouteStops) editRouteStops.addEventListener('input', autoCalcStopsFee);
+
+  if (editGetSystemPricing) editGetSystemPricing.addEventListener('click', handleGetSystemPricing);
+
+  // Pricing override toggle
+  if (editPriceOverride) editPriceOverride.addEventListener('change', applyPriceOverride);
+
+  // Stop quick-add wiring done inside setupStopsQuickAdd()
+
   (function init(){
     const token = loadToken();
     const operator = loadOperator();
@@ -1573,5 +2821,9 @@
     if (operatorInput) operatorInput.value = operator || 'dispatcher';
     const today = formatDateKey(new Date());
     if (dateInput) dateInput.value = today;
+    setupImportPanel();
+    setupStopsQuickAdd();
+    setupAddressLookup();
   })();
+
 })();

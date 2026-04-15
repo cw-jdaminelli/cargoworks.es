@@ -21,7 +21,7 @@ const DEFAULT_STATUS_LABEL = 'Confirmed';
 const BUILD_ID = '2026-03-19-1';
 const WHATSAPP_NUMBER = '34608081955';
 const WHATSAPP_DEFAULT_MESSAGE = 'Hola Cargoworks, necesito ayuda con mi pedido numero ';
-const ORDER_STATUS_VALUES = ['Confirmed', 'Assigned', 'Picked up', 'In transit', 'Delivered', 'Failed', 'Canceled', 'Delivery rejected'];
+const ORDER_STATUS_VALUES = ['Confirmed', 'Assigned', 'OMW', 'Picked up', 'In transit', 'Delivered', 'Failed', 'Canceled', 'Delivery rejected'];
 const PAYMENT_STATUS_VALUES = ['Paid', 'Pending', 'Failed'];
 
 function normalizeOrderStatus(value){
@@ -40,6 +40,8 @@ function normalizeOrderStatus(value){
     'cancelled': 'Canceled',
     'delivery rejected': 'Delivery rejected',
     'delivery-rejected': 'Delivery rejected',
+    'omw': 'OMW',
+    'on my way': 'OMW',
     // Legacy values kept for backward compatibility.
     'pending payment': 'Confirmed',
     'issue': 'Failed'
@@ -96,6 +98,9 @@ function doGet(e){
     if (action === 'track') {
       return handleTrackingGet(params);
     }
+    if (action === 'riderGetOrders') return handleRiderGetOrders(params);
+    if (action === 'getRiderEta') return handleGetRiderEta(params);
+    if (action === 'riderValidate') return handleRiderValidate(params);
     if (action === 'adminList' || action === 'adminSheetInfo' || action === 'adminBackfillLog') {
       return jsonResponse({ error: 'Use POST for admin actions' }, 405);
     }
@@ -124,6 +129,11 @@ function doPost(e){
       if (action === 'adminList') return handleAdminList(payload);
       if (action === 'adminSheetInfo') return handleAdminSheetInfo(payload);
       if (action === 'adminBackfillLog') return handleAdminBackfill(payload);
+      if (action === 'riderAssign') return handleRiderAssign(payload);
+      if (action === 'riderUnassign') return handleRiderUnassign(payload);
+      if (action === 'riderUpdateStatus') return handleRiderUpdateStatus(payload);
+      if (action === 'riderSetEta') return handleRiderSetEta(payload);
+      if (action === 'adminManageRiders') return handleAdminManageRiders(payload);
       return handleAdminPost(payload);
     }
     setLastPayload(payload);
@@ -992,6 +1002,8 @@ function handleAdminPost(payload){
   if (action === 'adminCancelOrder') return handleAdminCancelOrder(payload);
   if (action === 'adminUpdate') return handleAdminUpdate(payload);
   if (action === 'adminPod') return handleAdminPod(payload);
+  if (action === 'adminCreatePayment') return handleAdminCreatePayment(payload);
+  if (action === 'adminGeocode') return handleAdminGeocode(payload);
   return jsonResponse({ error: 'Unknown action' }, 400);
 }
 
@@ -1491,6 +1503,8 @@ function handleAdminUpdate(payload){
     const paymentStatus = paymentInput ? normalizePaymentStatus(paymentInput, hasPaymentUrl) : '';
     if (paymentInput && !paymentStatus) return jsonResponse({ error: 'Invalid paymentStatus' }, 400);
 
+    const riderNameSent = 'riderName' in payload;
+    const riderPhoneSent = 'riderPhone' in payload;
     const riderName = cleanOrderText(payload.riderName || '');
     const riderPhone = cleanOrderText(payload.riderPhone || '');
     const prevRiderName = cleanOrderText(adminData.rider && adminData.rider.name || '');
@@ -1504,9 +1518,10 @@ function handleAdminUpdate(payload){
     if (status) adminData.status = status;
     if (paymentStatus) adminData.paymentStatus = paymentStatus;
     if (!adminData.rider || typeof adminData.rider !== 'object') adminData.rider = { name: '', phone: '' };
-    if (riderName || riderPhone) {
-      adminData.rider.name = riderName || adminData.rider.name || '';
-      adminData.rider.phone = riderPhone || adminData.rider.phone || '';
+    if (riderNameSent || riderPhoneSent) {
+      // Explicit empty string means intentional unassign — always write the value
+      adminData.rider.name = riderNameSent ? riderName : (adminData.rider.name || '');
+      adminData.rider.phone = riderPhoneSent ? riderPhone : (adminData.rider.phone || '');
     }
     if (internalNotes) adminData.internalNotes = internalNotes;
     applyOperatorMetadata(adminData, operator);
@@ -1558,11 +1573,11 @@ function handleAdminUpdate(payload){
       });
       adminData.lastUpdateAt = ts;
     }
-    if ((riderName || riderPhone) && (cleanOrderText(adminData.rider && adminData.rider.name || '') !== prevRiderName || cleanOrderText(adminData.rider && adminData.rider.phone || '') !== prevRiderPhone)) {
+    if ((riderNameSent || riderPhoneSent) && (cleanOrderText(adminData.rider && adminData.rider.name || '') !== prevRiderName || cleanOrderText(adminData.rider && adminData.rider.phone || '') !== prevRiderPhone)) {
       adminData.timeline.push({
         ts: ts,
         status: adminData.status || '',
-        message: 'Rider assignment updated',
+        message: riderName ? 'Rider assignment updated' : 'Rider unassigned',
         via: 'dispatcher'
       });
       adminData.lastUpdateAt = ts;
@@ -1675,6 +1690,146 @@ function handleAdminPod(payload){
       build: BUILD_ID
     });
     return jsonResponse({ ok: true, podUrl: podUrl, adminData: adminData }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+function handleAdminGeocode(payload){
+  // Proxies Places Text Search + Geocoding API calls server-side to avoid CORS.
+  // Routes: name queries → Places first; address queries (contain digit) → Geocoding first.
+  try {
+    const query = String(payload.query || '').trim();
+    if (!query) return jsonResponse({ error: 'Missing query' }, 400);
+
+    const mapsKey = getMapsApiKey();
+    if (!mapsKey) return jsonResponse({ error: 'Maps API key not configured on server (MAPS_API_KEY script property).' }, 500);
+
+    const BCN_LAT = 41.3874, BCN_LNG = 2.1686;
+    const RADIUS  = 15000;
+    const looksLikeAddress = /\d/.test(query);
+
+    function textSearch() {
+      try {
+        const url = 'https://maps.googleapis.com/maps/api/place/textsearch/json'
+          + '?query='    + encodeURIComponent(query)
+          + '&location=' + BCN_LAT + ',' + BCN_LNG
+          + '&radius='   + RADIUS
+          + '&region=es'
+          + '&key='      + encodeURIComponent(mapsKey);
+        const res  = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+        const data = JSON.parse(res.getContentText());
+        if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+          return { error: 'Places API: ' + data.status + (data.error_message ? ' — ' + data.error_message : '') };
+        }
+        if (data.results && data.results[0]) {
+          const loc = data.results[0].geometry && data.results[0].geometry.location;
+          if (loc) return {
+            lat:   loc.lat,
+            lng:   loc.lng,
+            label: data.results[0].formatted_address || data.results[0].name || query,
+            via:   'places'
+          };
+        }
+        return null;
+      } catch(e) { return { error: 'Places request failed: ' + String(e.message || e) }; }
+    }
+
+    function geocoding() {
+      try {
+        const url = 'https://maps.googleapis.com/maps/api/geocode/json'
+          + '?address=' + encodeURIComponent(query + ', Barcelona, Spain')
+          + '&region=ES'
+          + '&bounds=41.317,2.052|41.468,2.239'
+          + '&key='     + encodeURIComponent(mapsKey);
+        const res  = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+        const data = JSON.parse(res.getContentText());
+        if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+          return { error: 'Geocoding API: ' + data.status + (data.error_message ? ' — ' + data.error_message : '') };
+        }
+        if (data.results && data.results[0]) {
+          const loc = data.results[0].geometry.location;
+          return {
+            lat:   loc.lat,
+            lng:   loc.lng,
+            label: data.results[0].formatted_address || query,
+            via:   'geocoding'
+          };
+        }
+        return null;
+      } catch(e) { return { error: 'Geocoding request failed: ' + String(e.message || e) }; }
+    }
+
+    // Try in order — if result has an error key it means the API itself errored (not just zero results)
+    const first  = looksLikeAddress ? geocoding()   : textSearch();
+    const second = looksLikeAddress ? textSearch()  : geocoding();
+
+    if (first  && !first.error  && first.lat)  return jsonResponse({ ok: true, result: first  }, 200);
+    if (second && !second.error && second.lat)  return jsonResponse({ ok: true, result: second }, 200);
+
+    // Both returned nothing — surface the most useful error
+    const apiError = (first && first.error) || (second && second.error) || null;
+    if (apiError) return jsonResponse({ error: apiError }, 502);
+
+    return jsonResponse({ ok: true, result: null }, 200); // ZERO_RESULTS — not an error, caller handles it
+
+  } catch(err) {
+    return jsonResponse({ error: 'Server error: ' + String(err.message || err) }, 500);
+  }
+}
+
+function handleAdminCreatePayment(payload){
+  try {
+    const order = payload.order || {};
+    const quote = order.quote || {};
+    const total = Number(quote.total || 0) || 0;
+    if (!total || total <= 0) return jsonResponse({ error: 'Total must be greater than zero to create a payment link.' }, 400);
+
+    // Reuse createStripeSession — build a minimal enriched payload it can consume.
+    const reference = String(payload.reference || '').trim() || buildShortRef(String((quote.schedule && quote.schedule.date) || '').trim() || String(new Date().toISOString().slice(0,10)));
+    const trackingToken = '';
+    const enriched = {
+      customer: order.customer || {},
+      quote: {
+        total: total,
+        route: quote.route || {},
+        schedule: quote.schedule || {}
+      },
+      reference: reference,
+      sourceUrl: 'https://cargoworks.es/admin/dispatcher.html'
+    };
+    const payment = createStripeSession(enriched, reference, trackingToken);
+    if (!payment || payment.error) {
+      return jsonResponse({ error: payment && payment.error ? payment.error : 'Stripe session could not be created.' }, 500);
+    }
+
+    const paymentUrl = String(payment.url || '').trim();
+    if (!paymentUrl) return jsonResponse({ error: 'Stripe returned no checkout URL.' }, 500);
+
+    // If eventId is provided, patch the URL into the calendar event description.
+    const eventId = String(payload.eventId || '').trim();
+    if (eventId) {
+      try {
+        const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+        const event = cal ? cal.getEventById(eventId) : null;
+        if (event) {
+          const desc = String(event.getDescription() || '');
+          const existingPayload = extractPayloadFromDescription(desc) || {};
+          const adminData = ensureAdminData(desc, existingPayload);
+          existingPayload.paymentUrl = paymentUrl;
+          adminData.paymentUrl = paymentUrl;
+          adminData.timeline = Array.isArray(adminData.timeline) ? adminData.timeline : [];
+          adminData.timeline.push({ ts: new Date().toISOString(), status: adminData.status || '', message: 'Payment link created via dispatcher', via: 'dispatcher' });
+          event.setDescription(buildEventDescription(existingPayload, adminData));
+        }
+      } catch(patchErr) {
+        // Non-fatal — still return the URL.
+        Logger.log('adminCreatePayment patch error: ' + String(patchErr));
+      }
+    }
+
+    return jsonResponse({ ok: true, paymentUrl: paymentUrl }, 200);
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
@@ -1848,7 +2003,8 @@ function buildOrderSummary(event){
         phone: String(customer.phone || '')
       },
       route: payload.quote && payload.quote.route ? payload.quote.route : null,
-      notes: String(payload.notes || '')
+      notes: String(payload.notes || ''),
+      language: String(payload.language || 'es')
     };
   } catch (err) {
     return null;
@@ -2296,6 +2452,17 @@ function validatePromoRedemption(payload){
   const appliedCodes = extractDiscountCodesFromPayload(payload);
   if (!appliedCodes.length) return { ok: true };
 
+  // Build a map of code → maxUsesPerEmail from the payload's discount items.
+  // 0 means no per-email restriction; positive values are the allowed limit.
+  const maxUsesPerEmailMap = {};
+  const quote = payload && payload.quote ? payload.quote : {};
+  const payloadDiscountItems = Array.isArray(quote.discountItems) ? quote.discountItems : [];
+  payloadDiscountItems.forEach(function(item){
+    const c = normalizePromoCode(item && item.code || '');
+    if (!c) return;
+    maxUsesPerEmailMap[c] = Number(item && item.maxUsesPerEmail || 0) || 0;
+  });
+
   const redemptionCounts = getPromoRedemptionCountsByEmail(email);
   let previousOrders = null;
   for (let i = 0; i < appliedCodes.length; i++) {
@@ -2310,10 +2477,16 @@ function validatePromoRedemption(payload){
       }
     }
     const usedCount = Number(redemptionCounts[code] || 0) || 0;
-    if (usedCount >= 1) {
+    // Fall back to 1 if the code's limit is not present in the payload.
+    const perEmailLimit = maxUsesPerEmailMap[code] != null ? maxUsesPerEmailMap[code] : 1;
+    // A limit of 0 means no per-email restriction.
+    if (perEmailLimit > 0 && usedCount >= perEmailLimit) {
+      const limitMsg = perEmailLimit === 1
+        ? 'Each code can only be used once per email.'
+        : 'This code can only be used ' + perEmailLimit + ' times per email. You have already used it ' + usedCount + ' time(s).';
       return {
         ok: false,
-        error: 'Promo code "' + code + '" has already been redeemed with this email. Each code can only be used once per email.'
+        error: 'Promo code "' + code + '" cannot be redeemed with this email. ' + limitMsg
       };
     }
   }
@@ -2560,4 +2733,459 @@ function safeJsonStringify(value){
   } catch (_) {
     return '';
   }
+}
+
+// =============================================================================
+// RIDER PANEL EXTENSION
+// =============================================================================
+
+const RIDERS_DATA_PROPERTY = 'RIDERS_DATA';
+const RIDER_ETA_PREFIX = 'RIDER_ETA_';
+const MAPS_API_KEY_PROPERTY = 'MAPS_API_KEY';
+
+// ── Rider data helpers ────────────────────────────────────────────────────────
+
+function getRidersData(){
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const raw = String(props.getProperty(RIDERS_DATA_PROPERTY) || '').trim();
+    return raw ? JSON.parse(raw) : {};
+  } catch(_){ return {}; }
+}
+
+function saveRidersData(data){
+  try {
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty(RIDERS_DATA_PROPERTY, JSON.stringify(data || {}));
+  } catch(_){}
+}
+
+function getRiderById(riderId){
+  if (!riderId) return null;
+  const riders = getRidersData();
+  const rider = riders[String(riderId).trim()];
+  if (!rider || rider.active === false) return null;
+  return rider;
+}
+
+function generateRiderId(){
+  const uuid = Utilities.getUuid().replace(/-/g, '').slice(0, 16).toUpperCase();
+  return 'R' + uuid;
+}
+
+// ── ETA helpers ───────────────────────────────────────────────────────────────
+
+function storeRiderEta(eventId, data){
+  try {
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty(RIDER_ETA_PREFIX + String(eventId).trim(), JSON.stringify(data));
+  } catch(_){}
+}
+
+function fetchRiderEtaData(eventId){
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const raw = props.getProperty(RIDER_ETA_PREFIX + String(eventId).trim());
+    return raw ? JSON.parse(raw) : null;
+  } catch(_){ return null; }
+}
+
+function clearRiderEta(eventId){
+  try {
+    const props = PropertiesService.getScriptProperties();
+    props.deleteProperty(RIDER_ETA_PREFIX + String(eventId).trim());
+  } catch(_){}
+}
+
+function getMapsApiKey(){
+  try {
+    const props = PropertiesService.getScriptProperties();
+    return String(props.getProperty(MAPS_API_KEY_PROPERTY) || '').trim();
+  } catch(_){ return ''; }
+}
+
+function estimateTravelMinutes(originLat, originLng, destinationAddress){
+  const mapsKey = getMapsApiKey();
+  if (!mapsKey || !destinationAddress) return 15;
+  try {
+    const url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+    const body = {
+      origin: { location: { latLng: { latitude: originLat, longitude: originLng } } },
+      destination: { address: destinationAddress },
+      travelMode: 'BICYCLE',
+      routingPreference: 'ROUTING_PREFERENCE_UNSPECIFIED'
+    };
+    const res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(body),
+      headers: {
+        'X-Goog-Api-Key': mapsKey,
+        'X-Goog-FieldMask': 'routes.duration'
+      },
+      muteHttpExceptions: true
+    });
+    const json = JSON.parse(res.getContentText());
+    const route = json && json.routes && json.routes[0];
+    if (route && route.duration){
+      const seconds = parseInt(String(route.duration).replace('s', ''), 10);
+      if (!isNaN(seconds)) return Math.ceil(seconds / 60);
+    }
+  } catch(_){}
+  return 15;
+}
+
+// ── doGet: rider endpoints ────────────────────────────────────────────────────
+
+function handleRiderValidate(params){
+  const riderId = String(params.id || '').trim();
+  const rider = getRiderById(riderId);
+  if (!rider) return jsonResponse({ error: 'Rider not found' }, 404);
+  return jsonResponse({ ok: true, name: rider.name }, 200);
+}
+
+function handleRiderGetOrders(params){
+  const riderId = String(params.id || '').trim();
+  const rider = getRiderById(riderId);
+  if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+  const dateKey = String(params.date || '').trim() || formatDateKey(new Date());
+  const range = dayRangeFromKey(dateKey, TIMEZONE);
+  if (!range) return jsonResponse({ error: 'Invalid date' }, 400);
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+
+  const events = cal.getEvents(range.start, range.end);
+  const orders = events
+    .map(function(event){ return buildOrderSummary(event); })
+    .filter(Boolean)
+    .filter(function(order){ return order.status !== 'Canceled'; })
+    .sort(function(a, b){
+      const at = String(a.schedule && a.schedule.startIso || '');
+      const bt = String(b.schedule && b.schedule.startIso || '');
+      return at < bt ? -1 : 1;
+    });
+
+  return jsonResponse({ orders: orders, rider: { id: riderId, name: rider.name } }, 200);
+}
+
+function handleGetRiderEta(params){
+  const ref = String(params.ref || '').trim().toUpperCase();
+  if (!ref) return jsonResponse({ error: 'Missing ref' }, 400);
+
+  const event = findEventByReference(ref);
+  if (!event) return jsonResponse({ error: 'Not found' }, 404);
+
+  const etaData = fetchRiderEtaData(event.getId());
+  if (!etaData) return jsonResponse({ eta: null }, 200);
+
+  const startedAt = Date.parse(etaData.startedAt || '');
+  const totalMs = (etaData.etaMinutes || 0) * 60000;
+  const elapsed = startedAt ? (Date.now() - startedAt) : totalMs;
+  const remaining = Math.max(0, Math.ceil((totalMs - elapsed) / 60000));
+  const eta = new Date(startedAt + totalMs);
+
+  return jsonResponse({
+    eta: {
+      riderName: etaData.riderName || '',
+      etaMinutes: etaData.etaMinutes || 0,
+      remainingMinutes: remaining,
+      startedAt: etaData.startedAt || '',
+      arrivalTime: eta.toISOString(),
+      active: etaData.active !== false
+    }
+  }, 200);
+}
+
+// ── doPost: rider endpoints ───────────────────────────────────────────────────
+
+function handleRiderAssign(payload){
+  const riderId = String(payload.id || '').trim();
+  const rider = getRiderById(riderId);
+  if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+  const eventId = cleanOrderText(payload.eventId);
+  if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+  const event = cal.getEventById(eventId);
+  if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+  const desc = String(event.getDescription() || '');
+  const payloadData = extractPayloadFromDescription(desc) || {};
+  const adminData = ensureAdminData(desc, payloadData);
+
+  const assignedName = adminData.rider && adminData.rider.name;
+  const assignedRiderId = adminData.rider && adminData.rider.riderId;
+  if (assignedName && assignedRiderId !== riderId && assignedName !== rider.name){
+    return jsonResponse({ error: 'Already assigned to ' + assignedName }, 409);
+  }
+
+  adminData.rider = { name: rider.name, phone: '', riderId: riderId };
+  if (adminData.status === 'Confirmed') adminData.status = 'Assigned';
+  applyOperatorMetadata(adminData, rider.name);
+  pushAdminTimeline(adminData, adminData.status, rider.name + ' self-assigned this order', 'rider');
+
+  const ref = payloadData.reference || extractReferenceFromText(event.getTitle() || '');
+  event.setTitle(buildOrderTitle(adminData.status, payloadData.customer && payloadData.customer.name, ref));
+  event.setDescription(buildEventDescription(payloadData, adminData));
+
+  appendOrderLogEntry({
+    action: 'rider_assign', eventId: eventId, payload: payloadData,
+    adminData: adminData, status: adminData.status,
+    paymentStatus: adminData.paymentStatus,
+    message: rider.name + ' self-assigned', build: BUILD_ID
+  });
+
+  return jsonResponse({ ok: true, order: buildOrderSummary(event) }, 200);
+}
+
+function handleRiderUnassign(payload){
+  const riderId = String(payload.id || '').trim();
+  const rider = getRiderById(riderId);
+  if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+  const eventId = cleanOrderText(payload.eventId);
+  if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+  const event = cal.getEventById(eventId);
+  if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+  const desc = String(event.getDescription() || '');
+  const payloadData = extractPayloadFromDescription(desc) || {};
+  const adminData = ensureAdminData(desc, payloadData);
+
+  const assignedRiderId = adminData.rider && adminData.rider.riderId;
+  const assignedName = adminData.rider && adminData.rider.name;
+  const allowedStatuses = ['Assigned', 'Confirmed'];
+  if (assignedRiderId && assignedRiderId !== riderId && assignedName !== rider.name){
+    return jsonResponse({ error: 'Not your order to unassign' }, 403);
+  }
+  if (!allowedStatuses.includes(adminData.status)){
+    return jsonResponse({ error: 'Cannot unassign an order already in progress' }, 409);
+  }
+
+  adminData.rider = { name: '', phone: '', riderId: '' };
+  adminData.status = 'Confirmed';
+  applyOperatorMetadata(adminData, rider.name);
+  pushAdminTimeline(adminData, 'Confirmed', rider.name + ' unassigned this order', 'rider');
+
+  const ref = payloadData.reference || extractReferenceFromText(event.getTitle() || '');
+  event.setTitle(buildOrderTitle('Confirmed', payloadData.customer && payloadData.customer.name, ref));
+  event.setDescription(buildEventDescription(payloadData, adminData));
+
+  return jsonResponse({ ok: true, order: buildOrderSummary(event) }, 200);
+}
+
+function handleRiderUpdateStatus(payload){
+  const riderId = String(payload.id || '').trim();
+  const rider = getRiderById(riderId);
+  if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+  const eventId = cleanOrderText(payload.eventId);
+  const statusInput = cleanOrderText(payload.status);
+  if (!eventId || !statusInput) return jsonResponse({ error: 'Missing eventId or status' }, 400);
+
+  const status = normalizeOrderStatus(statusInput);
+  if (!status) return jsonResponse({ error: 'Invalid status: ' + statusInput }, 400);
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+  const event = cal.getEventById(eventId);
+  if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+  const desc = String(event.getDescription() || '');
+  const payloadData = extractPayloadFromDescription(desc) || {};
+  const adminData = ensureAdminData(desc, payloadData);
+
+  const assignedRiderId = adminData.rider && adminData.rider.riderId;
+  const assignedName = adminData.rider && adminData.rider.name;
+  if (assignedRiderId && assignedRiderId !== riderId && assignedName !== rider.name){
+    return jsonResponse({ error: 'Not your order' }, 403);
+  }
+
+  adminData.status = status;
+  applyOperatorMetadata(adminData, rider.name);
+  const note = cleanOrderText(payload.note || '');
+  const dispatchNote = cleanOrderText(payload.dispatchNote || '');
+  const message = note || (rider.name + ' updated status to ' + status);
+  pushAdminTimeline(adminData, status, message, 'rider');
+
+  // Client-visible note goes into dispatcherNotes (shown on tracking page)
+  if (note){
+    ensureDispatcherNotes(adminData).push({
+      ts: new Date().toISOString(), status: status, message: note, via: 'rider'
+    });
+  }
+  // Dispatch-only note goes into internalNotes (never shown to client)
+  if (dispatchNote){
+    const existing = cleanOrderText(adminData.internalNotes || '');
+    const ts = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    adminData.internalNotes = (existing ? existing + '\n' : '') + '[' + ts + ' ' + rider.name + '] ' + dispatchNote;
+  }
+
+  if (['Delivered', 'Failed', 'Canceled', 'Delivery rejected'].indexOf(status) >= 0){
+    clearRiderEta(eventId);
+    const route = payloadData.quote && payloadData.quote.route;
+    if (route && route.dropoff && route.dropoff.address){
+      adminData.lastDropoffAddress = route.dropoff.address;
+      adminData.lastDropoffAt = new Date().toISOString();
+    }
+  }
+
+  if (payload.podData && status === 'Delivered'){
+    try {
+      const fileName = String(payload.podFileName || 'pod-rider.jpg').trim();
+      const contentType = String(payload.podContentType || 'image/jpeg').trim();
+      const base64 = payload.podData.indexOf('base64,') >= 0
+        ? payload.podData.split('base64,').pop()
+        : payload.podData;
+      const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
+      const folder = ensurePodFolder();
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      adminData.podUrl = file.getUrl();
+      pushAdminTimeline(adminData, status, 'POD uploaded by rider', 'rider');
+    } catch(_){}
+  }
+
+  const ref = payloadData.reference || extractReferenceFromText(event.getTitle() || '');
+  event.setTitle(buildOrderTitle(status, payloadData.customer && payloadData.customer.name, ref));
+  event.setDescription(buildEventDescription(payloadData, adminData));
+
+  appendOrderLogEntry({
+    action: 'rider_status_update', eventId: eventId, payload: payloadData,
+    adminData: adminData, status: adminData.status,
+    paymentStatus: adminData.paymentStatus, message: message, build: BUILD_ID
+  });
+
+  return jsonResponse({ ok: true, order: buildOrderSummary(event) }, 200);
+}
+
+function handleRiderSetEta(payload){
+  const riderId = String(payload.id || '').trim();
+  const rider = getRiderById(riderId);
+  if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+  const eventId = cleanOrderText(payload.eventId);
+  if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
+
+  const lat = Number(payload.lat || 0);
+  const lng = Number(payload.lng || 0);
+  const hasCoords = !!(lat && lng);
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+  const event = cal.getEventById(eventId);
+  if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+  const desc = String(event.getDescription() || '');
+  const payloadData = extractPayloadFromDescription(desc) || {};
+  const adminData = ensureAdminData(desc, payloadData);
+
+  const quote = payloadData.quote || {};
+  const route = quote.route || {};
+  const pickupAddress = String(route.pickup && route.pickup.address || '').trim();
+  const orderEtaMins = safeNumber(quote.etaMins, 30);
+
+  const travelMins = (hasCoords && pickupAddress)
+    ? estimateTravelMinutes(lat, lng, pickupAddress)
+    : 15;
+  const totalEtaMins = travelMins + orderEtaMins;
+  const now = new Date();
+
+  storeRiderEta(eventId, {
+    riderId: riderId,
+    riderName: rider.name,
+    etaMinutes: totalEtaMins,
+    travelToPickupMins: travelMins,
+    orderEtaMins: orderEtaMins,
+    startedAt: now.toISOString(),
+    pickupAddress: pickupAddress,
+    active: true
+  });
+
+  const omwDispatchNote = cleanOrderText(payload.dispatchNote || '');
+  adminData.status = 'OMW';
+  adminData.rider = adminData.rider || {};
+  adminData.rider.riderId = riderId;
+  adminData.rider.name = rider.name;
+  applyOperatorMetadata(adminData, rider.name);
+  pushAdminTimeline(adminData, 'OMW',
+    rider.name + ' is on the way. ETA: ~' + totalEtaMins + ' min (' + travelMins + ' min to pickup + ' + orderEtaMins + ' min delivery)',
+    'rider');
+  if (omwDispatchNote){
+    const existing = cleanOrderText(adminData.internalNotes || '');
+    const ts = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    adminData.internalNotes = (existing ? existing + '\n' : '') + '[' + ts + ' ' + rider.name + '] ' + omwDispatchNote;
+  }
+
+  const ref = payloadData.reference || extractReferenceFromText(event.getTitle() || '');
+  event.setTitle(buildOrderTitle('OMW', payloadData.customer && payloadData.customer.name, ref));
+  event.setDescription(buildEventDescription(payloadData, adminData));
+
+  appendOrderLogEntry({
+    action: 'rider_omw', eventId: eventId, payload: payloadData,
+    adminData: adminData, status: 'OMW',
+    paymentStatus: adminData.paymentStatus,
+    message: 'OMW: ' + totalEtaMins + ' min ETA', build: BUILD_ID
+  });
+
+  return jsonResponse({
+    ok: true,
+    etaMinutes: totalEtaMins,
+    travelToPickupMins: travelMins,
+    orderEtaMins: orderEtaMins,
+    arrivalTime: new Date(now.getTime() + totalEtaMins * 60000).toISOString(),
+    order: buildOrderSummary(event)
+  }, 200);
+}
+
+// ── Admin: manage riders ──────────────────────────────────────────────────────
+
+function handleAdminManageRiders(payload){
+  if (!isAdminAuthorized(String(payload.token || '').trim())){
+    return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+
+  const op = String(payload.op || '').trim().toLowerCase();
+  const riders = getRidersData();
+
+  if (op === 'list'){
+    const list = Object.keys(riders).map(function(id){
+      return Object.assign({ id: id }, riders[id]);
+    });
+    return jsonResponse({ riders: list }, 200);
+  }
+
+  if (op === 'create'){
+    const name = cleanOrderText(payload.name);
+    if (!name) return jsonResponse({ error: 'Missing name' }, 400);
+    const newId = generateRiderId();
+    riders[newId] = { name: name, active: true, createdAt: new Date().toISOString() };
+    saveRidersData(riders);
+    return jsonResponse({ ok: true, id: newId, name: name }, 200);
+  }
+
+  if (op === 'revoke'){
+    const targetId = cleanOrderText(payload.riderId);
+    if (!targetId || !riders[targetId]) return jsonResponse({ error: 'Rider not found' }, 404);
+    riders[targetId].active = false;
+    saveRidersData(riders);
+    return jsonResponse({ ok: true }, 200);
+  }
+
+  if (op === 'restore'){
+    const targetId = cleanOrderText(payload.riderId);
+    if (!targetId || !riders[targetId]) return jsonResponse({ error: 'Rider not found' }, 404);
+    riders[targetId].active = true;
+    saveRidersData(riders);
+    return jsonResponse({ ok: true }, 200);
+  }
+
+  return jsonResponse({ error: 'Unknown op' }, 400);
 }
