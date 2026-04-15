@@ -839,6 +839,79 @@
       margin-left: 4px;
     }
     .scan-addr-edit-btn:hover { color: var(--accent); }
+
+    /* Add stop UI */
+    .scan-add-section {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px dashed var(--border);
+    }
+    .scan-add-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    .scan-add-options {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .scan-add-typewrap {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .scan-add-typewrap.visible { display: flex; }
+    .scan-add-typewrap textarea {
+      width: 100%;
+      min-height: 80px;
+      padding: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.85rem;
+      font-family: inherit;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    .scan-add-typewrap textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .scan-add-typewrap .scan-add-hint {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+    .scan-add-typewrap .scan-add-row {
+      display: flex;
+      gap: 8px;
+    }
+    .scan-add-typewrap button {
+      flex: 1;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+    }
+    .scan-add-typewrap .scan-add-confirm {
+      background: var(--green);
+      color: #fff;
+    }
+    .scan-add-typewrap .scan-add-cancel {
+      background: var(--bg-raised);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
   </style>
 </head>
 <body>
@@ -1497,6 +1570,17 @@
           showScanStatus(statusEl, 'No addresses found. Try a clearer photo with better lighting.', 'error');
           scanBtn.disabled = false;
           scanBtn.innerHTML = '📷 Tap to scan route sheet';
+          _appendMode = false;
+          return;
+        }
+
+        // Append mode: add to existing list, don't rebuild from scratch
+        if (_appendMode && _appendCallback) {
+          _appendCallback(stops);
+          _appendMode = false;
+          showScanStatus(statusEl, '✓ Appended ' + stops.length + ' stops from new sheet', 'success');
+          scanBtn.disabled = false;
+          scanBtn.innerHTML = '📷 Scan another sheet';
           return;
         }
 
@@ -1771,10 +1855,119 @@
           if (fi) { fi.value = ''; fi.click(); }
         });
         actionsWrap.appendChild(retryBtn);
+
+        // ── Add more stops section ─────────────────────────────────────
+        var addSec = document.createElement('div');
+        addSec.className = 'scan-add-section';
+
+        var addTitle = document.createElement('div');
+        addTitle.className = 'scan-add-title';
+        addTitle.textContent = '➕ Missing a stop?';
+        addSec.appendChild(addTitle);
+
+        var addOpts = document.createElement('div');
+        addOpts.className = 'scan-add-options';
+
+        // Type manually button
+        var typeBtn = document.createElement('button');
+        typeBtn.type = 'button';
+        typeBtn.className = 'scan-action-btn secondary';
+        typeBtn.innerHTML = '✎ Type stop(s) manually';
+        addOpts.appendChild(typeBtn);
+
+        // Type wrap (hidden initially)
+        var typeWrap = document.createElement('div');
+        typeWrap.className = 'scan-add-typewrap';
+
+        var hint = document.createElement('div');
+        hint.className = 'scan-add-hint';
+        hint.textContent = 'One address per line. ", Barcelona" added automatically if missing.';
+        typeWrap.appendChild(hint);
+
+        var typeArea = document.createElement('textarea');
+        typeArea.placeholder = 'Carrer de Mallorca 550\nValència 627\n...';
+        typeWrap.appendChild(typeArea);
+
+        var typeRow = document.createElement('div');
+        typeRow.className = 'scan-add-row';
+
+        var confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'scan-add-confirm';
+        confirmBtn.textContent = '✓ Add to route';
+
+        var cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'scan-add-cancel';
+        cancelBtn.textContent = 'Cancel';
+
+        typeRow.appendChild(cancelBtn);
+        typeRow.appendChild(confirmBtn);
+        typeWrap.appendChild(typeRow);
+
+        addOpts.appendChild(typeWrap);
+
+        typeBtn.addEventListener('click', function() {
+          typeWrap.classList.add('visible');
+          typeBtn.style.display = 'none';
+          typeArea.focus();
+        });
+
+        cancelBtn.addEventListener('click', function() {
+          typeWrap.classList.remove('visible');
+          typeBtn.style.display = '';
+          typeArea.value = '';
+        });
+
+        confirmBtn.addEventListener('click', function() {
+          var raw = typeArea.value.trim();
+          if (!raw) return;
+          var newStops = raw.split('\n')
+            .map(function(line) { return line.trim(); })
+            .filter(Boolean)
+            .map(function(line) {
+              // Auto-append ", Barcelona" if missing
+              if (!/barcelona/i.test(line)) line = line + ', Barcelona';
+              return { address: line, tier: '', outlier: false };
+            });
+
+          workingStops = workingStops.concat(newStops);
+          typeArea.value = '';
+          typeWrap.classList.remove('visible');
+          typeBtn.style.display = '';
+          rebuildList();
+          showScanStatus(statusEl, '✓ Added ' + newStops.length + ' stop' + (newStops.length > 1 ? 's' : ''), 'success');
+        });
+
+        // Scan additional sheet button
+        var scanMoreBtn = document.createElement('button');
+        scanMoreBtn.type = 'button';
+        scanMoreBtn.className = 'scan-action-btn secondary';
+        scanMoreBtn.innerHTML = '📷 Scan additional sheet (append)';
+        scanMoreBtn.addEventListener('click', function() {
+          // Trigger the file input but on success, append rather than replace
+          _appendMode = true;
+          var fi = scanBtn.parentNode.querySelector('input[type="file"]');
+          if (fi) { fi.value = ''; fi.click(); }
+        });
+        addOpts.appendChild(scanMoreBtn);
+
+        addSec.appendChild(addOpts);
+        actionsWrap.appendChild(addSec);
       }
+
+      // Expose append-mode flag and stops to the scope so doScanExtract can append
+      _appendCallback = function(newStops) {
+        workingStops = workingStops.concat(newStops);
+        rebuildList();
+      };
 
       rebuildList();
     }
+
+    // Module-level state for append-mode scanning
+    var _appendMode = false;
+    var _appendCallback = null;
 
     // ── Action footer ──────────────────────────────────────────────────────────
 
