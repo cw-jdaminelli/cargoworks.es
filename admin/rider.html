@@ -755,6 +755,90 @@
       color: var(--text-dim);
       border: 1px dashed var(--border);
     }
+
+    /* Tier badges */
+    .scan-tier-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+      margin-right: 6px;
+    }
+    .scan-tier-19 { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+    .scan-tier-48 { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+    .scan-tier-49 { background: rgba(6,182,212,0.15); color: var(--cyan); border: 1px solid rgba(6,182,212,0.3); }
+    .scan-tier-other { background: rgba(155,93,229,0.15); color: var(--accent); border: 1px solid rgba(155,93,229,0.3); }
+
+    /* Outlier flag */
+    .scan-addr-item.is-outlier {
+      background: rgba(249,115,22,0.06);
+      border-left: 3px solid var(--orange);
+      padding-left: 8px;
+      margin-left: -10px;
+    }
+    .scan-outlier-flag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      background: rgba(249,115,22,0.15);
+      color: var(--orange);
+      border: 1px solid rgba(249,115,22,0.3);
+      margin-bottom: 4px;
+      cursor: help;
+    }
+
+    /* Edit mode */
+    .scan-addr-edit {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.88rem;
+      font-family: inherit;
+      margin-bottom: 6px;
+      box-sizing: border-box;
+    }
+    .scan-edit-actions {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .scan-edit-mini {
+      padding: 5px 10px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      border: none;
+    }
+    .scan-edit-save {
+      background: var(--green);
+      color: #fff;
+    }
+    .scan-edit-cancel {
+      background: var(--bg-card);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+    .scan-addr-edit-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 0.72rem;
+      margin-left: 4px;
+    }
+    .scan-addr-edit-btn:hover { color: var(--accent); }
   </style>
 </head>
 <body>
@@ -1399,30 +1483,33 @@
           return;
         }
 
-        if (!res.address) {
+        // Backwards-compat: handle old "address" string response or new "stops" array
+        var stops = [];
+        if (res.stops && Array.isArray(res.stops)) {
+          stops = res.stops;
+        } else if (res.address) {
+          stops = res.address.split('\n').filter(function(a) { return a.trim(); }).map(function(a) {
+            return { address: a.trim(), tier: '', outlier: false };
+          });
+        }
+
+        if (stops.length === 0) {
           showScanStatus(statusEl, 'No addresses found. Try a clearer photo with better lighting.', 'error');
           scanBtn.disabled = false;
           scanBtn.innerHTML = '📷 Tap to scan route sheet';
           return;
         }
 
-        var addresses = res.address.split('\n').filter(function(a) { return a.trim(); });
-
-        if (addresses.length === 0) {
-          showScanStatus(statusEl, 'No addresses found in the image.', 'error');
-          scanBtn.disabled = false;
-          scanBtn.innerHTML = '📷 Tap to scan route sheet';
-          return;
-        }
-
+        var outlierCount = stops.filter(function(s) { return s.outlier; }).length;
+        var msg = '✓ ' + stops.length + ' stops extracted';
+        if (outlierCount > 0) msg += ' (' + outlierCount + ' flagged as outlier)';
         hideScanStatus(statusEl);
-        renderScanResult(resultEl, addresses, scanBtn, statusEl);
-        showScanStatus(statusEl, '✓ ' + addresses.length + ' addresses extracted and optimized', 'success');
+        renderScanResult(resultEl, stops, scanBtn, statusEl);
+        showScanStatus(statusEl, msg, 'success');
 
         scanBtn.disabled = false;
         scanBtn.innerHTML = '📷 Scan another sheet';
 
-        // Scroll result into view
         setTimeout(function() {
           resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 100);
@@ -1434,135 +1521,259 @@
       }
     }
 
-    function renderScanResult(resultEl, addresses, scanBtn, statusEl) {
+    function tierBadgeClass(tier) {
+      var t = String(tier || '').toLowerCase();
+      if (t.indexOf('19') >= 0) return 'scan-tier-19';
+      if (t.indexOf('48') >= 0) return 'scan-tier-48';
+      if (t.indexOf('49') >= 0) return 'scan-tier-49';
+      if (t) return 'scan-tier-other';
+      return '';
+    }
+
+    function renderScanResult(resultEl, stops, scanBtn, statusEl) {
       resultEl.innerHTML = '';
       resultEl.className = 'scan-result visible';
+
+      // Mutable copy for in-place edits
+      var workingStops = stops.map(function(s) {
+        return {
+          address: String(s.address || '').trim(),
+          tier: String(s.tier || '').trim(),
+          outlier: !!s.outlier
+        };
+      });
 
       // Count header
       var countEl = document.createElement('div');
       countEl.className = 'scan-result-count';
-      countEl.textContent = addresses.length + ' stops — optimized order';
+      countEl.textContent = workingStops.length + ' stops — optimized order';
       resultEl.appendChild(countEl);
 
-      // Address list
-      addresses.forEach(function(addr, i) {
-        var item = document.createElement('div');
-        item.className = 'scan-addr-item';
+      var listWrap = document.createElement('div');
+      resultEl.appendChild(listWrap);
 
-        var num = document.createElement('div');
-        num.className = 'scan-addr-num';
-        num.textContent = String(i + 1);
+      function rebuildList() {
+        listWrap.innerHTML = '';
+        workingStops.forEach(function(stop, i) {
+          var item = document.createElement('div');
+          item.className = 'scan-addr-item' + (stop.outlier ? ' is-outlier' : '');
 
-        var body = document.createElement('div');
-        body.className = 'scan-addr-body';
+          var num = document.createElement('div');
+          num.className = 'scan-addr-num';
+          num.textContent = String(i + 1);
 
-        var txt = document.createElement('div');
-        txt.className = 'scan-addr-text';
-        txt.textContent = addr.trim();
-        body.appendChild(txt);
+          var body = document.createElement('div');
+          body.className = 'scan-addr-body';
 
-        var mini = document.createElement('a');
-        mini.className = 'scan-addr-mini-btn';
-        mini.href = 'https://www.google.com/maps/search/' + encodeURIComponent(addr.trim());
-        mini.target = '_blank';
-        mini.rel = 'noopener';
-        mini.textContent = '📍 Open in Maps';
-        body.appendChild(mini);
+          // Tier badge + outlier flag row
+          var badgeRow = document.createElement('div');
+          if (stop.tier) {
+            var tierBadge = document.createElement('span');
+            tierBadge.className = 'scan-tier-badge ' + tierBadgeClass(stop.tier);
+            tierBadge.textContent = stop.tier;
+            badgeRow.appendChild(tierBadge);
+          }
+          if (stop.outlier) {
+            var outlierFlag = document.createElement('span');
+            outlierFlag.className = 'scan-outlier-flag';
+            outlierFlag.title = 'This stop seems far from your normal zone — verify the address';
+            outlierFlag.textContent = '⚠ Outlier';
+            badgeRow.appendChild(outlierFlag);
+          }
+          if (stop.tier || stop.outlier) body.appendChild(badgeRow);
 
-        item.appendChild(num);
-        item.appendChild(body);
-        resultEl.appendChild(item);
-      });
+          // Address text + edit button
+          var txtRow = document.createElement('div');
+          txtRow.style.cssText = 'display:flex;align-items:flex-start;gap:4px;';
 
-      // Actions block
-      var actions = document.createElement('div');
-      actions.className = 'scan-actions';
+          var txt = document.createElement('div');
+          txt.className = 'scan-addr-text';
+          txt.style.flex = '1';
+          txt.textContent = stop.address;
+          txtRow.appendChild(txt);
 
-      // Build chunk URLs
-      var maxPerChunk = 9;
-      var chunkUrls = [];
-      var cs = 0;
-      while (cs < addresses.length) {
-        var ce = Math.min(cs + maxPerChunk, addresses.length);
-        var cp = addresses.slice(cs, ce).map(function(a) { return encodeURIComponent(a.trim()); });
-        chunkUrls.push({
-          url: 'https://www.google.com/maps/dir/' + cp.join('/'),
-          from: cs + 1,
-          to: ce
+          var editBtn = document.createElement('button');
+          editBtn.type = 'button';
+          editBtn.className = 'scan-addr-edit-btn';
+          editBtn.innerHTML = '✏️';
+          editBtn.title = 'Edit address';
+          editBtn.addEventListener('click', function() { enterEdit(i); });
+          txtRow.appendChild(editBtn);
+
+          body.appendChild(txtRow);
+
+          // Maps mini button
+          var mini = document.createElement('a');
+          mini.className = 'scan-addr-mini-btn';
+          mini.href = 'https://www.google.com/maps/search/' + encodeURIComponent(stop.address);
+          mini.target = '_blank';
+          mini.rel = 'noopener';
+          mini.textContent = '📍 Open in Maps';
+          body.appendChild(mini);
+
+          item.appendChild(num);
+          item.appendChild(body);
+          listWrap.appendChild(item);
         });
-        if (ce >= addresses.length) break;
-        cs = ce - 1;
+
+        // Rebuild action buttons
+        if (actionsWrap.parentNode === resultEl) resultEl.removeChild(actionsWrap);
+        buildActions();
+        resultEl.appendChild(actionsWrap);
       }
 
-      // Open in Maps buttons
-      if (chunkUrls.length === 1) {
-        var openBtn = document.createElement('a');
-        openBtn.className = 'scan-action-btn primary';
-        openBtn.href = chunkUrls[0].url;
-        openBtn.target = '_blank';
-        openBtn.rel = 'noopener';
-        openBtn.textContent = '📍 Open full route in Google Maps';
-        actions.appendChild(openBtn);
-      } else {
-        chunkUrls.forEach(function(chunk, ci) {
-          var openBtn = document.createElement('a');
-          openBtn.className = 'scan-action-btn primary';
-          openBtn.href = chunk.url;
-          openBtn.target = '_blank';
-          openBtn.rel = 'noopener';
-          openBtn.textContent = '📍 Open part ' + (ci + 1) + ' in Maps (stops ' + chunk.from + '–' + chunk.to + ')';
-          actions.appendChild(openBtn);
+      function enterEdit(idx) {
+        var stop = workingStops[idx];
+        var item = listWrap.children[idx];
+        var body = item.querySelector('.scan-addr-body');
+        body.innerHTML = '';
+
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'scan-addr-edit';
+        input.value = stop.address;
+        body.appendChild(input);
+
+        var btnRow = document.createElement('div');
+        btnRow.className = 'scan-edit-actions';
+
+        var saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.className = 'scan-edit-mini scan-edit-save';
+        saveBtn.textContent = 'Save';
+        saveBtn.addEventListener('click', function() {
+          var newVal = input.value.trim();
+          if (newVal) {
+            workingStops[idx].address = newVal;
+            // Edited address is no longer flagged as outlier
+            workingStops[idx].outlier = false;
+          }
+          rebuildList();
         });
-      }
 
-      // Share button
-      if (addresses.length > 0) {
-        var shareBtn = document.createElement('button');
-        shareBtn.type = 'button';
-        shareBtn.className = 'scan-action-btn secondary';
-        shareBtn.innerHTML = '📤 Share route';
-        shareBtn.addEventListener('click', function() {
-          var text = '🚲 Cargoworks route (' + addresses.length + ' stops)\n\n' +
-            addresses.map(function(a, i) { return (i + 1) + '. ' + a.trim(); }).join('\n') +
-            '\n\n📍 Maps:\n' +
-            chunkUrls.map(function(c, ci) {
-              return chunkUrls.length > 1
-                ? 'Part ' + (ci + 1) + ' (stops ' + c.from + '–' + c.to + '): ' + c.url
-                : c.url;
-            }).join('\n');
+        var cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'scan-edit-mini scan-edit-cancel';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.addEventListener('click', rebuildList);
 
-          if (navigator.share) {
-            navigator.share({ title: 'Cargoworks route', text: text }).catch(function(){});
-          } else if (navigator.clipboard) {
-            navigator.clipboard.writeText(text).then(function() {
-              shareBtn.innerHTML = '✓ Copied to clipboard';
-              setTimeout(function() { shareBtn.innerHTML = '📤 Share route'; }, 2000);
-            }).catch(function() {
-              window.prompt('Copy route:', text);
-            });
-          } else {
-            window.prompt('Copy route:', text);
+        var removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'scan-edit-mini scan-edit-cancel';
+        removeBtn.textContent = '🗑 Remove';
+        removeBtn.addEventListener('click', function() {
+          if (confirm('Remove this stop?')) {
+            workingStops.splice(idx, 1);
+            rebuildList();
           }
         });
-        actions.appendChild(shareBtn);
+
+        btnRow.appendChild(saveBtn);
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(removeBtn);
+        body.appendChild(btnRow);
+
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
       }
 
-      // Retry button
-      var retryBtn = document.createElement('button');
-      retryBtn.type = 'button';
-      retryBtn.className = 'scan-action-btn tertiary';
-      retryBtn.innerHTML = '🔄 Scan a different sheet';
-      retryBtn.addEventListener('click', function() {
-        resultEl.className = 'scan-result';
-        resultEl.innerHTML = '';
-        hideScanStatus(statusEl);
-        scanBtn.innerHTML = '📷 Tap to scan route sheet';
-        var fi = scanBtn.parentNode.querySelector('input[type="file"]');
-        if (fi) { fi.value = ''; fi.click(); }
-      });
-      actions.appendChild(retryBtn);
+      // Actions container — gets rebuilt with current workingStops
+      var actionsWrap = document.createElement('div');
+      actionsWrap.className = 'scan-actions';
 
-      resultEl.appendChild(actions);
+      function buildActions() {
+        actionsWrap.innerHTML = '';
+        var addresses = workingStops.map(function(s) { return s.address; });
+
+        // Build chunk URLs
+        var maxPerChunk = 9;
+        var chunkUrls = [];
+        var cs = 0;
+        while (cs < addresses.length) {
+          var ce = Math.min(cs + maxPerChunk, addresses.length);
+          var cp = addresses.slice(cs, ce).map(function(a) { return encodeURIComponent(a); });
+          chunkUrls.push({
+            url: 'https://www.google.com/maps/dir/' + cp.join('/'),
+            from: cs + 1,
+            to: ce
+          });
+          if (ce >= addresses.length) break;
+          cs = ce - 1;
+        }
+
+        if (chunkUrls.length === 1 && addresses.length > 0) {
+          var openBtn = document.createElement('a');
+          openBtn.className = 'scan-action-btn primary';
+          openBtn.href = chunkUrls[0].url;
+          openBtn.target = '_blank';
+          openBtn.rel = 'noopener';
+          openBtn.textContent = '📍 Open full route in Google Maps';
+          actionsWrap.appendChild(openBtn);
+        } else {
+          chunkUrls.forEach(function(chunk, ci) {
+            var openBtn = document.createElement('a');
+            openBtn.className = 'scan-action-btn primary';
+            openBtn.href = chunk.url;
+            openBtn.target = '_blank';
+            openBtn.rel = 'noopener';
+            openBtn.textContent = '📍 Open part ' + (ci + 1) + ' in Maps (stops ' + chunk.from + '–' + chunk.to + ')';
+            actionsWrap.appendChild(openBtn);
+          });
+        }
+
+        // Share button
+        if (addresses.length > 0) {
+          var shareBtn = document.createElement('button');
+          shareBtn.type = 'button';
+          shareBtn.className = 'scan-action-btn secondary';
+          shareBtn.innerHTML = '📤 Share route';
+          shareBtn.addEventListener('click', function() {
+            var text = '🚲 Cargoworks route (' + addresses.length + ' stops)\n\n' +
+              workingStops.map(function(s, i) {
+                var line = (i + 1) + '. ' + s.address;
+                if (s.tier) line += ' [' + s.tier + ']';
+                return line;
+              }).join('\n') +
+              '\n\n📍 Maps:\n' +
+              chunkUrls.map(function(c, ci) {
+                return chunkUrls.length > 1
+                  ? 'Part ' + (ci + 1) + ' (stops ' + c.from + '–' + c.to + '): ' + c.url
+                  : c.url;
+              }).join('\n');
+
+            if (navigator.share) {
+              navigator.share({ title: 'Cargoworks route', text: text }).catch(function(){});
+            } else if (navigator.clipboard) {
+              navigator.clipboard.writeText(text).then(function() {
+                shareBtn.innerHTML = '✓ Copied to clipboard';
+                setTimeout(function() { shareBtn.innerHTML = '📤 Share route'; }, 2000);
+              }).catch(function() {
+                window.prompt('Copy route:', text);
+              });
+            } else {
+              window.prompt('Copy route:', text);
+            }
+          });
+          actionsWrap.appendChild(shareBtn);
+        }
+
+        // Retry
+        var retryBtn = document.createElement('button');
+        retryBtn.type = 'button';
+        retryBtn.className = 'scan-action-btn tertiary';
+        retryBtn.innerHTML = '🔄 Scan a different sheet';
+        retryBtn.addEventListener('click', function() {
+          resultEl.className = 'scan-result';
+          resultEl.innerHTML = '';
+          hideScanStatus(statusEl);
+          scanBtn.innerHTML = '📷 Tap to scan route sheet';
+          var fi = scanBtn.parentNode.querySelector('input[type="file"]');
+          if (fi) { fi.value = ''; fi.click(); }
+        });
+        actionsWrap.appendChild(retryBtn);
+      }
+
+      rebuildList();
     }
 
     // ── Action footer ──────────────────────────────────────────────────────────
