@@ -1,5 +1,5 @@
 (function(){
-  const PASSWORD_HASH = '6ee04ecb6d43368382eba2d295cde6f4c46435093c636a74607f828c74639cf4';
+  const PASSWORD_HASH = '25bf6a2c3d4657f9faa85ebfe96bf43f4cbb8537e278cab2dfe123bcc81edea2';
   const DATA_URL = '../data/discounts.json';
   const sessionKey = 'cwDiscountsAdminUnlocked';
 

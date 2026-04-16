@@ -2764,12 +2764,19 @@
         }
       }
 
-      // Map container — inserted after list, before actions
+      // Map container — inserted after list, before actions (but only after
+      // rebuildList has created actionsWrap for the first time)
       var mapSection = buildMapSection();
-      resultEl.insertBefore(mapSection.wrap, actionsWrap);
 
-      // Initial render of map + auto-geocode
+      // Initial render of list + actions, THEN insert map, THEN geocode & draw
       rebuildList();
+      // At this point actionsWrap is in the DOM. Insert map just before it.
+      if (actionsWrap.parentNode === resultEl) {
+        resultEl.insertBefore(mapSection.wrap, actionsWrap);
+      } else {
+        resultEl.appendChild(mapSection.wrap);
+      }
+
       (async function() {
         var ok = await geocodeAllStops();
         if (ok) renderMap(mapSection.mapEl);
@@ -2779,8 +2786,13 @@
       var originalRebuild = rebuildList;
       rebuildList = function() {
         originalRebuild();
+        // Re-insert the map section before actionsWrap if it got removed
+        if (mapSection && mapSection.wrap && actionsWrap.parentNode === resultEl) {
+          if (mapSection.wrap.parentNode !== resultEl) {
+            resultEl.insertBefore(mapSection.wrap, actionsWrap);
+          }
+        }
         if (mapSection && mapSection.mapEl) {
-          // Geocode any new stops lazily, then redraw
           (async function() {
             var needsGeo = workingStops.filter(function(s) { return !s.lat || !s.lng; });
             if (needsGeo.length > 0) await geocodeAllStops();
@@ -3006,4 +3018,4 @@
   </script>
 
 </body>
-</html>
+</html> 
