@@ -1928,6 +1928,7 @@
       var mapInstance = null;
       var mapMarkers = [];
       var mapPolyline = null;
+      var mapSection = null; // filled in after functions are declared, used by rebuildList
 
       // Count header
       var countEl = document.createElement('div');
@@ -1946,6 +1947,16 @@
           commitBtn.innerHTML = '💾 Review and save to order';
           commitBtn.classList.remove('is-saved');
           commitBtn.disabled = false;
+        }
+        // Refresh map with current stops
+        if (mapSection && mapSection.mapEl) {
+          (async function() {
+            var needsGeo = workingStops.filter(function(s) { return !s.lat || !s.lng; });
+            if (needsGeo.length > 0) {
+              await geocodeAllStops();
+            }
+            renderMap(mapSection.mapEl);
+          })();
         }
       }
 
@@ -2110,10 +2121,19 @@
           listWrap.appendChild(item);
         });
 
-        // Rebuild action buttons
+        // Rebuild action buttons — detach, build fresh, reattach
         if (actionsWrap.parentNode === resultEl) resultEl.removeChild(actionsWrap);
         buildActions();
         resultEl.appendChild(actionsWrap);
+        // If map section exists, ensure it sits right before actionsWrap
+        if (mapSection && mapSection.wrap && mapSection.wrap.parentNode !== resultEl) {
+          resultEl.insertBefore(mapSection.wrap, actionsWrap);
+        } else if (mapSection && mapSection.wrap) {
+          // Already in DOM — make sure it's positioned before actionsWrap
+          if (mapSection.wrap.nextSibling !== actionsWrap) {
+            resultEl.insertBefore(mapSection.wrap, actionsWrap);
+          }
+        }
       }
 
       function moveStop(fromIdx, toIdx) {
@@ -2764,42 +2784,19 @@
         }
       }
 
-      // Map container — inserted after list, before actions (but only after
-      // rebuildList has created actionsWrap for the first time)
-      var mapSection = buildMapSection();
+      // Build map section scaffold up front so rebuildList can reference it
+      mapSection = buildMapSection();
 
-      // Initial render of list + actions, THEN insert map, THEN geocode & draw
+      // Initial render of list + actions (this also places mapSection before actionsWrap)
       rebuildList();
-      // At this point actionsWrap is in the DOM. Insert map just before it.
-      if (actionsWrap.parentNode === resultEl) {
-        resultEl.insertBefore(mapSection.wrap, actionsWrap);
-      } else {
-        resultEl.appendChild(mapSection.wrap);
-      }
 
+      // Kick off geocoding + map draw
       (async function() {
         var ok = await geocodeAllStops();
-        if (ok) renderMap(mapSection.mapEl);
+        if (ok && mapSection && mapSection.mapEl) {
+          renderMap(mapSection.mapEl);
+        }
       })();
-
-      // Wrap rebuildList to also refresh the map whenever stops change
-      var originalRebuild = rebuildList;
-      rebuildList = function() {
-        originalRebuild();
-        // Re-insert the map section before actionsWrap if it got removed
-        if (mapSection && mapSection.wrap && actionsWrap.parentNode === resultEl) {
-          if (mapSection.wrap.parentNode !== resultEl) {
-            resultEl.insertBefore(mapSection.wrap, actionsWrap);
-          }
-        }
-        if (mapSection && mapSection.mapEl) {
-          (async function() {
-            var needsGeo = workingStops.filter(function(s) { return !s.lat || !s.lng; });
-            if (needsGeo.length > 0) await geocodeAllStops();
-            renderMap(mapSection.mapEl);
-          })();
-        }
-      };
     }
 
     var _appendMode = false;
@@ -3018,4 +3015,4 @@
   </script>
 
 </body>
-</html> 
+</html>
