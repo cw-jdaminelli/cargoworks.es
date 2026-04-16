@@ -9,6 +9,10 @@
   <title>Cargoworks — Rider</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     // Set API base — same pattern as other pages
     window.CARGOWORKS_BOOKING_API = 'https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec';
@@ -18,20 +22,20 @@
 
     :root {
       --bg:        #0a0a14;
-      --bg-card:   #12121f;
-      --bg-raised: #1a1a2e;
-      --border:    #2a2a40;
-      --accent:    #9b5de5;
-      --accent-dim:#6b3fa0;
-      --pink:      #e0287d;
-      --text:      #e8e8f0;
-      --text-dim:  #888899;
-      --text-muted:#55556a;
-      --green:     #22c55e;
-      --orange:    #f97316;
-      --yellow:    #eab308;
-      --cyan:      #06b6d4;
-      --red:       #ef4444;
+      --bg-card:   #16162a;
+      --bg-raised: #20203a;
+      --border:    #3a3a58;
+      --accent:    #b07dff;
+      --accent-dim:#8b5fd6;
+      --pink:      #ff4590;
+      --text:      #f5f5fa;
+      --text-dim:  #b0b0c4;
+      --text-muted:#7a7a96;
+      --green:     #34d67e;
+      --orange:    #ff8c3a;
+      --yellow:    #fbbf24;
+      --cyan:      #22d3ee;
+      --red:       #ff5a5a;
       --radius:    12px;
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 16px);
@@ -912,6 +916,280 @@
       color: var(--text-dim);
       border: 1px solid var(--border);
     }
+
+    /* Priority star + drag handle */
+    .scan-addr-item.is-priority {
+      background: rgba(234,179,8,0.06);
+      border-left: 3px solid var(--yellow);
+      padding-left: 8px;
+      margin-left: -10px;
+    }
+    .scan-priority-star {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px 6px;
+      font-size: 0.95rem;
+      transition: color 0.15s, transform 0.15s;
+    }
+    .scan-priority-star:hover { color: var(--yellow); transform: scale(1.15); }
+    .scan-priority-star.is-active { color: var(--yellow); }
+
+    .scan-priority-flag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      background: rgba(234,179,8,0.15);
+      color: var(--yellow);
+      border: 1px solid rgba(234,179,8,0.3);
+      margin-bottom: 4px;
+      margin-right: 6px;
+    }
+
+    .scan-drag-handle {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: grab;
+      padding: 4px 6px;
+      font-size: 1rem;
+      touch-action: none;
+    }
+    .scan-drag-handle:active { cursor: grabbing; }
+    .scan-addr-item.is-dragging {
+      opacity: 0.5;
+      background: var(--bg-raised);
+    }
+    .scan-addr-item.drag-over-top { border-top: 2px solid var(--accent); }
+    .scan-addr-item.drag-over-bottom { border-bottom: 2px solid var(--accent); }
+
+    .scan-reopt-btn {
+      background: linear-gradient(135deg, rgba(155,93,229,0.15), rgba(155,93,229,0.05));
+      color: var(--accent);
+      border: 1px solid rgba(155,93,229,0.3);
+    }
+
+    .scan-commit-btn {
+      background: linear-gradient(135deg, var(--green), #15803d);
+      color: #fff;
+      font-weight: 700;
+      box-shadow: 0 2px 12px rgba(34,197,94,0.25);
+    }
+    .scan-commit-btn.is-saved {
+      background: var(--bg-card);
+      color: var(--green);
+      border: 1px solid rgba(34,197,94,0.4);
+      box-shadow: none;
+      cursor: default;
+    }
+    .scan-commit-btn:disabled:not(.is-saved) {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    /* Commit confirmation modal */
+    .scan-commit-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(10,10,20,0.85);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 20px;
+    }
+    .scan-commit-modal.visible {
+      display: flex;
+    }
+    .scan-commit-modal-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 500px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .scan-commit-modal-header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .scan-commit-modal-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .scan-commit-modal-sub {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+    }
+    .scan-commit-modal-body {
+      padding: 12px 18px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .scan-commit-preview-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .scan-commit-preview-item:last-child { border-bottom: none; }
+    .scan-commit-preview-num {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+    .scan-commit-preview-addr {
+      flex: 1;
+      color: var(--text);
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .scan-commit-preview-tags {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .scan-commit-modal-footer {
+      padding: 14px 18px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: var(--bg-card);
+    }
+    .scan-commit-modal-footer button {
+      width: 100%;
+      padding: 14px;
+      border-radius: var(--radius);
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+    }
+    .scan-commit-modal-confirm {
+      background: linear-gradient(135deg, var(--green), #15803d);
+      color: #fff;
+    }
+    .scan-commit-modal-cancel {
+      background: var(--bg-raised);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+
+    /* Leaflet map container */
+    .scan-map-wrap {
+      margin-top: 16px;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--bg-raised);
+    }
+    .scan-map {
+      width: 100%;
+      height: 320px;
+      background: #1a1a2e;
+    }
+    .scan-map-header {
+      padding: 10px 14px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .scan-map-legend {
+      display: flex;
+      gap: 10px;
+      font-size: 0.68rem;
+      flex-wrap: wrap;
+    }
+    .scan-map-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-muted);
+    }
+    .scan-map-legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    /* Custom marker styles */
+    .scan-marker {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.78rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .scan-marker.tier-19 { background: var(--red); }
+    .scan-marker.tier-48 { background: var(--green); }
+    .scan-marker.tier-49 { background: var(--cyan); }
+    .scan-marker.tier-other { background: var(--accent); }
+    .scan-marker.is-priority {
+      box-shadow: 0 0 0 3px var(--yellow), 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .scan-marker.is-outlier {
+      border-color: var(--orange);
+      border-width: 3px;
+    }
+    /* Leaflet popup override for dark theme */
+    .leaflet-popup-content-wrapper {
+      background: var(--bg-card) !important;
+      color: var(--text) !important;
+      border-radius: 8px !important;
+      border: 1px solid var(--border);
+    }
+    .leaflet-popup-tip {
+      background: var(--bg-card) !important;
+      border: 1px solid var(--border);
+    }
+    .leaflet-popup-content {
+      margin: 10px 12px !important;
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+    .leaflet-popup-content a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .leaflet-container a.leaflet-popup-close-button {
+      color: var(--text-dim) !important;
+    }
   </style>
 </head>
 <body>
@@ -1464,6 +1742,7 @@
     // ── Scan Label ────────────────────────────────────────────────────────────
 
     function buildScanSection(order) {
+      var orderEventId = order && order.eventId;
       var wrap = document.createElement('div');
       wrap.className = 'scan-section-wrap';
       wrap.style.marginTop = '14px';
@@ -1514,7 +1793,7 @@
           canvas.height = h;
           canvas.getContext('2d').drawImage(img, 0, 0, w, h);
           var b64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-          doScanExtract(b64, 'image/jpeg', scanBtn, statusEl, resultEl);
+          doScanExtract(b64, 'image/jpeg', scanBtn, statusEl, resultEl, orderEventId);
         };
         img.onerror = function() {
           showScanStatus(statusEl, 'Could not read the image. Try again.', 'error');
@@ -1534,7 +1813,7 @@
       statusEl.textContent = '';
     }
 
-    async function doScanExtract(b64, mime, scanBtn, statusEl, resultEl) {
+    async function doScanExtract(b64, mime, scanBtn, statusEl, resultEl, orderEventId) {
       scanBtn.disabled = true;
       scanBtn.innerHTML = '⏳ Sending to Claude…';
       showScanStatus(statusEl, 'Extracting addresses — this can take 10–20 seconds…', 'info');
@@ -1566,6 +1845,22 @@
           });
         }
 
+        // Client-side sanity filter — catch anything malformed that slipped past server validation
+        stops = stops.filter(function(s) {
+          if (!s || typeof s !== 'object') return false;
+          var addr = String(s.address || '').trim();
+          if (addr.length < 6 || addr.length > 200) return false;
+          // Must have letters and a number
+          if (!/[a-zA-ZÀ-ÿ]{3,}/.test(addr)) return false;
+          if (!/\d/.test(addr)) return false;
+          // Reject obvious code/JSON garbage
+          if (/^(true|false|null|undefined)$/i.test(addr)) return false;
+          if (/^[\{\}\[\]:,"]/.test(addr)) return false;
+          if (/[<>{}]/.test(addr)) return false;
+          if (/^\s*\/\//.test(addr)) return false;
+          return true;
+        });
+
         if (stops.length === 0) {
           showScanStatus(statusEl, 'No addresses found. Try a clearer photo with better lighting.', 'error');
           scanBtn.disabled = false;
@@ -1588,7 +1883,7 @@
         var msg = '✓ ' + stops.length + ' stops extracted';
         if (outlierCount > 0) msg += ' (' + outlierCount + ' flagged as outlier)';
         hideScanStatus(statusEl);
-        renderScanResult(resultEl, stops, scanBtn, statusEl);
+        renderScanResult(resultEl, stops, scanBtn, statusEl, orderEventId);
         showScanStatus(statusEl, msg, 'success');
 
         scanBtn.disabled = false;
@@ -1614,7 +1909,7 @@
       return '';
     }
 
-    function renderScanResult(resultEl, stops, scanBtn, statusEl) {
+    function renderScanResult(resultEl, stops, scanBtn, statusEl, orderEventId) {
       resultEl.innerHTML = '';
       resultEl.className = 'scan-result visible';
 
@@ -1623,9 +1918,16 @@
         return {
           address: String(s.address || '').trim(),
           tier: String(s.tier || '').trim(),
-          outlier: !!s.outlier
+          outlier: !!s.outlier,
+          priority: !!s.priority,
+          lat: s.lat || null,
+          lng: s.lng || null
         };
       });
+      var dirty = true; // becomes false after a successful commit, true again on edit
+      var mapInstance = null;
+      var mapMarkers = [];
+      var mapPolyline = null;
 
       // Count header
       var countEl = document.createElement('div');
@@ -1636,11 +1938,34 @@
       var listWrap = document.createElement('div');
       resultEl.appendChild(listWrap);
 
+      function markDirty() {
+        dirty = true;
+        // Update commit button label if it exists
+        var commitBtn = resultEl.querySelector('.scan-commit-btn');
+        if (commitBtn) {
+          commitBtn.innerHTML = '💾 Review and save to order';
+          commitBtn.classList.remove('is-saved');
+          commitBtn.disabled = false;
+        }
+      }
+
       function rebuildList() {
         listWrap.innerHTML = '';
         workingStops.forEach(function(stop, i) {
           var item = document.createElement('div');
-          item.className = 'scan-addr-item' + (stop.outlier ? ' is-outlier' : '');
+          var classes = ['scan-addr-item'];
+          if (stop.priority) classes.push('is-priority');
+          if (stop.outlier) classes.push('is-outlier');
+          item.className = classes.join(' ');
+          item.setAttribute('data-idx', String(i));
+
+          // Drag handle
+          var dragHandle = document.createElement('button');
+          dragHandle.type = 'button';
+          dragHandle.className = 'scan-drag-handle';
+          dragHandle.innerHTML = '⋮⋮';
+          dragHandle.title = 'Drag to reorder';
+          dragHandle.draggable = true;
 
           var num = document.createElement('div');
           num.className = 'scan-addr-num';
@@ -1649,13 +1974,22 @@
           var body = document.createElement('div');
           body.className = 'scan-addr-body';
 
-          // Tier badge + outlier flag row
+          // Badge row: priority + tier + outlier
           var badgeRow = document.createElement('div');
+          var hasBadges = false;
+          if (stop.priority) {
+            var priFlag = document.createElement('span');
+            priFlag.className = 'scan-priority-flag';
+            priFlag.textContent = '⭐ Priority';
+            badgeRow.appendChild(priFlag);
+            hasBadges = true;
+          }
           if (stop.tier) {
             var tierBadge = document.createElement('span');
             tierBadge.className = 'scan-tier-badge ' + tierBadgeClass(stop.tier);
             tierBadge.textContent = stop.tier;
             badgeRow.appendChild(tierBadge);
+            hasBadges = true;
           }
           if (stop.outlier) {
             var outlierFlag = document.createElement('span');
@@ -1663,10 +1997,11 @@
             outlierFlag.title = 'This stop seems far from your normal zone — verify the address';
             outlierFlag.textContent = '⚠ Outlier';
             badgeRow.appendChild(outlierFlag);
+            hasBadges = true;
           }
-          if (stop.tier || stop.outlier) body.appendChild(badgeRow);
+          if (hasBadges) body.appendChild(badgeRow);
 
-          // Address text + edit button
+          // Address text + buttons row
           var txtRow = document.createElement('div');
           txtRow.style.cssText = 'display:flex;align-items:flex-start;gap:4px;';
 
@@ -1676,6 +2011,20 @@
           txt.textContent = stop.address;
           txtRow.appendChild(txt);
 
+          // Priority star toggle
+          var starBtn = document.createElement('button');
+          starBtn.type = 'button';
+          starBtn.className = 'scan-priority-star' + (stop.priority ? ' is-active' : '');
+          starBtn.innerHTML = stop.priority ? '★' : '☆';
+          starBtn.title = stop.priority ? 'Remove priority' : 'Mark as priority';
+          starBtn.addEventListener('click', function() {
+            workingStops[i].priority = !workingStops[i].priority;
+            markDirty();
+            rebuildList();
+          });
+          txtRow.appendChild(starBtn);
+
+          // Edit button
           var editBtn = document.createElement('button');
           editBtn.type = 'button';
           editBtn.className = 'scan-addr-edit-btn';
@@ -1686,15 +2035,76 @@
 
           body.appendChild(txtRow);
 
+          // Up/down move buttons (mobile-friendly fallback to drag)
+          var moveRow = document.createElement('div');
+          moveRow.style.cssText = 'display:flex;gap:4px;margin-top:4px;';
+
+          if (i > 0) {
+            var upBtn = document.createElement('button');
+            upBtn.type = 'button';
+            upBtn.className = 'scan-edit-mini scan-edit-cancel';
+            upBtn.innerHTML = '↑';
+            upBtn.title = 'Move up';
+            upBtn.style.cssText = 'padding:4px 10px;font-size:0.75rem;';
+            upBtn.addEventListener('click', function() { moveStop(i, i - 1); });
+            moveRow.appendChild(upBtn);
+          }
+          if (i < workingStops.length - 1) {
+            var downBtn = document.createElement('button');
+            downBtn.type = 'button';
+            downBtn.className = 'scan-edit-mini scan-edit-cancel';
+            downBtn.innerHTML = '↓';
+            downBtn.title = 'Move down';
+            downBtn.style.cssText = 'padding:4px 10px;font-size:0.75rem;';
+            downBtn.addEventListener('click', function() { moveStop(i, i + 1); });
+            moveRow.appendChild(downBtn);
+          }
+
           // Maps mini button
           var mini = document.createElement('a');
           mini.className = 'scan-addr-mini-btn';
           mini.href = 'https://www.google.com/maps/search/' + encodeURIComponent(stop.address);
           mini.target = '_blank';
           mini.rel = 'noopener';
-          mini.textContent = '📍 Open in Maps';
-          body.appendChild(mini);
+          mini.textContent = '📍 Maps';
+          mini.style.cssText = 'padding:4px 10px;font-size:0.7rem;';
+          moveRow.appendChild(mini);
 
+          body.appendChild(moveRow);
+
+          // Drag events on the item
+          item.addEventListener('dragstart', function(e) {
+            _dragSourceIdx = i;
+            item.classList.add('is-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+          });
+          item.addEventListener('dragend', function() {
+            item.classList.remove('is-dragging');
+            Array.prototype.forEach.call(listWrap.children, function(c) {
+              c.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+          });
+          item.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            var rect = item.getBoundingClientRect();
+            var midpoint = rect.top + rect.height / 2;
+            item.classList.toggle('drag-over-top', e.clientY < midpoint);
+            item.classList.toggle('drag-over-bottom', e.clientY >= midpoint);
+          });
+          item.addEventListener('dragleave', function() {
+            item.classList.remove('drag-over-top', 'drag-over-bottom');
+          });
+          item.addEventListener('drop', function(e) {
+            e.preventDefault();
+            if (_dragSourceIdx === null || _dragSourceIdx === i) return;
+            var rect = item.getBoundingClientRect();
+            var midpoint = rect.top + rect.height / 2;
+            var targetIdx = e.clientY < midpoint ? i : i + 1;
+            moveStop(_dragSourceIdx, targetIdx > _dragSourceIdx ? targetIdx - 1 : targetIdx);
+            _dragSourceIdx = null;
+          });
+
+          item.appendChild(dragHandle);
           item.appendChild(num);
           item.appendChild(body);
           listWrap.appendChild(item);
@@ -1704,6 +2114,16 @@
         if (actionsWrap.parentNode === resultEl) resultEl.removeChild(actionsWrap);
         buildActions();
         resultEl.appendChild(actionsWrap);
+      }
+
+      function moveStop(fromIdx, toIdx) {
+        if (fromIdx === toIdx) return;
+        var item = workingStops.splice(fromIdx, 1)[0];
+        var insertIdx = toIdx;
+        if (toIdx > workingStops.length) insertIdx = workingStops.length;
+        workingStops.splice(insertIdx, 0, item);
+        markDirty();
+        rebuildList();
       }
 
       function enterEdit(idx) {
@@ -1731,6 +2151,7 @@
             workingStops[idx].address = newVal;
             // Edited address is no longer flagged as outlier
             workingStops[idx].outlier = false;
+            markDirty();
           }
           rebuildList();
         });
@@ -1748,6 +2169,7 @@
         removeBtn.addEventListener('click', function() {
           if (confirm('Remove this stop?')) {
             workingStops.splice(idx, 1);
+            markDirty();
             rebuildList();
           }
         });
@@ -1768,6 +2190,30 @@
       function buildActions() {
         actionsWrap.innerHTML = '';
         var addresses = workingStops.map(function(s) { return s.address; });
+
+        // Review and save to order button (only if we have an order context)
+        if (orderEventId && addresses.length >= 1) {
+          var commitBtn = document.createElement('button');
+          commitBtn.type = 'button';
+          commitBtn.className = 'scan-action-btn scan-commit-btn';
+          commitBtn.innerHTML = dirty ? '💾 Review and save to order' : '✓ Saved to order';
+          if (!dirty) {
+            commitBtn.classList.add('is-saved');
+            commitBtn.disabled = true;
+          }
+          commitBtn.addEventListener('click', function() { doCommitStops(commitBtn); });
+          actionsWrap.appendChild(commitBtn);
+        }
+
+        // Re-optimize button (always at top, after Save)
+        if (addresses.length >= 2) {
+          var reoptBtn = document.createElement('button');
+          reoptBtn.type = 'button';
+          reoptBtn.className = 'scan-action-btn scan-reopt-btn';
+          reoptBtn.innerHTML = '🧭 Re-optimize route';
+          reoptBtn.addEventListener('click', function() { doReoptimize(reoptBtn); });
+          actionsWrap.appendChild(reoptBtn);
+        }
 
         // Build chunk URLs
         var maxPerChunk = 9;
@@ -1926,17 +2372,19 @@
             .map(function(line) { return line.trim(); })
             .filter(Boolean)
             .map(function(line) {
-              // Auto-append ", Barcelona" if missing
               if (!/barcelona/i.test(line)) line = line + ', Barcelona';
               return { address: line, tier: '', outlier: false };
             });
 
           workingStops = workingStops.concat(newStops);
+          markDirty();
           typeArea.value = '';
           typeWrap.classList.remove('visible');
           typeBtn.style.display = '';
           rebuildList();
-          showScanStatus(statusEl, '✓ Added ' + newStops.length + ' stop' + (newStops.length > 1 ? 's' : ''), 'success');
+          showScanStatus(statusEl, '✓ Added ' + newStops.length + ' stop' + (newStops.length > 1 ? 's' : '') + ' — re-optimizing route…', 'info');
+          // Auto re-optimize
+          setTimeout(function() { doReoptimize(null); }, 200);
         });
 
         // Scan additional sheet button
@@ -1945,7 +2393,6 @@
         scanMoreBtn.className = 'scan-action-btn secondary';
         scanMoreBtn.innerHTML = '📷 Scan additional sheet (append)';
         scanMoreBtn.addEventListener('click', function() {
-          // Trigger the file input but on success, append rather than replace
           _appendMode = true;
           var fi = scanBtn.parentNode.querySelector('input[type="file"]');
           if (fi) { fi.value = ''; fi.click(); }
@@ -1956,18 +2403,396 @@
         actionsWrap.appendChild(addSec);
       }
 
-      // Expose append-mode flag and stops to the scope so doScanExtract can append
+      async function doReoptimize(triggerBtn) {
+        if (workingStops.length < 2) return;
+
+        var originalLabel = triggerBtn ? triggerBtn.innerHTML : null;
+        if (triggerBtn) {
+          triggerBtn.disabled = true;
+          triggerBtn.innerHTML = '⏳ Re-optimizing…';
+        }
+        showScanStatus(statusEl, 'Re-optimizing route with ' + workingStops.length + ' stops…', 'info');
+
+        try {
+          var res = await api('POST', {
+            action: 'routeOptimize',
+            id: RIDER_ID,
+            stops: workingStops
+          });
+
+          if (res.error) {
+            showScanStatus(statusEl, 'Re-optimize failed: ' + res.error, 'error');
+            if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
+            return;
+          }
+
+          if (res.stops && Array.isArray(res.stops) && res.stops.length === workingStops.length) {
+            workingStops = res.stops;
+            markDirty();
+            rebuildList();
+            showScanStatus(statusEl, '✓ Route re-optimized (' + workingStops.length + ' stops)', 'success');
+          } else {
+            showScanStatus(statusEl, 'Optimization returned unexpected result', 'error');
+          }
+
+          if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
+
+        } catch (err) {
+          showScanStatus(statusEl, 'Re-optimize failed: ' + (err.message || String(err)), 'error');
+          if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
+        }
+      }
+
+      async function doCommitStops(triggerBtn) {
+        if (!orderEventId) {
+          showScanStatus(statusEl, 'No order context — cannot save', 'error');
+          return;
+        }
+        if (workingStops.length === 0) {
+          showScanStatus(statusEl, 'No stops to save', 'error');
+          return;
+        }
+        // Show confirmation modal first
+        showCommitConfirmation(triggerBtn);
+      }
+
+      function showCommitConfirmation(triggerBtn) {
+        // Build modal
+        var modal = document.createElement('div');
+        modal.className = 'scan-commit-modal visible';
+
+        var card = document.createElement('div');
+        card.className = 'scan-commit-modal-card';
+
+        // Header
+        var header = document.createElement('div');
+        header.className = 'scan-commit-modal-header';
+        var title = document.createElement('div');
+        title.className = 'scan-commit-modal-title';
+        title.textContent = 'Confirm route — ' + workingStops.length + ' stops';
+        var sub = document.createElement('div');
+        sub.className = 'scan-commit-modal-sub';
+        sub.textContent = 'Review the order below. Once saved, dispatcher and customer will see this route.';
+        header.appendChild(title);
+        header.appendChild(sub);
+        card.appendChild(header);
+
+        // Body — preview list
+        var body = document.createElement('div');
+        body.className = 'scan-commit-modal-body';
+        workingStops.forEach(function(stop, i) {
+          var item = document.createElement('div');
+          item.className = 'scan-commit-preview-item';
+
+          var num = document.createElement('div');
+          num.className = 'scan-commit-preview-num';
+          num.textContent = String(i + 1);
+
+          var addrWrap = document.createElement('div');
+          addrWrap.className = 'scan-commit-preview-addr';
+          addrWrap.textContent = stop.address;
+
+          var tags = [];
+          if (stop.priority) tags.push('⭐ Priority');
+          if (stop.tier) tags.push(stop.tier);
+          if (stop.outlier) tags.push('⚠ Outlier');
+          if (tags.length) {
+            var tagEl = document.createElement('div');
+            tagEl.className = 'scan-commit-preview-tags';
+            tagEl.textContent = tags.join(' · ');
+            addrWrap.appendChild(tagEl);
+          }
+
+          item.appendChild(num);
+          item.appendChild(addrWrap);
+          body.appendChild(item);
+        });
+        card.appendChild(body);
+
+        // Footer — buttons
+        var footer = document.createElement('div');
+        footer.className = 'scan-commit-modal-footer';
+
+        var confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'scan-commit-modal-confirm';
+        confirmBtn.innerHTML = '✓ Confirm and save to order';
+
+        var cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'scan-commit-modal-cancel';
+        cancelBtn.textContent = 'Cancel — keep editing';
+
+        footer.appendChild(confirmBtn);
+        footer.appendChild(cancelBtn);
+        card.appendChild(footer);
+
+        modal.appendChild(card);
+        document.body.appendChild(modal);
+
+        // Handlers
+        function closeModal() {
+          modal.classList.remove('visible');
+          if (modal.parentNode) modal.parentNode.removeChild(modal);
+        }
+
+        cancelBtn.addEventListener('click', closeModal);
+
+        // Tap outside card to close
+        modal.addEventListener('click', function(e) {
+          if (e.target === modal) closeModal();
+        });
+
+        confirmBtn.addEventListener('click', async function() {
+          confirmBtn.disabled = true;
+          cancelBtn.disabled = true;
+          confirmBtn.innerHTML = '⏳ Saving…';
+          await performCommit(triggerBtn, closeModal);
+        });
+      }
+
+      async function performCommit(triggerBtn, closeModal) {
+        var originalLabel = triggerBtn ? triggerBtn.innerHTML : null;
+        if (triggerBtn) {
+          triggerBtn.disabled = true;
+          triggerBtn.innerHTML = '⏳ Saving…';
+        }
+        showScanStatus(statusEl, 'Saving ' + workingStops.length + ' stops to order…', 'info');
+
+        try {
+          var res = await api('POST', {
+            action: 'riderCommitStops',
+            id: RIDER_ID,
+            eventId: orderEventId,
+            stops: workingStops
+          });
+
+          if (res.error) {
+            showScanStatus(statusEl, 'Save failed: ' + res.error, 'error');
+            if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
+            if (closeModal) closeModal();
+            return;
+          }
+
+          dirty = false;
+          showScanStatus(statusEl, '✓ Saved ' + (res.stopCount || workingStops.length) + ' stops to the order', 'success');
+
+          if (triggerBtn) {
+            triggerBtn.disabled = true;
+            triggerBtn.innerHTML = '✓ Saved to order';
+            triggerBtn.classList.add('is-saved');
+          }
+
+          if (res.order) {
+            var idx = allOrders.findIndex(function(o) { return o.eventId === res.order.eventId; });
+            if (idx >= 0) allOrders[idx] = res.order;
+            activeOrder = res.order;
+          }
+
+          if (closeModal) closeModal();
+
+        } catch (err) {
+          showScanStatus(statusEl, 'Save failed: ' + (err.message || String(err)), 'error');
+          if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
+          if (closeModal) closeModal();
+        }
+      }
+
       _appendCallback = function(newStops) {
         workingStops = workingStops.concat(newStops);
+        markDirty();
         rebuildList();
+        showScanStatus(statusEl, '✓ Appended ' + newStops.length + ' stops — re-optimizing…', 'info');
+        setTimeout(function() { doReoptimize(null); }, 200);
       };
 
+      // ── Map functions ──────────────────────────────────────────────────
+      function buildMapSection() {
+        var wrap = document.createElement('div');
+        wrap.className = 'scan-map-wrap';
+
+        var header = document.createElement('div');
+        header.className = 'scan-map-header';
+
+        var title = document.createElement('span');
+        title.textContent = '🗺 Route map';
+        header.appendChild(title);
+
+        var legend = document.createElement('div');
+        legend.className = 'scan-map-legend';
+        var legendItems = [
+          { label: '19h', color: 'var(--red)' },
+          { label: '48', color: 'var(--green)' },
+          { label: '49', color: 'var(--cyan)' },
+          { label: 'Other', color: 'var(--accent)' }
+        ];
+        legendItems.forEach(function(li) {
+          var item = document.createElement('span');
+          item.className = 'scan-map-legend-item';
+          var dot = document.createElement('span');
+          dot.className = 'scan-map-legend-dot';
+          dot.style.background = li.color;
+          item.appendChild(dot);
+          item.appendChild(document.createTextNode(li.label));
+          legend.appendChild(item);
+        });
+        header.appendChild(legend);
+        wrap.appendChild(header);
+
+        var mapEl = document.createElement('div');
+        mapEl.className = 'scan-map';
+        wrap.appendChild(mapEl);
+
+        return { wrap: wrap, mapEl: mapEl };
+      }
+
+      function tierClassForMarker(tier) {
+        var t = String(tier || '').toLowerCase();
+        if (t.indexOf('19') >= 0) return 'tier-19';
+        if (t.indexOf('48') >= 0) return 'tier-48';
+        if (t.indexOf('49') >= 0) return 'tier-49';
+        return 'tier-other';
+      }
+
+      function renderMap(mapEl) {
+        if (typeof L === 'undefined') return; // Leaflet not loaded
+        if (mapInstance) { mapInstance.remove(); mapInstance = null; }
+        mapMarkers = [];
+        mapPolyline = null;
+
+        var geocoded = workingStops.filter(function(s) { return s.lat && s.lng; });
+        if (geocoded.length === 0) {
+          mapEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.82rem;">No geocoded stops yet. Tap "📍 Load map coordinates" below.</div>';
+          return;
+        }
+
+        mapInstance = L.map(mapEl, { zoomControl: true, attributionControl: false });
+
+        // Dark theme tile layer
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          maxZoom: 19
+        }).addTo(mapInstance);
+
+        var latlngs = [];
+
+        workingStops.forEach(function(stop, i) {
+          if (!stop.lat || !stop.lng) return;
+          var classes = ['scan-marker', tierClassForMarker(stop.tier)];
+          if (stop.priority) classes.push('is-priority');
+          if (stop.outlier) classes.push('is-outlier');
+
+          var icon = L.divIcon({
+            html: '<div class="' + classes.join(' ') + '">' + (i + 1) + '</div>',
+            className: '',
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+            popupAnchor: [0, -14]
+          });
+
+          var marker = L.marker([stop.lat, stop.lng], { icon: icon }).addTo(mapInstance);
+          var popupHtml = '<strong>' + (i + 1) + '. ' + escapeHtml(stop.address) + '</strong>';
+          if (stop.tier) popupHtml += '<br><span style="color:var(--text-dim);font-size:0.75rem;">' + escapeHtml(stop.tier) + '</span>';
+          if (stop.priority) popupHtml += '<br><span style="color:var(--yellow);font-size:0.75rem;">⭐ Priority</span>';
+          if (stop.outlier) popupHtml += '<br><span style="color:var(--orange);font-size:0.75rem;">⚠ Outlier</span>';
+          popupHtml += '<br><a href="https://www.google.com/maps/search/' + encodeURIComponent(stop.address) + '" target="_blank" rel="noopener">📍 Open in Google Maps</a>';
+          marker.bindPopup(popupHtml);
+          mapMarkers.push(marker);
+          latlngs.push([stop.lat, stop.lng]);
+        });
+
+        if (latlngs.length > 1) {
+          mapPolyline = L.polyline(latlngs, {
+            color: '#b07dff',
+            weight: 3,
+            opacity: 0.8,
+            dashArray: '6,4'
+          }).addTo(mapInstance);
+        }
+
+        // Fit bounds
+        if (latlngs.length > 0) {
+          var bounds = L.latLngBounds(latlngs);
+          mapInstance.fitBounds(bounds, { padding: [25, 25], maxZoom: 15 });
+        }
+      }
+
+      function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, function(c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      }
+
+      async function geocodeAllStops() {
+        var needsGeocoding = workingStops.filter(function(s) { return !s.lat || !s.lng; });
+        if (needsGeocoding.length === 0) return true;
+
+        showScanStatus(statusEl, 'Loading map coordinates for ' + needsGeocoding.length + ' stops…', 'info');
+
+        try {
+          var res = await api('POST', {
+            action: 'riderGeocode',
+            id: RIDER_ID,
+            addresses: needsGeocoding.map(function(s) { return s.address; })
+          });
+
+          if (res.error) {
+            showScanStatus(statusEl, 'Geocoding failed: ' + res.error, 'error');
+            return false;
+          }
+
+          // Merge results back by address match
+          (res.results || []).forEach(function(r) {
+            if (!r.lat || !r.lng) return;
+            workingStops.forEach(function(s) {
+              if (s.address === r.address && !s.lat) {
+                s.lat = r.lat;
+                s.lng = r.lng;
+              }
+            });
+          });
+
+          var missed = workingStops.filter(function(s) { return !s.lat; }).length;
+          if (missed > 0) {
+            showScanStatus(statusEl, '✓ Map loaded (' + missed + ' stops could not be geocoded)', 'info');
+          } else {
+            showScanStatus(statusEl, '✓ Map loaded with ' + workingStops.length + ' stops', 'success');
+          }
+          return true;
+        } catch (err) {
+          showScanStatus(statusEl, 'Geocoding failed: ' + (err.message || String(err)), 'error');
+          return false;
+        }
+      }
+
+      // Map container — inserted after list, before actions
+      var mapSection = buildMapSection();
+      resultEl.insertBefore(mapSection.wrap, actionsWrap);
+
+      // Initial render of map + auto-geocode
       rebuildList();
+      (async function() {
+        var ok = await geocodeAllStops();
+        if (ok) renderMap(mapSection.mapEl);
+      })();
+
+      // Wrap rebuildList to also refresh the map whenever stops change
+      var originalRebuild = rebuildList;
+      rebuildList = function() {
+        originalRebuild();
+        if (mapSection && mapSection.mapEl) {
+          // Geocode any new stops lazily, then redraw
+          (async function() {
+            var needsGeo = workingStops.filter(function(s) { return !s.lat || !s.lng; });
+            if (needsGeo.length > 0) await geocodeAllStops();
+            renderMap(mapSection.mapEl);
+          })();
+        }
+      };
     }
 
-    // Module-level state for append-mode scanning
     var _appendMode = false;
     var _appendCallback = null;
+    var _dragSourceIdx = null;
 
     // ── Action footer ──────────────────────────────────────────────────────────
 
