@@ -2209,7 +2209,7 @@
 
       function buildActions() {
         actionsWrap.innerHTML = '';
-        var addresses = workingStops.map(function(s) { return s.address; });
+        var addresses = workingStops.map(function(s) { var a = s.address; return /barcelona/i.test(a) ? a : a + ', Barcelona'; });
 
         // Review and save to order button (only if we have an order context)
         if (orderEventId && addresses.length >= 1) {
@@ -2771,9 +2771,10 @@
             });
           });
 
-          var missed = workingStops.filter(function(s) { return !s.lat; }).length;
-          if (missed > 0) {
-            showScanStatus(statusEl, '✓ Map loaded (' + missed + ' stops could not be geocoded)', 'info');
+          var missedStops = workingStops.filter(function(s) { return !s.lat; });
+          if (missedStops.length > 0) {
+            var missedList = missedStops.map(function(s) { return s.address; }).join(', ');
+            showScanStatus(statusEl, '✓ Map loaded — ' + missedStops.length + ' not geocoded: ' + missedList, 'info');
           } else {
             showScanStatus(statusEl, '✓ Map loaded with ' + workingStops.length + ' stops', 'success');
           }
@@ -2790,11 +2791,13 @@
       // Initial render of list + actions (this also places mapSection before actionsWrap)
       rebuildList();
 
-      // Kick off geocoding + map draw
+      // Kick off geocoding + map draw — defer renderMap one tick so container has dimensions
       (async function() {
         var ok = await geocodeAllStops();
         if (ok && mapSection && mapSection.mapEl) {
-          renderMap(mapSection.mapEl);
+          requestAnimationFrame(function() {
+            renderMap(mapSection.mapEl);
+          });
         }
       })();
     }

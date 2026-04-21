@@ -1,3 +1,9 @@
+// Prevent browser scroll restoration — always start at top
+if ('scrollRestoration' in history) {
+  history.scrollRestoration = 'manual';
+}
+window.scrollTo(0, 0);
+
 // ===== LANGUAGE DROPDOWN =====
 const langSelect = document.getElementById("langSelect");
 if (langSelect) {

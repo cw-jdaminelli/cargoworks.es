@@ -65,7 +65,8 @@
 	<section id="zones" class="zones-section" aria-label="Our estimator">
 		<div class="zones-inner">
 			<div class="zones-home-card">
-				<div class="zones-home-panel">
+				<div class="zones-home-panel" id="zonesHomePanel">
+					<div class="panel-scroll-hint" id="panelScrollHint" aria-hidden="true">▾ scroll</div>
 					<div class="quote-estimator quote-estimator--accordion" aria-label="Quick quote estimator">
 						<div class="quote-panel-header">
 							<div class="quote-panel-title">
@@ -91,25 +92,6 @@
 										<button id="quoteAddStop" class="btn" type="button" title="Add stop" data-i18n="quoteAddStop">Add stop</button>
 										<button id="quoteRefresh" class="btn btn--ghost" type="button" title="Refresh" data-i18n="quoteRefresh">Refresh</button>
 									</div>
-								</div>
-						</section>
-						<section class="config-section config-section--datetime config-section--static">
-							<div class="config-summary">
-								<span class="config-title" data-i18n="quoteSectionDateTime">Date and time</span>
-							</div>
-								<div class="config-body">
-									<div class="config-row config-row--split">
-										<div class="config-field quote-date-field">
-											<label class="field-label" for="quoteDate" data-i18n="quoteDateLabel">Fecha</label>
-											<input id="quoteDate" class="quote-date-native" type="date" lang="en-GB" aria-label="Pickup date" />
-											<input id="quoteDateDisplay" type="text" placeholder="DD/MM/YYYY" aria-label="Pickup date" readonly />
-										</div>
-										<div class="config-field">
-											<label class="field-label" for="quoteTime" data-i18n="quoteTimeLabel">Hora</label>
-											<input id="quoteTime" type="time" aria-label="Pickup time" />
-										</div>
-									</div>
-									<p id="quoteTimeStatus" class="availability-status" aria-live="polite"></p>
 								</div>
 						</section>
 						<section class="config-section config-section--cargo config-section--static">
@@ -141,6 +123,37 @@
 											</button>
 										</div>
 									</div>
+								</div>
+						</section>
+						<section class="config-section config-section--datetime config-section--static">
+							<div class="config-summary">
+								<span class="config-title" data-i18n="quoteSectionDateTime">Date and time</span>
+							</div>
+								<div class="config-body">
+									<div class="asap-toggle-row">
+										<button id="quoteAsapBtn" type="button" class="btn btn--asap" aria-pressed="false">⚡ ASAP — I need this now</button>
+									</div>
+									<div id="quoteDateTimeFields">
+										<div class="config-row config-row--split">
+											<div class="config-field quote-date-field">
+												<label class="field-label" for="quoteDate" data-i18n="quoteDateLabel">Fecha</label>
+												<input id="quoteDate" class="quote-date-native" type="date" lang="en-GB" aria-label="Pickup date" />
+												<input id="quoteDateDisplay" type="text" placeholder="DD/MM/YYYY" aria-label="Pickup date" readonly />
+											</div>
+											<div class="config-field">
+												<label class="field-label" for="quoteTime" data-i18n="quoteTimeLabel">Hora</label>
+												<input id="quoteTime" type="time" aria-label="Pickup time" />
+											</div>
+										</div>
+									</div>
+									<div id="quoteAsapBanner" class="asap-banner is-hidden" aria-live="polite">
+										<span class="asap-banner__icon">⚡</span>
+										<div class="asap-banner__body">
+											<strong>We'll confirm your ETA within 5 minutes.</strong>
+											<p>Fill in your contact details below and we'll reach out via WhatsApp or phone to confirm and arrange delivery.</p>
+										</div>
+									</div>
+									<p id="quoteTimeStatus" class="availability-status" aria-live="polite"></p>
 								</div>
 						</section>
 						<section id="quoteBookingSection" class="config-section config-section--booking config-section--static is-hidden">
@@ -416,6 +429,7 @@
 									</label>
 									<div class="quote-pay-cta-wrap">
 										<button id="quotePayNow" class="btn is-hidden" type="button">Pay €0.00 to confirm booking</button>
+										<button id="quoteUrgentSubmit" class="btn btn--urgent is-hidden" type="button">⚡ Request urgent delivery →</button>
 										<div id="quotePaymentMount" class="quote-payment-mount is-hidden" aria-live="polite"></div>
 									</div>
 								</div>
