@@ -16,6 +16,7 @@
   <script>
     // Set API base — same pattern as other pages
     window.CARGOWORKS_BOOKING_API = 'https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec';
+    window.CARGOWORKS_MAPS_KEY = 'AIzaSyB2-lL3jKtVa6ijgLs38NP2ag6fc4YoAE0';
   </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1881,7 +1882,7 @@
 
         var outlierCount = stops.filter(function(s) { return s.outlier; }).length;
         var msg = '✓ ' + stops.length + ' stops extracted';
-        if (outlierCount > 0) msg += ' (' + outlierCount + ' flagged as outlier)';
+        if (outlierCount > 0) msg += ' — ' + outlierCount + ' flagged as outlier';
         hideScanStatus(statusEl);
         renderScanResult(resultEl, stops, scanBtn, statusEl, orderEventId);
         showScanStatus(statusEl, msg, 'success');
@@ -1941,22 +1942,15 @@
 
       function markDirty() {
         dirty = true;
-        // Update commit button label if it exists
         var commitBtn = resultEl.querySelector('.scan-commit-btn');
         if (commitBtn) {
           commitBtn.innerHTML = '💾 Review and save to order';
           commitBtn.classList.remove('is-saved');
           commitBtn.disabled = false;
         }
-        // Refresh map with current stops
+        // Re-render map with current stop order (coords already geocoded)
         if (mapSection && mapSection.mapEl) {
-          (async function() {
-            var needsGeo = workingStops.filter(function(s) { return !s.lat || !s.lng; });
-            if (needsGeo.length > 0) {
-              await geocodeAllStops();
-            }
-            renderMap(mapSection.mapEl);
-          })();
+          renderMap(mapSection.mapEl);
         }
       }
 
@@ -2074,7 +2068,7 @@
           // Maps mini button
           var mini = document.createElement('a');
           mini.className = 'scan-addr-mini-btn';
-          mini.href = 'https://www.google.com/maps/search/' + encodeURIComponent(stop.address);
+          mini.href = 'https://www.google.com/maps/?q=' + encodeURIComponent(/barcelona/i.test(stop.address) ? stop.address : stop.address + ', Barcelona');
           mini.target = '_blank';
           mini.rel = 'noopener';
           mini.textContent = '📍 Maps';
@@ -2429,38 +2423,61 @@
         var originalLabel = triggerBtn ? triggerBtn.innerHTML : null;
         if (triggerBtn) {
           triggerBtn.disabled = true;
-          triggerBtn.innerHTML = '⏳ Re-optimizing…';
+          triggerBtn.innerHTML = '⏳ Optimizing…';
         }
-        showScanStatus(statusEl, 'Re-optimizing route with ' + workingStops.length + ' stops…', 'info');
+        showScanStatus(statusEl, 'Geocoding and optimizing ' + workingStops.length + ' stops…', 'info');
 
-        try {
-          var res = await api('POST', {
-            action: 'routeOptimize',
-            id: RIDER_ID,
-            stops: workingStops
-          });
+        // Geocode anything missing first
+        await geocodeAllStops();
 
-          if (res.error) {
-            showScanStatus(statusEl, 'Re-optimize failed: ' + res.error, 'error');
-            if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
-            return;
-          }
+        // Nearest-neighbor sort on geocoded stops.
+        // Priority stops jump to the front first.
+        // Non-geocoded stops get appended at the end in original order.
+        var geocoded = workingStops.filter(function(s) { return s.lat && s.lng; });
+        var notGeocoded = workingStops.filter(function(s) { return !s.lat || !s.lng; });
 
-          if (res.stops && Array.isArray(res.stops) && res.stops.length === workingStops.length) {
-            workingStops = res.stops;
-            markDirty();
-            rebuildList();
-            showScanStatus(statusEl, '✓ Route re-optimized (' + workingStops.length + ' stops)', 'success');
-          } else {
-            showScanStatus(statusEl, 'Optimization returned unexpected result', 'error');
-          }
-
-          if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
-
-        } catch (err) {
-          showScanStatus(statusEl, 'Re-optimize failed: ' + (err.message || String(err)), 'error');
-          if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
+        function haversine(a, b) {
+          var R = 6371;
+          var dLat = (b.lat - a.lat) * Math.PI / 180;
+          var dLng = (b.lng - a.lng) * Math.PI / 180;
+          var aa = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*
+            Math.sin(dLng/2)*Math.sin(dLng/2);
+          return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
         }
+
+        // Pull priority stops out first (preserve their relative order)
+        var priority = geocoded.filter(function(s) { return s.priority; });
+        var normal = geocoded.filter(function(s) { return !s.priority; });
+
+        // Nearest-neighbor on normal stops.
+        // Start from Eixample center (Barcelona's geographic delivery hub).
+        var start = { lat: 41.3902, lng: 2.1542 };
+        var current = start;
+        var remaining = normal.slice();
+        var sorted = [];
+
+        while (remaining.length > 0) {
+          var bestIdx = 0;
+          var bestDist = Infinity;
+          for (var ri = 0; ri < remaining.length; ri++) {
+            var d = haversine(current, remaining[ri]);
+            if (d < bestDist) { bestDist = d; bestIdx = ri; }
+          }
+          var next = remaining.splice(bestIdx, 1)[0];
+          sorted.push(next);
+          current = next;
+        }
+
+        workingStops = priority.concat(sorted).concat(notGeocoded);
+        markDirty();
+        rebuildList();
+
+        var msg = '✓ Route optimized — ' + workingStops.length + ' stops';
+        if (notGeocoded.length > 0) msg += ' (' + notGeocoded.length + ' not geocoded, moved to end)';
+        showScanStatus(statusEl, msg, 'success');
+
+        if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
       }
 
       async function doCommitStops(triggerBtn) {
@@ -2714,7 +2731,7 @@
           if (stop.tier) popupHtml += '<br><span style="color:var(--text-dim);font-size:0.75rem;">' + escapeHtml(stop.tier) + '</span>';
           if (stop.priority) popupHtml += '<br><span style="color:var(--yellow);font-size:0.75rem;">⭐ Priority</span>';
           if (stop.outlier) popupHtml += '<br><span style="color:var(--orange);font-size:0.75rem;">⚠ Outlier</span>';
-          popupHtml += '<br><a href="https://www.google.com/maps/search/' + encodeURIComponent(stop.address) + '" target="_blank" rel="noopener">📍 Open in Google Maps</a>';
+          popupHtml += '<br><a href="https://www.google.com/maps/?q=' + encodeURIComponent(/barcelona/i.test(stop.address) ? stop.address : stop.address + ', Barcelona') + '" target="_blank" rel="noopener">📍 Open in Google Maps</a>';
           marker.bindPopup(popupHtml);
           mapMarkers.push(marker);
           latlngs.push([stop.lat, stop.lng]);
@@ -2736,6 +2753,52 @@
         }
       }
 
+      // Post-geocode outlier detection — two layers:
+      //   1. Hard bbox: anything outside Barcelona metro bbox = instant outlier
+      //      (catches Moncada, Mollet, Montcada i Reixac but keeps Hospitalet, Badalona, Sant Adria)
+      //   2. Cluster median: flag anything >6km from the median of clean stops
+      //      (catches same-street-name ambiguity like Conca in 08027 vs Moncada)
+      var BCN_BBOX = { minLat: 41.31, maxLat: 41.47, minLng: 2.05, maxLng: 2.23 };
+
+      function flagOutliers() {
+        var geocoded = workingStops.filter(function(s) { return s.lat && s.lng; });
+        if (geocoded.length === 0) return;
+
+        // Layer 1: hard bbox
+        geocoded.forEach(function(s) {
+          if (s.lat < BCN_BBOX.minLat || s.lat > BCN_BBOX.maxLat ||
+              s.lng < BCN_BBOX.minLng || s.lng > BCN_BBOX.maxLng) {
+            s.outlier = true;
+          }
+        });
+
+        // Layer 2: cluster median of non-outlier stops
+        var inCluster = geocoded.filter(function(s) { return !s.outlier; });
+        if (inCluster.length < 2) return;
+
+        var lats = inCluster.map(function(s) { return s.lat; }).sort(function(a,b){return a-b;});
+        var lngs = inCluster.map(function(s) { return s.lng; }).sort(function(a,b){return a-b;});
+        var mid = Math.floor(lats.length / 2);
+        var medLat = lats[mid];
+        var medLng = lngs[mid];
+
+        var R = 6371;
+        function haverDist(s) {
+          var dLat = (s.lat - medLat) * Math.PI / 180;
+          var dLng = (s.lng - medLng) * Math.PI / 180;
+          var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(medLat*Math.PI/180)*Math.cos(s.lat*Math.PI/180)*
+            Math.sin(dLng/2)*Math.sin(dLng/2);
+          return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        geocoded.forEach(function(s) {
+          if (!s.outlier && haverDist(s) > 6) {
+            s.outlier = true;
+          }
+        });
+      }
+
       function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, function(c) {
           return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -2746,43 +2809,48 @@
         var needsGeocoding = workingStops.filter(function(s) { return !s.lat || !s.lng; });
         if (needsGeocoding.length === 0) return true;
 
-        showScanStatus(statusEl, 'Loading map coordinates for ' + needsGeocoding.length + ' stops…', 'info');
-
-        try {
-          var res = await api('POST', {
-            action: 'riderGeocode',
-            id: RIDER_ID,
-            addresses: needsGeocoding.map(function(s) { return s.address; })
-          });
-
-          if (res.error) {
-            showScanStatus(statusEl, 'Geocoding failed: ' + res.error, 'error');
-            return false;
-          }
-
-          // Merge results back by address match
-          (res.results || []).forEach(function(r) {
-            if (!r.lat || !r.lng) return;
-            workingStops.forEach(function(s) {
-              if (s.address === r.address && !s.lat) {
-                s.lat = r.lat;
-                s.lng = r.lng;
-              }
-            });
-          });
-
-          var missedStops = workingStops.filter(function(s) { return !s.lat; });
-          if (missedStops.length > 0) {
-            var missedList = missedStops.map(function(s) { return s.address; }).join(', ');
-            showScanStatus(statusEl, '✓ Map loaded — ' + missedStops.length + ' not geocoded: ' + missedList, 'info');
-          } else {
-            showScanStatus(statusEl, '✓ Map loaded with ' + workingStops.length + ' stops', 'success');
-          }
-          return true;
-        } catch (err) {
-          showScanStatus(statusEl, 'Geocoding failed: ' + (err.message || String(err)), 'error');
+        var mapsKey = window.CARGOWORKS_MAPS_KEY || '';
+        if (!mapsKey) {
+          showScanStatus(statusEl, 'Maps key not configured', 'error');
           return false;
         }
+
+        showScanStatus(statusEl, 'Geocoding ' + needsGeocoding.length + ' stops…', 'info');
+
+        // Geocode all needed stops in parallel (Maps Geocoding API, client-side)
+        var geocodeOne = async function(stop) {
+          var addr = /barcelona/i.test(stop.address) ? stop.address : stop.address + ', Barcelona';
+          var url = 'https://maps.googleapis.com/maps/api/geocode/json?address=' +
+            encodeURIComponent(addr) + '&key=' + encodeURIComponent(mapsKey);
+          try {
+            var r = await fetch(url);
+            var data = await r.json();
+            if (data.results && data.results[0]) {
+              var loc = data.results[0].geometry.location;
+              stop.lat = loc.lat;
+              stop.lng = loc.lng;
+            } else {
+              console.warn('Geocode failed for:', stop.address, 'status:', data.status, data.error_message || '');
+            }
+          } catch (err) { console.error('Geocode fetch error:', stop.address, err); }
+        };
+
+        // Batch in groups of 5 to avoid hammering the API
+        for (var bi = 0; bi < needsGeocoding.length; bi += 5) {
+          var batch = needsGeocoding.slice(bi, bi + 5);
+          await Promise.all(batch.map(geocodeOne));
+        }
+
+        var missed = workingStops.filter(function(s) { return !s.lat || !s.lng; });
+        if (missed.length === workingStops.length) {
+          showScanStatus(statusEl, '⚠ Geocoding failed for all stops — check browser console for API error', 'error');
+          return false;
+        } else if (missed.length > 0) {
+          showScanStatus(statusEl, '✓ Geocoded ' + (workingStops.length - missed.length) + '/' + workingStops.length + ' stops — ' + missed.length + ' not found', 'info');
+        } else {
+          showScanStatus(statusEl, '✓ All ' + workingStops.length + ' stops located', 'success');
+        }
+        return true;
       }
 
       // Build map section scaffold up front so rebuildList can reference it
@@ -2791,10 +2859,12 @@
       // Initial render of list + actions (this also places mapSection before actionsWrap)
       rebuildList();
 
-      // Kick off geocoding + map draw — defer renderMap one tick so container has dimensions
+      // Geocode → flag outliers → draw map (no reorder — rider reviews raw order first)
       (async function() {
-        var ok = await geocodeAllStops();
-        if (ok && mapSection && mapSection.mapEl) {
+        await geocodeAllStops();
+        flagOutliers();
+        rebuildList();
+        if (mapSection && mapSection.mapEl) {
           requestAnimationFrame(function() {
             renderMap(mapSection.mapEl);
           });

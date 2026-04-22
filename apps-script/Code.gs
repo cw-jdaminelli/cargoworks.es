@@ -134,6 +134,13 @@ function doPost(e){
       if (action === 'riderUpdateStatus') return handleRiderUpdateStatus(payload);
       if (action === 'riderSetEta') return handleRiderSetEta(payload);
       if (action === 'adminManageRiders') return handleAdminManageRiders(payload);
+      if (action === 'urgentRequest') return handleUrgentRequest(payload);
+      if (action === 'visionExtract') return handleVisionExtract(payload);
+      if (action === 'routeOptimize') return handleRouteOptimize(payload);
+      if (action === 'riderCommitStops') return handleRiderCommitStops(payload);
+      if (action === 'riderGeocode') return handleRiderGeocode(payload);
+      if (action === 'urgentAccept') return handleUrgentAccept(payload);
+      if (action === 'urgentDecline') return handleUrgentDecline(payload);
       return handleAdminPost(payload);
     }
     setLastPayload(payload);
@@ -985,6 +992,566 @@ function handleAdminBackfill(params){
     const toKey = String(params.to || '').trim();
     const result = runOrdersLogBackfill(fromKey, toKey);
     return jsonResponse(result, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+
+// ── Vision extract (scan sheet) ───────────────────────────────────────────────
+
+function handleVisionExtract(payload) {
+  try {
+    var riderId = String(payload.id || '').trim();
+    var rider = getRiderById(riderId);
+    if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+    var imageBase64 = String(payload.image || '').trim();
+    var mimeType = String(payload.mimeType || 'image/jpeg').trim();
+    if (!imageBase64) return jsonResponse({ error: 'Missing image' }, 400);
+
+    var apiKey = String(PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY') || '').trim();
+    if (!apiKey) return jsonResponse({ error: 'Anthropic API key not configured' }, 500);
+
+    var prompt = [
+      'Extract all delivery addresses from this image of a delivery sheet.',
+      'Return ONLY a JSON array of objects with this exact shape:',
+      '[{"address":"Full street address with number","tier":"tier label or empty string"}]',
+      '',
+      'Rules:',
+      '- Each address MUST include a street name and number (e.g. Carrer de Mallorca 123)',
+      '- Do NOT include partial addresses, floor/door info, or fragments without a street number',
+      '- Do NOT include JSON tokens, code snippets, or non-address text',
+      '- tier is the delivery tier label visible near the address (e.g. "19h", "48h", "49h"), or empty string if none',
+      '- Deduplicate: if the same address appears more than once, include it only once',
+      '- Minimum address length: 6 characters. Maximum: 200 characters',
+      '- Return ONLY the JSON array, no explanation, no markdown fences'
+    ].join('\n');
+
+    var requestBody = {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } },
+          { type: 'text', text: prompt }
+        ]
+      }]
+    };
+
+    var response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      payload: JSON.stringify(requestBody),
+      muteHttpExceptions: true
+    });
+
+    var data = JSON.parse(response.getContentText());
+    if (data.error) return jsonResponse({ error: data.error.message || 'API error' }, 500);
+
+    var rawText = '';
+    if (data.content && Array.isArray(data.content)) {
+      data.content.forEach(function(block) {
+        if (block.type === 'text') rawText += block.text;
+      });
+    }
+
+    var stops = [];
+    try {
+      var cleaned = rawText.trim().replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/, '').trim();
+      stops = JSON.parse(cleaned);
+    } catch(e) {
+      // Fallback: regex extract address fields
+      var matches = rawText.match(/"address"\s*:\s*"([^"]+)"/g) || [];
+      stops = matches.map(function(m) {
+        var addr = m.replace(/"address"\s*:\s*"/, '').replace(/"$/, '').trim();
+        return { address: addr, tier: '' };
+      });
+    }
+
+    // Validate and clean
+    function isValidAddress(s) {
+      if (!s || s.length < 6 || s.length > 200) return false;
+      if (!/[a-zA-ZÀ-ÿ]/.test(s)) return false;
+      if (!/[0-9]/.test(s)) return false;
+      if (/[{}\[\]<>]/.test(s)) return false;
+      if (/^(const|var|let|function|return|import|export)\b/.test(s)) return false;
+      return true;
+    }
+
+    function normalizeAddress(s) {
+      return s.replace(/,?\s*(piso|planta|pta|puerta|escalera|esc|atico|bajo|principal|izq|dcha|izqda|dcha)\b.*/i, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+    }
+
+    function cleanTierLabel(s) {
+      if (!s) return '';
+      var t = String(s).trim().replace(/[^a-zA-Z0-9h]/g, '').slice(0, 30);
+      return t;
+    }
+
+    if (!Array.isArray(stops)) stops = [];
+    var seen = {};
+    stops = stops
+      .filter(function(item) { return item && typeof item === 'object'; })
+      .map(function(item) {
+        return {
+          address: normalizeAddress(String(item.address || '').trim()),
+          tier: cleanTierLabel(item.tier || '')
+        };
+      })
+      .filter(function(item) { return isValidAddress(item.address); })
+      .filter(function(item) {
+        var key = item.address.toLowerCase();
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
+
+    return jsonResponse({ stops: stops, count: stops.length }, 200);
+
+  } catch (err) {
+    var msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+// ── Route optimize ────────────────────────────────────────────────────────────
+
+function handleRouteOptimize(payload) {
+  try {
+    var riderId = String(payload.id || '').trim();
+    var rider = getRiderById(riderId);
+    if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+    var stops = payload.stops;
+    if (!Array.isArray(stops) || stops.length === 0) {
+      return jsonResponse({ stops: [] }, 200);
+    }
+
+    // Simple nearest-neighbor optimization using coordinates if available
+    // Falls back to returning stops as-is if no coords
+    var hasCoords = stops.every(function(s) { return s.lat != null && s.lng != null; });
+    if (!hasCoords) return jsonResponse({ stops: stops }, 200);
+
+    var remaining = stops.slice();
+    var optimized = [];
+    var current = remaining[0]; // start from first stop
+    remaining.splice(0, 1);
+    optimized.push(current);
+
+    while (remaining.length > 0) {
+      var bestIdx = 0;
+      var bestDist = Infinity;
+      for (var i = 0; i < remaining.length; i++) {
+        var dx = remaining[i].lat - current.lat;
+        var dy = remaining[i].lng - current.lng;
+        var d = dx * dx + dy * dy;
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      current = remaining.splice(bestIdx, 1)[0];
+      optimized.push(current);
+    }
+
+    return jsonResponse({ stops: optimized }, 200);
+
+  } catch (err) {
+    var msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+// ── Rider commits stops to order ──────────────────────────────────────────────
+
+function handleRiderCommitStops(payload) {
+  try {
+    var riderId = String(payload.id || '').trim();
+    var rider = getRiderById(riderId);
+    if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+    var eventId = cleanOrderText(payload.eventId);
+    if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
+
+    var stops = payload.stops;
+    if (!Array.isArray(stops)) return jsonResponse({ error: 'Missing stops array' }, 400);
+
+    var cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+
+    var event = cal.getEventById(eventId);
+    if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+    var desc = String(event.getDescription() || '');
+    var existingPayload = extractPayloadFromDescription(desc) || {};
+    var adminData = ensureAdminData(desc, existingPayload);
+
+    var assignedRiderId = adminData.rider && adminData.rider.riderId;
+    var assignedName = adminData.rider && adminData.rider.name;
+    if (assignedRiderId && assignedRiderId !== riderId && assignedName !== rider.name) {
+      return jsonResponse({ error: 'You are not assigned to this order' }, 403);
+    }
+
+    var newStops = stops.map(function(s) {
+      var item = { address: cleanOrderText(s.address || '') };
+      if (s.tier) item.tier = String(s.tier).trim();
+      if (s.priority) item.priority = true;
+      if (s.outlier) item.outlier = true;
+      return item;
+    }).filter(function(s) { return s.address; });
+
+    var quote = existingPayload.quote || {};
+    var route = quote.route || {};
+    route.stops = newStops;
+    quote.route = route;
+    existingPayload.quote = quote;
+
+    var stopCount = newStops.length;
+    var msg = 'Rider committed ' + stopCount + ' optimized stop' + (stopCount === 1 ? '' : 's') + ' to route';
+    pushAdminTimeline(adminData, adminData.status, msg, 'rider:' + rider.name);
+    event.setDescription(buildEventDescription(existingPayload, adminData));
+
+    appendOrderLogEntry({
+      action: 'rider_commit_stops',
+      eventId: event.getId(),
+      stopCount: stopCount,
+      riderName: rider.name,
+      message: msg,
+      build: BUILD_ID
+    });
+
+    return jsonResponse({ ok: true, stopCount: stopCount, order: buildOrderSummary(event) }, 200);
+
+  } catch (err) {
+    var msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+// ── Rider batch geocode ───────────────────────────────────────────────────────
+
+function handleRiderGeocode(payload) {
+  try {
+    var riderId = String(payload.id || '').trim();
+    var rider = getRiderById(riderId);
+    if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+    var addresses = payload.addresses;
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      return jsonResponse({ results: [] }, 200);
+    }
+    if (addresses.length > 50) addresses = addresses.slice(0, 50);
+
+    var mapsKey = getMapsApiKey();
+    if (!mapsKey) return jsonResponse({ error: 'Maps API key not configured' }, 500);
+
+    var results = addresses.map(function(addr) {
+      var q = String(addr || '').trim();
+      if (!q) return { address: q, lat: null, lng: null, error: 'empty' };
+      try {
+        var qWithCity = q.indexOf('Barcelona') >= 0 ? q : (q + ', Barcelona, Spain');
+        // Try with Barcelona bounds bias first
+        var url = 'https://maps.googleapis.com/maps/api/geocode/json'
+          + '?address=' + encodeURIComponent(qWithCity)
+          + '&region=ES'
+          + '&bounds=41.317,2.052|41.468,2.239'
+          + '&key=' + encodeURIComponent(mapsKey);
+        var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+        var data = JSON.parse(res.getContentText());
+        // If bounds-biased attempt failed, retry without bounds (looser)
+        if (data.status !== 'OK') {
+          var url2 = 'https://maps.googleapis.com/maps/api/geocode/json'
+            + '?address=' + encodeURIComponent(qWithCity)
+            + '&region=ES'
+            + '&key=' + encodeURIComponent(mapsKey);
+          var res2 = UrlFetchApp.fetch(url2, { muteHttpExceptions: true });
+          data = JSON.parse(res2.getContentText());
+        }
+        if (data.status === 'OK' && data.results && data.results[0]) {
+          var loc = data.results[0].geometry.location;
+          return {
+            address: q,
+            lat: loc.lat,
+            lng: loc.lng,
+            label: data.results[0].formatted_address || q,
+            placeId: data.results[0].place_id || ''
+          };
+        }
+        Logger.log('Geocode failed for: ' + q + ' — status: ' + data.status);
+        return { address: q, lat: null, lng: null, error: data.status || 'no_result' };
+      } catch (e) {
+        Logger.log('Geocode exception for: ' + q + ' — ' + e.message);
+        return { address: q, lat: null, lng: null, error: String(e.message || e) };
+      }
+    });
+
+    return jsonResponse({ results: results }, 200);
+
+  } catch (err) {
+    return jsonResponse({ error: 'Geocode failed: ' + (err.message || String(err)) }, 500);
+  }
+}
+
+
+
+// ── URGENT ORDER HANDLERS ────────────────────────────────────────────────────
+
+function handleUrgentRequest(payload) {
+  try {
+    const name    = String(payload.name    || '').trim();
+    const phone   = String(payload.phone   || '').trim();
+    const email   = String(payload.email   || '').trim();
+    const pickup  = String(payload.pickup  || '').trim();
+    const drop    = String(payload.drop    || '').trim();
+    const cargo   = String(payload.cargo   || 'regular').trim();
+    const cargoLabel = String(payload.cargoLabel || cargo).trim();
+    const notes   = String(payload.notes   || '').trim();
+    const q       = payload.quoteContext   || {};
+    const cur     = String(q.cur || 'EUR');
+
+    if (!pickup || !drop || !name || !phone) {
+      return jsonResponse({ error: 'Missing required fields' }, 400);
+    }
+
+    const shortRef = buildShortRef('');
+    const now      = new Date();
+
+    // Build readable price breakdown
+    const breakdownLines = [];
+    if (q.pickupCharge)   breakdownLines.push('  Pickup fee: '        + cur + ' ' + Number(q.pickupCharge).toFixed(2));
+    if (q.distanceTotal)  breakdownLines.push('  Distance ('          + Number(q.totalKm || 0).toFixed(2) + 'km): ' + cur + ' ' + Number(q.distanceTotal).toFixed(2));
+    if (q.addressFee)     breakdownLines.push('  Delivery fee: '      + cur + ' ' + Number(q.addressFee).toFixed(2));
+    if (q.cargoAmount)    breakdownLines.push('  Cargo adjustment: '  + cur + ' ' + Number(q.cargoAmount).toFixed(2));
+    if (q.surchargeAmount)breakdownLines.push('  Weekend/after-hours: '+ cur + ' ' + Number(q.surchargeAmount).toFixed(2));
+    if (q.urgencyAmount)  breakdownLines.push('  Urgent delivery (+30%): ' + cur + ' ' + Number(q.urgencyAmount).toFixed(2));
+    if (q.discountAmount) breakdownLines.push('  Discount: -'         + cur + ' ' + Number(q.discountAmount).toFixed(2));
+    breakdownLines.push('  Subtotal (ex. VAT): ' + cur + ' ' + Number(q.preVatTotal || 0).toFixed(2));
+    breakdownLines.push('  VAT (21%): '          + cur + ' ' + Number(q.vatAmount   || 0).toFixed(2));
+    breakdownLines.push('  TOTAL: '              + cur + ' ' + Number(q.total       || 0).toFixed(2));
+
+    // Calendar event — tagged URGENT_PENDING, red colour
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    const eventTitle = '[URGENT_PENDING] ' + name + ' — ' + shortRef;
+    const eventEnd   = new Date(now.getTime() + 3600000); // placeholder 1h window
+    const eventDesc  = [
+      'URGENT REQUEST — ' + shortRef,
+      '',
+      'Client: ' + name,
+      'Phone:  ' + phone,
+      email ? 'Email:  ' + email : '',
+      '',
+      'Pickup:  ' + pickup,
+      'Dropoff: ' + drop,
+      'Cargo:   ' + cargoLabel,
+      '',
+      'Price breakdown:',
+      breakdownLines.join('\n'),
+      '',
+      notes ? 'Notes: ' + notes : '(no notes)',
+      '',
+      'Submitted: ' + now.toISOString(),
+      'Action needed: Accept or Decline in dispatcher'
+    ].filter(Boolean).join('\n');
+
+    let eventId = '';
+    if (cal) {
+      const event = cal.createEvent(eventTitle, now, eventEnd, { description: eventDesc });
+      try { event.setColor(CalendarApp.EventColor.RED); } catch(e) {}
+      eventId = event.getId();
+    }
+
+    // Log to orders sheet as URGENT_PENDING
+    const urgentAdminData = {
+      status: 'URGENT_PENDING',
+      paymentStatus: 'Pending',
+      urgentRequest: true,
+      client: { name: name, phone: phone, email: email },
+      pickup: pickup,
+      drop: drop,
+      cargo: cargo,
+      cargoLabel: cargoLabel,
+      notes: notes,
+      quoteContext: q,
+      shortRef: shortRef,
+      submittedAt: now.toISOString()
+    };
+
+    appendOrderLogEntry({
+      action: 'urgent_request',
+      eventId: eventId,
+      payload: payload,
+      adminData: urgentAdminData,
+      status: 'URGENT_PENDING',
+      paymentStatus: 'Pending',
+      message: 'Urgent request submitted by client',
+      build: BUILD_ID
+    });
+
+    // Owner notification email with full details
+    const emailBody = [
+      '🚨 URGENT DELIVERY REQUEST — ' + shortRef,
+      '',
+      'Client: '   + name,
+      'Phone: '    + phone,
+      email ? 'Email: ' + email : '',
+      '',
+      'Pickup:  '  + pickup,
+      'Dropoff: '  + drop,
+      'Cargo:   '  + cargoLabel,
+      '',
+      'Price:',
+      breakdownLines.join('\n'),
+      '',
+      notes ? 'NOTES: ' + notes : '(no delivery notes)',
+      '',
+      'Submitted: ' + now.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }),
+      '',
+      'ACTION NEEDED: Open dispatcher to accept or decline.',
+    ].filter(Boolean).join('\n');
+
+    if (OWNER_EMAIL) {
+      MailApp.sendEmail({
+        to: OWNER_EMAIL,
+        subject: '🚨 URGENT ORDER — ' + shortRef + ' — ' + name,
+        body: emailBody
+      });
+    }
+
+    return jsonResponse({ ok: true, ref: shortRef, eventId: eventId }, 200);
+
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+function handleUrgentAccept(payload) {
+  try {
+    const eventId     = String(payload.eventId || '').trim();
+    const shortRef    = String(payload.shortRef || '').trim();
+    const eta         = String(payload.eta || '').trim();
+    const paymentUrl  = String(payload.paymentUrl || '').trim();
+
+    if (!eventId && !shortRef) return jsonResponse({ error: 'Missing eventId or shortRef' }, 400);
+
+    // Update calendar event title and colour to URGENT_CONFIRMED
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (cal && eventId) {
+      try {
+        const event = cal.getEventById(eventId);
+        if (event) {
+          const newTitle = event.getTitle().replace('[URGENT_PENDING]', '[URGENT_CONFIRMED]');
+          event.setTitle(newTitle);
+          try { event.setColor(CalendarApp.EventColor.ORANGE); } catch(e) {}
+          const updatedDesc = event.getDescription() +
+            '\n\nACCEPTED — ETA: ' + eta +
+            (paymentUrl ? '\nPayment link: ' + paymentUrl : '');
+          event.setDescription(updatedDesc);
+        }
+      } catch(e) {}
+    }
+
+    // Build WhatsApp message template for dispatcher to send to client
+    const clientPhone = String(payload.clientPhone || '').replace(/[^0-9]/g, '');
+    const q           = payload.quoteContext || {};
+    const cur         = String(q.cur || 'EUR');
+    const totalLabel  = cur + ' ' + Number(q.total || 0).toFixed(2);
+
+    const waMessage = [
+      'Hola ' + String(payload.clientName || '') + ', somos Cargoworks.',
+      '',
+      'Podemos hacer tu entrega urgente ✓',
+      'ETA de recogida: ' + eta,
+      '',
+      'Importe total: ' + totalLabel + ' (IVA incluido)',
+      '',
+      paymentUrl ? 'Paga aquí para confirmar: ' + paymentUrl : '',
+      '',
+      'Una vez confirmado el pago salimos. ¡Gracias!'
+    ].filter(Boolean).join('\n');
+
+    const waUrl = clientPhone
+      ? 'https://wa.me/' + clientPhone + '?text=' + encodeURIComponent(waMessage)
+      : '';
+
+    appendOrderLogEntry({
+      action: 'urgent_accepted',
+      eventId: eventId,
+      payload: payload,
+      adminData: { status: 'URGENT_CONFIRMED', eta: eta, paymentUrl: paymentUrl },
+      status: 'URGENT_CONFIRMED',
+      message: 'Urgent request accepted by dispatcher',
+      build: BUILD_ID
+    });
+
+    return jsonResponse({
+      ok: true,
+      waUrl: waUrl,
+      waMessage: waMessage,
+      paymentUrl: paymentUrl
+    }, 200);
+
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+function handleUrgentDecline(payload) {
+  try {
+    const eventId     = String(payload.eventId || '').trim();
+    const shortRef    = String(payload.shortRef || '').trim();
+    const clientPhone = String(payload.clientPhone || '').replace(/[^0-9]/g, '');
+    const clientName  = String(payload.clientName || '').trim();
+    const reason      = String(payload.reason || '').trim();
+
+    // Update calendar event to URGENT_DECLINED
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (cal && eventId) {
+      try {
+        const event = cal.getEventById(eventId);
+        if (event) {
+          const newTitle = event.getTitle().replace('[URGENT_PENDING]', '[URGENT_DECLINED]');
+          event.setTitle(newTitle);
+          try { event.setColor(CalendarApp.EventColor.GRAPHITE); } catch(e) {}
+        }
+      } catch(e) {}
+    }
+
+    const waMessage = [
+      'Hola ' + clientName + ', somos Cargoworks.',
+      '',
+      'Lo sentimos, en este momento no podemos atender tu solicitud urgente.',
+      reason ? 'Motivo: ' + reason : '',
+      '',
+      'Puedes programar una entrega para mañana desde nuestra web,',
+      'o escríbenos para buscar una alternativa.',
+      '',
+      'Disculpa las molestias. — Cargoworks'
+    ].filter(Boolean).join('\n');
+
+    const waUrl = clientPhone
+      ? 'https://wa.me/' + clientPhone + '?text=' + encodeURIComponent(waMessage)
+      : '';
+
+    appendOrderLogEntry({
+      action: 'urgent_declined',
+      eventId: eventId,
+      payload: payload,
+      adminData: { status: 'URGENT_DECLINED' },
+      status: 'URGENT_DECLINED',
+      message: 'Urgent request declined by dispatcher',
+      build: BUILD_ID
+    });
+
+    return jsonResponse({ ok: true, waUrl: waUrl, waMessage: waMessage }, 200);
+
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
