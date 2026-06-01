@@ -1,5 +1,5 @@
 {
-  "version": "2026-03-19",
+  "version": "2026-06-01",
   "codes": [
     {
       "code": "yougotit100",
@@ -13,12 +13,12 @@
       "active": true,
       "notes": "code for 100 percent off"
     },
-     {
+    {
       "code": "test999",
       "type": "percent",
       "amount": 99.99,
       "minOrder": 0,
-          "start": "2026-01-01",
+      "start": "2026-01-01",
       "end": "2026-12-31",
       "maxUses": 0,
       "maxUsesPerEmail": 1,
@@ -34,7 +34,6 @@
       "end": "2026-12-31",
       "maxUses": 0,
       "maxUsesPerEmail": 1,
-      "firstOrderOnly": true,
       "active": true,
       "notes": "Apply code FIRST50 for 50 percent off your first order. Done deal ;)"
     },
@@ -49,6 +48,18 @@
       "maxUsesPerEmail": 1,
       "active": true,
       "notes": "family and friends 30 percent"
+    },
+    {
+      "code": "10offsando",
+      "type": "fixed",
+      "amount": 10,
+      "minOrder": 0,
+      "start": "2026-06-01",
+      "end": "2030-12-31",
+      "maxUses": 1,
+      "maxUsesPerEmail": 1,
+      "active": true,
+      "notes": "discount sando after delivery issue"
     }
   ]
 }

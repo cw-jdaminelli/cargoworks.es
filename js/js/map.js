@@ -1928,6 +1928,8 @@ window.initZonesMap = function initZonesMap(){
     const endMin = parseTimeToMinutes(hours && hours.end) ?? (24 * 60);
     const timeMin = hasTime ? parseTimeToMinutes(qTime && qTime.value) : null;
     const afterHours = (timeMin == null) ? false : (timeMin < startMin || timeMin >= endMin);
+    const durationMin = getEstimatedDurationMinutes();
+    const overflowInfo = getOverflowAfterHoursInfo(timeMin, durationMin, endMin);
     const sur = window._surcharges || {};
     const weekendRate = Number(sur.weekend_holiday || 0) || 0;
     const afterRate = Number(sur.after_hours || 0) || 0;
@@ -1941,7 +1943,10 @@ window.initZonesMap = function initZonesMap(){
       afterHours,
       rate,
       weekendRate,
-      afterRate
+      afterRate,
+      overflowAfterHoursMinutes: overflowInfo.overflowMinutes,
+      overflowAfterHoursFraction: overflowInfo.overflowFraction,
+      willOverflowAfterHours: overflowInfo.willOverflow
     };
   }
 
@@ -2004,6 +2009,17 @@ window.initZonesMap = function initZonesMap(){
     availabilityCache.set(dateKey, result);
     return result;
   }
+  function getOverflowAfterHoursInfo(startMin, durationMin, closingMin){
+    if (startMin == null || durationMin == null || closingMin == null) return { overflowMinutes: 0, overflowFraction: 0, willOverflow: false };
+    const endMin = startMin + durationMin;
+    const overflowMinutes = Math.max(0, endMin - closingMin);
+    const overflowFraction = durationMin > 0 ? overflowMinutes / durationMin : 0;
+    return {
+      overflowMinutes: Math.round(overflowMinutes),
+      overflowFraction: Math.min(1, Math.max(0, overflowFraction)),
+      willOverflow: overflowMinutes > 0
+    };
+  }
   function getEstimatedDurationMinutes(){
     const ctx = window._lastQuoteContext || null;
     const eta = Number(ctx && ctx.etaMins || 0) || 0;
@@ -2013,14 +2029,22 @@ window.initZonesMap = function initZonesMap(){
     if (!surchargeInfo) return '';
     const hasWeekendHoliday = !!surchargeInfo.isWeekendHoliday;
     const hasAfterHours = !!surchargeInfo.afterHours;
+    const willOverflow = !!surchargeInfo.willOverflowAfterHours;
+    const overflowMins = surchargeInfo.overflowAfterHoursMinutes || 0;
     if (hasWeekendHoliday && hasAfterHours) {
       return i18n('availabilityFlagWeekendAndAfterHours') || 'Weekend/holiday and after-hours date/time selected. Weekend/holiday and after-hours surcharges apply.';
+    }
+    if (hasWeekendHoliday && willOverflow && !hasAfterHours) {
+      return i18n('availabilityFlagWeekendAndOverflow') || ('Weekend/holiday date/time selected. Job will overflow into after-hours (' + overflowMins + ' min). Both surcharges apply.');
     }
     if (hasWeekendHoliday) {
       return i18n('availabilityFlagWeekend') || 'Weekend/holiday date/time selected. Weekend/holiday surcharge applies.';
     }
     if (hasAfterHours) {
       return i18n('availabilityFlagAfterHours') || 'After-hours date/time selected. After-hours surcharge applies.';
+    }
+    if (willOverflow) {
+      return i18n('availabilityFlagOverflow') || ('Job will overflow into after-hours (' + overflowMins + ' min after closing). After-hours surcharge applies to the overflow portion.');
     }
     return '';
   }
@@ -2051,7 +2075,7 @@ window.initZonesMap = function initZonesMap(){
     const endHours = parseTimeToMinutes(hours && hours.end) ?? (24 * 60);
     const start = Math.max(startMin, startHours);
     const duration = Math.max(0, Number(durationMin || 0) || 0);
-    const lastStart = endHours - duration;
+    const lastStart = endHours;
     if (lastStart < start) return null;
     for (let m = start; m <= lastStart; m += AVAILABILITY_SLOT_MINUTES){
       if (!isTimeBlocked(m, blocked, duration)) return m;
@@ -2072,10 +2096,6 @@ window.initZonesMap = function initZonesMap(){
     }
     const dateKey = String(qDate.value);
     const flagMsg = getAvailabilityFlagMessage(computeSurchargeInfo());
-    if (flagMsg) {
-      setAvailabilityStatus(flagMsg);
-      return;
-    }
     const seq = ++availabilitySeq;
     setAvailabilityStatus(i18n('availabilityChecking') || 'Checking availability...');
     try {
@@ -2097,7 +2117,7 @@ window.initZonesMap = function initZonesMap(){
           true
         );
       } else {
-        setAvailabilityStatus(i18n('availabilityAvailable') || 'Time available.');
+        setAvailabilityStatus(flagMsg || i18n('availabilityAvailable') || 'Time available.');
       }
     } catch(_){
       if (seq !== availabilitySeq) return;
@@ -3863,9 +3883,11 @@ window.initZonesMap = function initZonesMap(){
       const cargoAmount = Math.round((subtotal * (cargoInfo.rate || 0)) * 100) / 100;
       subtotal = Math.round((subtotal + cargoAmount) * 100) / 100;
       const surchargeInfo = computeSurchargeInfo();
-      const surchargeAmount = Math.round((subtotal * (surchargeInfo.rate || 0)) * 100) / 100;
+      const effectiveAfterHoursRate = surchargeInfo.afterHours ? surchargeInfo.afterRate : ((surchargeInfo.overflowAfterHoursFraction || 0) * (surchargeInfo.afterRate || 0));
+      const effectiveRate = (surchargeInfo.isWeekendHoliday ? surchargeInfo.weekendRate : 0) + effectiveAfterHoursRate;
+      const surchargeAmount = Math.round((subtotal * effectiveRate) * 100) / 100;
       const weekendSurchargeAmount = Math.round((subtotal * (surchargeInfo.isWeekendHoliday ? surchargeInfo.weekendRate : 0)) * 100) / 100;
-      const afterHoursSurchargeAmount = Math.round((subtotal * (surchargeInfo.afterHours ? surchargeInfo.afterRate : 0)) * 100) / 100;
+      const afterHoursSurchargeAmount = Math.round((subtotal * effectiveAfterHoursRate) * 100) / 100;
       const asapUrgencyAmount = isAsapMode ? Math.round((subtotal + surchargeAmount) * (ASAP_MULTIPLIER - 1) * 100) / 100 : 0;
       const subtotalBeforeDiscount = Math.round((subtotal + surchargeAmount + asapUrgencyAmount) * 100) / 100;
       const discountInfo = resolveDiscountsForEstimate(subtotalBeforeDiscount, surchargeInfo.dateKey, cur);

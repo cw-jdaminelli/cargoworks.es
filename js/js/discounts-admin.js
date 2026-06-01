@@ -55,10 +55,10 @@
 
   function checkboxCell(checked){
     const td = document.createElement('td');
+    td.dataset.col = 'active';
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = !!checked;
-    input.dataset.col = 'active';
     td.appendChild(input);
     return td;
   }
