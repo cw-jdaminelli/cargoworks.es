@@ -60,6 +60,18 @@
       "maxUsesPerEmail": 1,
       "active": true,
       "notes": "discount sando after delivery issue"
+    },
+    {
+      "code": "MVERDE30",
+      "type": "percent",
+      "amount": 30,
+      "minOrder": 0,
+      "start": "2026-06-01",
+      "end": "2026-06-30",
+      "maxUses": 100,
+      "maxUsesPerEmail": 100,
+      "active": true,
+      "notes": "Marea Verde trial discount"
     }
   ]
 }
