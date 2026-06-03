@@ -1109,7 +1109,7 @@
     .scan-map {
       width: 100%;
       height: 320px;
-      background: #1a1a2e;
+      background: #e8e8e8;
     }
     .scan-map-header {
       padding: 10px 14px;
@@ -1742,6 +1742,22 @@
 
     // ── Scan Label ────────────────────────────────────────────────────────────
 
+    function scanStorageKey(eventId) {
+      return 'cw_scan_' + RIDER_ID + '_' + String(eventId || '');
+    }
+    function saveScanState(eventId, stops) {
+      if (!eventId) return;
+      try { localStorage.setItem(scanStorageKey(eventId), JSON.stringify(stops)); } catch (e) {}
+    }
+    function loadScanState(eventId) {
+      if (!eventId) return null;
+      try { var raw = localStorage.getItem(scanStorageKey(eventId)); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+    }
+    function clearScanState(eventId) {
+      if (!eventId) return;
+      try { localStorage.removeItem(scanStorageKey(eventId)); } catch (e) {}
+    }
+
     function buildScanSection(order) {
       var orderEventId = order && order.eventId;
       var wrap = document.createElement('div');
@@ -1776,6 +1792,14 @@
       wrap.appendChild(resultEl);
 
       scanBtn.addEventListener('click', function() { fileInput.click(); });
+
+      // Restore previously saved scan state for this order
+      var _savedStops = orderEventId ? loadScanState(orderEventId) : null;
+      if (_savedStops && _savedStops.length > 0) {
+        showScanStatus(statusEl, '↩ ' + _savedStops.length + ' stops restored from last session', 'success');
+        renderScanResult(resultEl, _savedStops, scanBtn, statusEl, orderEventId);
+        scanBtn.innerHTML = '📷 Re-scan sheet';
+      }
 
       fileInput.addEventListener('change', function() {
         if (!fileInput.files || !fileInput.files[0]) return;
@@ -1942,6 +1966,7 @@
 
       function markDirty() {
         dirty = true;
+        saveScanState(orderEventId, workingStops);
         var commitBtn = resultEl.querySelector('.scan-commit-btn');
         if (commitBtn) {
           commitBtn.innerHTML = '💾 Review and save to order';
@@ -2612,6 +2637,7 @@
           }
 
           dirty = false;
+          clearScanState(orderEventId);
           showScanStatus(statusEl, '✓ Saved ' + (res.stopCount || workingStops.length) + ' stops to the order', 'success');
 
           if (triggerBtn) {
@@ -2705,8 +2731,8 @@
 
         mapInstance = L.map(mapEl, { zoomControl: true, attributionControl: false });
 
-        // Dark theme tile layer
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        // Light high-contrast tile layer (readable in daylight)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
           maxZoom: 19
         }).addTo(mapInstance);
 
@@ -2739,9 +2765,9 @@
 
         if (latlngs.length > 1) {
           mapPolyline = L.polyline(latlngs, {
-            color: '#b07dff',
+            color: '#6d28d9',
             weight: 3,
-            opacity: 0.8,
+            opacity: 0.9,
             dashArray: '6,4'
           }).addTo(mapInstance);
         }
@@ -2859,11 +2885,15 @@
       // Initial render of list + actions (this also places mapSection before actionsWrap)
       rebuildList();
 
+      // Save initial (pre-geocode) state immediately
+      saveScanState(orderEventId, workingStops);
+
       // Geocode → flag outliers → draw map (no reorder — rider reviews raw order first)
       (async function() {
         await geocodeAllStops();
         flagOutliers();
         rebuildList();
+        saveScanState(orderEventId, workingStops); // persist geocoded coordinates
         if (mapSection && mapSection.mapEl) {
           requestAnimationFrame(function() {
             renderMap(mapSection.mapEl);
