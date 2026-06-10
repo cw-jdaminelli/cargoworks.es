@@ -22,7 +22,195 @@ const BUILD_ID = '2026-03-19-1';
 const WHATSAPP_NUMBER = '34608081955';
 const WHATSAPP_DEFAULT_MESSAGE = 'Hola Cargoworks, necesito ayuda con mi pedido numero ';
 const ORDER_STATUS_VALUES = ['Confirmed', 'Assigned', 'OMW', 'Picked up', 'In transit', 'Delivered', 'Failed', 'Canceled', 'Delivery rejected'];
-const PAYMENT_STATUS_VALUES = ['Paid', 'Pending', 'Failed'];
+const PAYMENT_STATUS_VALUES = ['Paid', 'Pending', 'Failed', 'Account'];
+const ACCOUNT_TOKENS_PROPERTY = 'ACCOUNT_TOKENS';
+const DISCOUNTS_URL = 'https://cargoworks.es/data/discounts.json';
+
+// ---------------------------------------------------------------------------
+// ACCOUNT_TOKENS — Script Property key: "ACCOUNT_TOKENS"
+//
+// Stored as JSON in Apps Script → Project Settings → Script Properties.
+// Each key is the account token (format: BIZ-NAME, uppercase).
+// Token matching is always case-insensitive and whitespace-trimmed.
+// A string can be either an account token OR a promo code — never both.
+// Use isStringAlreadyUsed() to check before adding a new token manually.
+//
+// Schema for each entry:
+// {
+//   "BIZ-EXAMPLE": {
+//     "name":             string  — display name used in emails and UI
+//     "fiscalName":       string  — legal/fiscal name for invoices
+//     "nif":              string  — Spanish NIF (empty if not yet known)
+//     "fiscalAddress":    string  — fiscal address for completa invoices
+//     "billingEmail":     string  — receives invoices / billing comms
+//     "operationsEmail":  string  — receives order notifications
+//     "phone":            string  — ops contact phone
+//     "dailyLimit":       number  — max orders per calendar day (0 = unlimited)
+//     "active":           boolean — false = token rejected immediately
+//     "requiresStaffName":    boolean — order must include who is placing it
+//     "requiresPickupTime":   boolean — order must include requested pickup time
+//     "requiresDropoffTime":  boolean — order must include requested dropoff time
+//     "requiresAttName":      boolean — order must include attention/recipient name
+//     "requiresAttContact":   boolean — order must include att phone or email
+//     "trialEndsDate":    string  — ISO date "YYYY-MM-DD", empty if not on trial
+//     "trialNotes":       string  — free-text trial terms (operator reference only)
+//     "notes":            string  — internal operator notes, never exposed to client
+//   }
+// }
+//
+// Example value for Script Properties (minified JSON, no newlines):
+// {"BIZ-INTERNAL":{"name":"Cargoworks Internal","fiscalName":"Cargoworks Internal","nif":"","fiscalAddress":"","billingEmail":"","operationsEmail":"","phone":"","dailyLimit":3,"active":true,"requiresStaffName":true,"requiresPickupTime":true,"requiresDropoffTime":true,"requiresAttName":true,"requiresAttContact":true,"trialEndsDate":"","trialNotes":"","notes":"Test account, 3/day limit"}}
+// ---------------------------------------------------------------------------
+
+// Returns true if s matches an existing account token (case-insensitive) or
+// an existing promo code. Call this before adding any new token or promo code
+// to prevent collisions — a string must be one or the other, never both.
+function isStringAlreadyUsed(s) {
+  const normalized = String(s || '').trim().toUpperCase();
+  if (!normalized) return false;
+
+  // Check account tokens from Script Properties.
+  const props = PropertiesService.getScriptProperties();
+  const rawTokens = String(props.getProperty(ACCOUNT_TOKENS_PROPERTY) || '').trim();
+  if (rawTokens) {
+    const tokens = JSON.parse(rawTokens);
+    const tokenKeys = Object.keys(tokens).map(function(k){ return k.toUpperCase(); });
+    if (tokenKeys.indexOf(normalized) >= 0) return true;
+  }
+
+  // Check promo codes from the public discounts file.
+  const response = UrlFetchApp.fetch(DISCOUNTS_URL, { muteHttpExceptions: true });
+  if (response.getResponseCode() === 200) {
+    const discounts = JSON.parse(response.getContentText());
+    const codes = Array.isArray(discounts.codes) ? discounts.codes : [];
+    const codeKeys = codes.map(function(c){ return String(c.code || '').trim().toUpperCase(); });
+    if (codeKeys.indexOf(normalized) >= 0) return true;
+  }
+
+  return false;
+}
+
+// Counts today's account orders for a given token and checks against the limit.
+// Returns { allowed: boolean, used: number, limit: number }.
+// dailyLimit of 0 means unlimited — always allowed.
+function checkAccountDailyLimit(token, dailyLimit) {
+  const normalizedToken = String(token || '').trim().toUpperCase();
+  if (!normalizedToken) return { allowed: false, used: 0, limit: dailyLimit };
+  if (dailyLimit === 0) return { allowed: true, used: 0, limit: 0 };
+
+  const range = dayRangeFromKey(formatDateKey(new Date()), TIMEZONE);
+  if (!range) return { allowed: false, used: 0, limit: dailyLimit };
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return { allowed: false, used: 0, limit: dailyLimit };
+
+  const events = cal.getEvents(range.start, range.end);
+  let used = 0;
+
+  events.forEach(function(event) {
+    const desc = String(event.getDescription() || '');
+    const payload = extractPayloadFromDescription(desc);
+    if (!payload) return;
+    const eventToken = String(payload.accountToken || '').trim().toUpperCase();
+    if (eventToken !== normalizedToken) return;
+    const adminData = extractAdminData(desc);
+    const status = String(adminData && adminData.status || '').trim();
+    if (status === 'Canceled') return;
+    used++;
+  });
+
+  return { allowed: used < dailyLimit, used: used, limit: dailyLimit };
+}
+
+// Validates rawToken and returns its account config object, or null if invalid.
+// Returns null if the token is not found, or if active === false.
+function getAccountConfig(rawToken) {
+  const normalized = String(rawToken || '').trim().toUpperCase();
+  if (!normalized) return null;
+
+  const props = PropertiesService.getScriptProperties();
+  const raw = String(props.getProperty(ACCOUNT_TOKENS_PROPERTY) || '').trim();
+  if (!raw) return null;
+
+  const tokens = JSON.parse(raw);
+  const key = Object.keys(tokens).find(function(k) {
+    return k.toUpperCase() === normalized;
+  });
+  if (!key) return null;
+
+  const config = tokens[key];
+  if (!config || config.active === false) return null;
+
+  return config;
+}
+
+function handleValidateAccountToken(params) {
+  const config = getAccountConfig(String(params.token || ''));
+  if (!config) {
+    return jsonResponse({ valid: false, reason: 'Account not found or inactive' }, 200);
+  }
+  return jsonResponse({
+    valid: true,
+    accountName: String(config.name || ''),
+    requires: {
+      staffName:   !!config.requiresStaffName,
+      pickupTime:  !!config.requiresPickupTime,
+      dropoffTime: !!config.requiresDropoffTime,
+      attName:     !!config.requiresAttName,
+      attContact:  !!config.requiresAttContact
+    }
+  }, 200);
+}
+
+function handleAccountOrders(params) {
+  const config = getAccountConfig(String(params.token || ''));
+  if (!config) {
+    return jsonResponse({ error: 'Invalid or inactive account token' }, 403);
+  }
+  const normalizedToken = String(params.token || '').trim().toUpperCase();
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return jsonResponse({ error: 'Calendar unavailable' }, 500);
+
+  const now = new Date();
+  const from = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+  const to   = new Date(now.getTime() +  30 * 24 * 60 * 60 * 1000);
+  const events = cal.getEvents(from, to);
+
+  const orders = [];
+  events.forEach(function(event) {
+    const desc = String(event.getDescription() || '');
+    const payload = extractPayloadFromDescription(desc);
+    if (!payload) return;
+    const eventToken = String(payload.accountToken || '').trim().toUpperCase();
+    if (eventToken !== normalizedToken) return;
+    const adminData = extractAdminData(desc) || {};
+    const quote = payload.quote || {};
+    const route = quote.route || {};
+    orders.push({
+      reference:     String(payload.reference || adminData.reference || ''),
+      status:        String(adminData.status || DEFAULT_STATUS_LABEL),
+      paymentStatus: String(adminData.paymentStatus || 'Account'),
+      date:          String((quote.schedule || {}).date || ''),
+      pickup:        String((route.pickup   || {}).address || ''),
+      dropoff:       String((route.dropoff  || {}).address || ''),
+      stops:         Array.isArray(route.stops) ? route.stops.length : 0,
+      total:         Number(quote.total || 0),
+      trackingUrl:   String(payload.trackingUrl || adminData.trackingUrl || ''),
+      staffName:     String(payload.staffName   || ''),
+      pickupTime:    String(payload.pickupTime  || ''),
+      dropoffTime:   String(payload.dropoffTime || ''),
+      attName:       String(payload.attName     || ''),
+      attContact:    String(payload.attContact  || ''),
+      createdAt:     event.getDateCreated().toISOString()
+    });
+  });
+
+  orders.sort(function(a, b) { return b.createdAt > a.createdAt ? 1 : -1; });
+  orders.splice(100);
+
+  return jsonResponse({ accountName: String(config.name || ''), orders: orders }, 200);
+}
 
 function normalizeOrderStatus(value){
   const raw = String(value || '').trim();
@@ -60,6 +248,7 @@ function normalizePaymentStatus(value, hasPaymentUrl){
   if (key === 'paid') return 'Paid';
   if (key === 'pending') return 'Pending';
   if (key === 'failed') return 'Failed';
+  if (key === 'account') return 'Account';
   // Legacy value kept for backward compatibility.
   if (key === 'none') return fallback;
   return '';
@@ -101,6 +290,8 @@ function doGet(e){
     if (action === 'riderGetOrders') return handleRiderGetOrders(params);
     if (action === 'getRiderEta') return handleGetRiderEta(params);
     if (action === 'riderValidate') return handleRiderValidate(params);
+    if (action === 'validateAccountToken') return handleValidateAccountToken(params);
+    if (action === 'accountOrders') return handleAccountOrders(params);
     if (action === 'adminList' || action === 'adminSheetInfo' || action === 'adminBackfillLog') {
       return jsonResponse({ error: 'Use POST for admin actions' }, 405);
     }
@@ -144,6 +335,21 @@ function doPost(e){
       return handleAdminPost(payload);
     }
     setLastPayload(payload);
+    const accountTokenRaw = String(payload.accountToken || '').trim();
+    const isAccountOrder = !!accountTokenRaw;
+    let accountConfig = null;
+    if (isAccountOrder) {
+      accountConfig = getAccountConfig(accountTokenRaw);
+      if (!accountConfig) {
+        return jsonResponse({ error: 'Account not found or inactive. Please check your account token.' }, 400);
+      }
+      const limitCheck = checkAccountDailyLimit(accountTokenRaw.toUpperCase(), Number(accountConfig.dailyLimit) || 0);
+      if (!limitCheck.allowed) {
+        return jsonResponse({
+          error: 'Daily order limit reached for this account (' + limitCheck.used + '/' + limitCheck.limit + '). Contact your account manager.'
+        }, 429);
+      }
+    }
     const quote = payload.quote || {};
     const schedule = quote.schedule || {};
     const dateKey = String(schedule.date || '').trim();
@@ -170,7 +376,7 @@ function doPost(e){
 
     const location = getPickupAddress(quote);
     const trackingToken = generatePublicToken(24);
-    const payment = createStripeSession(payload, shortRef, trackingToken);
+    const payment = isAccountOrder ? null : createStripeSession(payload, shortRef, trackingToken);
     const publishableKey = getStripePublishableKey();
     const whatsappUrl = buildWhatsAppUrl(shortRef);
     const trackingUrl = buildTrackingUrl(payload, shortRef, trackingToken);
@@ -179,13 +385,25 @@ function doPost(e){
       reference: shortRef,
       paymentUrl: payment && payment.url ? payment.url : '',
       paymentClientSecret: payment && payment.clientSecret ? payment.clientSecret : '',
-      paymentMode: payment && payment.mode ? payment.mode : '',
+      paymentMode: isAccountOrder ? 'account' : (payment && payment.mode ? payment.mode : ''),
       paymentPublishableKey: publishableKey,
       whatsappUrl: whatsappUrl,
       trackingUrl: trackingUrl,
-      updatesPreference: updatesPreference
+      updatesPreference: updatesPreference,
+      accountToken: isAccountOrder ? accountTokenRaw.toUpperCase() : '',
+      staffName:    String(payload.staffName    || '').trim(),
+      pickupTime:   String(payload.pickupTime   || '').trim(),
+      dropoffTime:  String(payload.dropoffTime  || '').trim(),
+      attName:      String(payload.attName      || '').trim(),
+      attContact:   String(payload.attContact   || '').trim()
     });
     const adminData = buildDefaultAdminData(enrichedPayload, payment, trackingUrl, updatesPreference, trackingToken);
+    if (isAccountOrder) {
+      adminData.paymentStatus = 'Account';
+      adminData.paymentMode   = 'account';
+      adminData.accountToken  = accountTokenRaw.toUpperCase();
+      adminData.accountName   = String(accountConfig.name || '');
+    }
     const description = buildEventDescription(enrichedPayload, adminData);
 
     const event = cal.createEvent(title, start, end, {
@@ -194,7 +412,9 @@ function doPost(e){
     });
 
     const eventId = event.getId();
-    const mailStatus = sendOwnerRequestEmail(enrichedPayload, shortRef, payment && payment.url, whatsappUrl, '');
+    const mailStatus = isAccountOrder
+      ? sendAccountOrderEmail(enrichedPayload, shortRef, trackingUrl, accountConfig)
+      : sendOwnerRequestEmail(enrichedPayload, shortRef, payment && payment.url, whatsappUrl, '');
     appendOrderLogEntry({
       action: 'booking_created',
       eventId: eventId,
@@ -206,6 +426,15 @@ function doPost(e){
       build: BUILD_ID
     });
     const link = '';
+    if (isAccountOrder) {
+      clearLastError();
+      return jsonResponse({
+        reference:   shortRef,
+        paymentMode: 'account',
+        trackingUrl: trackingUrl,
+        accountName: String(accountConfig.name || '')
+      }, 200);
+    }
     clearLastError();
     return jsonResponse({
       reference: shortRef,
@@ -704,6 +933,47 @@ function sendOwnerRequestEmail(payload, shortRef, paymentUrl, whatsappUrl, event
     }
   } catch (err) {
     status.error = 'Owner email send failed';
+  }
+  return status;
+}
+
+function sendAccountOrderEmail(payload, shortRef, trackingUrl, accountConfig) {
+  const status = { sent: false };
+  try {
+    const quote = payload.quote || {};
+    const total = Number(quote.total || 0);
+    const route = quote.route || {};
+    const accountName = String(accountConfig.name || '');
+    const subject = '[Cargoworks] New account order: ' + accountName + ' — ' + shortRef;
+    const opsEmail = String(accountConfig.operationsEmail || '').trim();
+    const recipients = [OWNER_EMAIL];
+    if (opsEmail && opsEmail !== OWNER_EMAIL) recipients.push(opsEmail);
+
+    const lines = [
+      'Account order placed.',
+      'Account: ' + accountName,
+      'Reference: ' + shortRef,
+      'Staff: ' + String(payload.staffName   || '—'),
+      'Pickup time: ' + String(payload.pickupTime  || '—'),
+      'Dropoff time: ' + String(payload.dropoffTime || '—'),
+      'Attention: ' + String(payload.attName     || '—'),
+      'Att contact: ' + String(payload.attContact  || '—'),
+      '',
+      'Pickup: '  + String((route.pickup  || {}).address || ''),
+      'Dropoff: ' + String((route.dropoff || {}).address || ''),
+      'Total: EUR ' + total.toFixed(2),
+      '',
+      'Track: ' + trackingUrl,
+    ];
+
+    MailApp.sendEmail({
+      to: recipients.join(','),
+      subject: subject,
+      body: lines.join('\n')
+    });
+    status.sent = true;
+  } catch (err) {
+    status.error = 'Account order email failed';
   }
   return status;
 }
@@ -1959,6 +2229,15 @@ function handlePaymentReturn(payload){
     if (!reference) return jsonResponse({ error: 'Missing reference' }, 400);
     const sessionId = String(payload.sessionId || payload.session_id || '').trim();
     if (!sessionId) return jsonResponse({ error: 'Missing sessionId' }, 400);
+
+    // Account orders have no Stripe session — bail out before touching Stripe.
+    const preEvent = findEventByReference(reference);
+    if (preEvent) {
+      const preAdmin = extractAdminData(String(preEvent.getDescription() || ''));
+      if (preAdmin && preAdmin.paymentMode === 'account') {
+        return jsonResponse({ ok: true, ignored: 'account order' }, 200);
+      }
+    }
 
     const verification = verifyStripeSessionForReference(reference, sessionId);
     if (!verification.ok) {
