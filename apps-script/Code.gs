@@ -4035,3 +4035,33 @@ function handleAdminManageRiders(payload){
 
   return jsonResponse({ error: 'Unknown op' }, 400);
 }
+
+function testAccountOrder() {
+  const fakeE = {
+    postData: {
+      type: 'application/x-www-form-urlencoded',
+      contents: 'payload=' + encodeURIComponent(JSON.stringify({
+        accountToken: 'BIZ-INTERNAL',
+        staffName: 'Julian',
+        pickupTime: '10:00',
+        dropoffTime: '11:30',
+        attName: 'Test Recipient',
+        attContact: '600000000',
+        customer: { name: 'CW Test', email: 'test@cargoworks.es', phone: '600000000' },
+        quote: {
+          total: 15,
+          etaMins: 45,
+          schedule: { date: '2026-06-12', time: '10:00' },
+          route: {
+            pickup:  { address: 'Carrer de Mallorca 1, Barcelona' },
+            dropoff: { address: 'Carrer de Valencia 1, Barcelona' },
+            stops: []
+          }
+        },
+        sourceUrl: 'https://cargoworks.es'
+      }))
+    }
+  };
+  const result = doPost(fakeE);
+  Logger.log(result.getContent());
+}
