@@ -98,6 +98,8 @@ A string can be either a token OR a promo code, never both. Enforce this in code
 
 ## Backend tasks (Code.gs only)
 
+> Status: Steps 1–9 implemented in `apps-script/Code.gs`. Steps 5 confirmed working. Steps 6–9 deployed, pending end-to-end test.
+
 ### 1. ACCOUNT_TOKENS structure documented in code comments
 
 A clear comment block near the top of Code.gs explaining the schema.
@@ -163,6 +165,8 @@ Behaviour:
 ---
 
 ## Frontend tasks
+
+> Status: Steps 10–13 not yet started. Next session.
 
 ### 10. Booking form changes (`js/js/map.js`)
 

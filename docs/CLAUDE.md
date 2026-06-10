@@ -291,3 +291,30 @@ If the user ends abruptly, Claude Code still writes the log entry from what was 
 
 ---
 (entries appear below, newest at top)
+
+---
+
+**Date:** 2026-06-10
+**Phase / task:** Accounts MVP — Steps 5-9 (backend complete)
+**Files touched:** `apps-script/Code.gs`, `css/effects/layout.css`, `index.html`
+**Completed:**
+- Step 5: `validateAccountToken` GET endpoint — confirmed working (`valid: true` returned for BIZ-INTERNAL)
+- Step 6: `doPost` account order logic — implemented and deployed (untested end-to-end, test next session)
+- Step 7: `handlePaymentReturn` safety check — account orders exit early before Stripe is called
+- Step 8: `sendAccountOrderEmail` — dedicated operator email with subject `[Cargoworks] New account order: {name} — {ref}`, includes staffName/pickupTime/dropoffTime/attName/attContact; cc's `operationsEmail` from account config if set
+- Step 9: `handleAccountOrders` GET endpoint — returns `{ accountName, orders: [] }` for last 180 days, sorted newest-first, capped at 100
+- Also fixed: iOS date picker not opening on booking form (`css/effects/layout.css`, `index.html`)
+
+**Tested:**
+- Step 5: `?action=validateAccountToken&token=BIZ-INTERNAL` → `{"valid":true,"accountName":"Cargoworks Internal",...}` ✅
+- Steps 6-9: code deployed but NOT yet tested end-to-end
+
+**Next step:**
+1. Test step 6: POST with `accountToken: BIZ-INTERNAL` from browser console — expect `{ reference, paymentMode: 'account', trackingUrl, accountName }`
+2. Test step 9: `?action=accountOrders&token=BIZ-INTERNAL` — expect order list
+3. Steps 10-13: frontend (booking form token detection, account.html panel, dispatcher badge)
+
+**Notes / decisions:**
+- `ACCOUNT_TOKENS` Script Property controls per-account required fields via `requires*` boolean flags — see docs/ACCOUNTS_MVP.md for schema
+- Field visibility in booking form (step 10) is driven by the `requires` object returned by `validateAccountToken`; fields not required by the account are hidden
+- `sendOwnerRequestEmail` still fires for regular (Stripe) orders unchanged
