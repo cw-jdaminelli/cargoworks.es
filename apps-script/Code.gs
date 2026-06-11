@@ -4037,6 +4037,9 @@ function handleAdminManageRiders(payload){
 }
 
 function testAccountOrder() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const dateStr = tomorrow.toISOString().slice(0, 10);
   const fakeE = {
     postData: {
       type: 'application/x-www-form-urlencoded',
@@ -4051,7 +4054,7 @@ function testAccountOrder() {
         quote: {
           total: 15,
           etaMins: 45,
-          schedule: { date: '2026-06-12', time: '10:00' },
+          schedule: { date: dateStr, time: '10:00' },
           route: {
             pickup:  { address: 'Carrer de Mallorca 1, Barcelona' },
             dropoff: { address: 'Carrer de Valencia 1, Barcelona' },

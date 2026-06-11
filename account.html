@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+  window.CARGOWORKS_BOOKING_API = "https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec";
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cargoworks — Business Account</title>
+  <link rel="stylesheet" href="css/effects/layout.css"/>
+  <style>
+    :root {
+      --acct-ink: #111c2b;
+      --acct-accent: #6c3fc5;
+      --acct-bg: #f0edf8;
+      --acct-card: #ffffff;
+      --acct-border: rgba(17, 28, 43, 0.12);
+      --acct-muted: #607089;
+    }
+    body { background: var(--acct-bg); color: var(--acct-ink); }
+    .acct-shell { max-width: 1100px; margin: 6rem auto 4rem; padding: 0 1.5rem; }
+    .acct-card { background: var(--acct-card); border-radius: 18px; padding: 1.5rem; border: 1px solid var(--acct-border); box-shadow: 0 16px 40px rgba(17, 28, 43, 0.1); }
+    .acct-card h1 { font-family: 'Barlow Condensed', 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: 0.2rem; }
+    .acct-subtitle { color: var(--acct-muted); font-size: 0.95rem; margin: 0 0 1.2rem; }
+    .acct-token-form { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.4rem; }
+    .acct-token-form input { flex: 1 1 220px; padding: 0.55rem 0.7rem; border-radius: 10px; border: 1px solid var(--acct-border); font-size: 0.95rem; }
+    .acct-status { font-size: 0.9rem; color: var(--acct-muted); margin-bottom: 1rem; min-height: 1.2em; }
+    .acct-status.is-error { color: #b00020; }
+    .acct-search { width: 100%; padding: 0.5rem 0.7rem; border-radius: 10px; border: 1px solid var(--acct-border); font-size: 0.92rem; margin-bottom: 1rem; }
+    .acct-table-wrap { overflow-x: auto; }
+    table.acct-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    table.acct-table th { text-align: left; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--acct-muted); padding: 0.4rem 0.6rem; border-bottom: 2px solid var(--acct-border); }
+    table.acct-table td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--acct-border); vertical-align: top; }
+    table.acct-table tr:last-child td { border-bottom: none; }
+    table.acct-table tr:hover td { background: rgba(108, 63, 197, 0.04); }
+    .acct-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.02em; }
+    .acct-badge--confirmed { background: #e6f4ea; color: #2b6e3a; }
+    .acct-badge--delivered { background: #d0f0d8; color: #1a5c2a; }
+    .acct-badge--assigned  { background: #e8f0fd; color: #1a4fae; }
+    .acct-badge--transit   { background: #fff3e0; color: #8b5000; }
+    .acct-badge--canceled  { background: #fdecea; color: #8b0000; }
+    .acct-badge--default   { background: #f0edf8; color: #6c3fc5; }
+    .acct-badge--stops     { background: #f0edf8; color: #6c3fc5; font-size: 0.7rem; margin-left: 0.3rem; }
+    .acct-route { font-size: 0.85rem; color: var(--acct-ink); }
+    .acct-route-arrow { color: var(--acct-muted); margin: 0 0.3em; }
+    .acct-track-link { color: var(--acct-accent); text-decoration: none; font-weight: 600; font-size: 0.85rem; white-space: nowrap; }
+    .acct-track-link:hover { text-decoration: underline; }
+    .acct-empty { text-align: center; color: var(--acct-muted); padding: 2rem 0; }
+    .acct-footer { margin-top: 1.5rem; font-size: 0.84rem; color: var(--acct-muted); text-align: center; }
+    .acct-footer a { color: var(--acct-accent); }
+    @media (max-width: 640px) {
+      table.acct-table thead { display: none; }
+      table.acct-table tr { display: block; border-bottom: 1px solid var(--acct-border); padding: 0.6rem 0; }
+      table.acct-table td { display: block; border: none; padding: 0.2rem 0.4rem; }
+      table.acct-table td::before { content: attr(data-label) ': '; font-weight: 700; font-size: 0.74rem; text-transform: uppercase; color: var(--acct-muted); }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <nav class="hero-nav">
+      <ul class="nav-links">
+        <li><a href="https://cargoworks.es">cargoworks.es</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main class="acct-shell">
+    <div class="acct-card">
+      <h1>Business Account Orders</h1>
+      <p class="acct-subtitle" id="acctSubtitle">Enter your account token to view your orders.</p>
+
+      <div class="acct-token-form" id="acctTokenForm">
+        <input id="acctTokenInput" type="text" placeholder="Account token (e.g. BIZ-NAME)" aria-label="Account token" />
+        <button id="acctTokenLoad" class="btn" type="button">Load orders</button>
+      </div>
+
+      <p id="acctStatus" class="acct-status" aria-live="polite"></p>
+
+      <input id="acctSearch" type="search" placeholder="Search by reference, staff, recipient..." class="acct-search" style="display:none" aria-label="Search orders" />
+
+      <div class="acct-table-wrap">
+        <table class="acct-table" id="acctTable" style="display:none">
+          <thead>
+            <tr>
+              <th>Ref</th>
+              <th>Date</th>
+              <th>Route</th>
+              <th>Staff</th>
+              <th>Recipient</th>
+              <th>Status</th>
+              <th>Total</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="acctTableBody"></tbody>
+        </table>
+        <p id="acctEmpty" class="acct-empty" style="display:none">No orders found.</p>
+      </div>
+
+      <p class="acct-footer">For billing questions contact us at <a href="mailto:info@cargoworks.es">info@cargoworks.es</a></p>
+    </div>
+  </main>
+
+  <script>
+  (function(){
+    var api = window.CARGOWORKS_BOOKING_API || '';
+    var currentToken = '';
+    var allOrders = [];
+    var refreshTimer = null;
+
+    var elSubtitle  = document.getElementById('acctSubtitle');
+    var elTokenForm = document.getElementById('acctTokenForm');
+    var elTokenInput= document.getElementById('acctTokenInput');
+    var elTokenLoad = document.getElementById('acctTokenLoad');
+    var elStatus    = document.getElementById('acctStatus');
+    var elSearch    = document.getElementById('acctSearch');
+    var elTable     = document.getElementById('acctTable');
+    var elBody      = document.getElementById('acctTableBody');
+    var elEmpty     = document.getElementById('acctEmpty');
+
+    function setStatus(msg, isError) {
+      elStatus.textContent = msg || '';
+      elStatus.className = 'acct-status' + (isError ? ' is-error' : '');
+    }
+
+    function statusBadgeClass(status) {
+      var s = String(status || '').toLowerCase();
+      if (s === 'delivered')  return 'acct-badge--delivered';
+      if (s === 'confirmed')  return 'acct-badge--confirmed';
+      if (s === 'assigned' || s === 'omw' || s === 'picked up') return 'acct-badge--assigned';
+      if (s === 'in transit') return 'acct-badge--transit';
+      if (s === 'canceled' || s === 'failed' || s === 'delivery rejected') return 'acct-badge--canceled';
+      return 'acct-badge--default';
+    }
+
+    function renderRows(orders) {
+      elBody.innerHTML = '';
+      if (!orders || !orders.length) {
+        elTable.style.display = 'none';
+        elEmpty.style.display = '';
+        return;
+      }
+      elEmpty.style.display = 'none';
+      elTable.style.display = '';
+      orders.forEach(function(o) {
+        var tr = document.createElement('tr');
+        var refLabel = String(o.reference || '—');
+        var stopsHtml = o.stops > 0 ? ' <span class="acct-badge acct-badge--stops">+' + o.stops + ' stops</span>' : '';
+        var route = '<span class="acct-route">' +
+          escHtml(o.pickup || '—') +
+          '<span class="acct-route-arrow">→</span>' +
+          escHtml(o.dropoff || '—') +
+          '</span>';
+        var trackHtml = o.trackingUrl
+          ? '<a class="acct-track-link" href="' + escHtml(o.trackingUrl) + '" target="_blank">Track →</a>'
+          : '—';
+        var total = o.total ? 'EUR ' + Number(o.total).toFixed(2) : '—';
+        tr.innerHTML =
+          '<td data-label="Ref">' + escHtml(refLabel) + stopsHtml + '</td>' +
+          '<td data-label="Date">' + escHtml(o.date || '—') + '</td>' +
+          '<td data-label="Route">' + route + '</td>' +
+          '<td data-label="Staff">' + escHtml(o.staffName || '—') + '</td>' +
+          '<td data-label="Recipient">' + escHtml(o.attName || o.attContact || '—') + '</td>' +
+          '<td data-label="Status"><span class="acct-badge ' + statusBadgeClass(o.status) + '">' + escHtml(o.status || '—') + '</span></td>' +
+          '<td data-label="Total">' + escHtml(total) + '</td>' +
+          '<td>' + trackHtml + '</td>';
+        elBody.appendChild(tr);
+      });
+    }
+
+    function escHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function filterOrders(query) {
+      if (!query) return allOrders;
+      var q = query.toLowerCase();
+      return allOrders.filter(function(o) {
+        return (o.reference   || '').toLowerCase().indexOf(q) >= 0 ||
+               (o.staffName   || '').toLowerCase().indexOf(q) >= 0 ||
+               (o.attName     || '').toLowerCase().indexOf(q) >= 0 ||
+               (o.attContact  || '').toLowerCase().indexOf(q) >= 0;
+      });
+    }
+
+    function loadOrders(token, silent) {
+      if (!token || !api) return;
+      if (!silent) setStatus('Loading orders...');
+      fetch(api + '?action=accountOrders&token=' + encodeURIComponent(token))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.error) { setStatus(data.error, true); return; }
+          allOrders = data.orders || [];
+          var name = data.accountName || token;
+          elSubtitle.textContent = 'Account: ' + name;
+          elTokenForm.style.display = 'none';
+          elSearch.style.display = '';
+          setStatus(allOrders.length ? '' : 'No orders yet.');
+          renderRows(filterOrders(elSearch.value));
+          scheduleRefresh(token);
+        })
+        .catch(function() { if (!silent) setStatus('Could not load orders. Check your token and try again.', true); });
+    }
+
+    function scheduleRefresh(token) {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(function() { loadOrders(token, true); }, 60000);
+    }
+
+    elTokenLoad.addEventListener('click', function() {
+      var t = (elTokenInput.value || '').trim().toUpperCase();
+      if (!t) { setStatus('Please enter your account token.', true); return; }
+      currentToken = t;
+      loadOrders(t);
+    });
+
+    elSearch.addEventListener('input', function() {
+      renderRows(filterOrders(elSearch.value));
+    });
+
+    // Load from URL param ?token=X
+    var urlToken = new URLSearchParams(location.search).get('token');
+    if (urlToken) {
+      currentToken = urlToken.toUpperCase();
+      elTokenInput.value = currentToken;
+      loadOrders(currentToken);
+    }
+  })();
+  </script>
+</body>
+</html>

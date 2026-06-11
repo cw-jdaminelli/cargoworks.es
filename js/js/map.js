@@ -1188,6 +1188,9 @@ window.initZonesMap = function initZonesMap(){
     syncCargoOptionChips();
   }
   let activeDiscountCodes = [];
+  let cwAccountToken = '';
+  let cwAccountName  = '';
+  let cwAccountRequires = {};
   function setDiscountStatus(msg, isError){
     if (!qDiscountStatus) return;
     qDiscountStatus.textContent = msg || '';
@@ -1368,6 +1371,10 @@ window.initZonesMap = function initZonesMap(){
   }
   function updatePayButtonLabel(){
     if (!qPayNow) return;
+    if (cwAccountToken) {
+      qPayNow.textContent = 'Place order on ' + (cwAccountName || 'account');
+      return;
+    }
     const ctx = window._lastQuoteContext || null;
     const currency = String((ctx && ctx.currency) || '€');
     const amount = Number((ctx && ctx.total) || 0) || 0;
@@ -1653,26 +1660,61 @@ window.initZonesMap = function initZonesMap(){
     if (qDiscount) qDiscount.value = '';
     setDiscountStatus('');
   }
+  function showAccountFields(requires) {
+    const wrap = document.getElementById('accountFieldsWrap');
+    if (!wrap) return;
+    wrap.classList.remove('is-hidden');
+    ['staffName','pickupTime','dropoffTime','attName','attContact'].forEach(function(key) {
+      const row = document.getElementById('accountField_' + key);
+      if (row) row.classList.toggle('is-hidden', !requires[key]);
+    });
+  }
+  function hideAccountFields() {
+    const wrap = document.getElementById('accountFieldsWrap');
+    if (wrap) wrap.classList.add('is-hidden');
+  }
+  function setAccountMode(token, name, requires) {
+    cwAccountToken   = token;
+    cwAccountName    = name;
+    cwAccountRequires = requires || {};
+    try { localStorage.setItem('cwAccountToken', token); } catch(_) {}
+    setDiscountStatus('Account confirmed: ' + name);
+    showAccountFields(cwAccountRequires);
+    updatePayButtonLabel();
+  }
+  function clearAccountMode() {
+    cwAccountToken   = '';
+    cwAccountName    = '';
+    cwAccountRequires = {};
+    try { localStorage.removeItem('cwAccountToken'); } catch(_) {}
+    hideAccountFields();
+    updatePayButtonLabel();
+  }
+  function applyPromoCode(code) {
+    ensureDiscountsLoaded().then(function(){
+      const discount = findDiscountByCode(code);
+      if (!discount) { setDiscountStatus(i18n('discountNotFound') || 'Code not found.', true); return; }
+      if (activeDiscountCodes.includes(code)) { setDiscountStatus('Code already applied.'); return; }
+      activeDiscountCodes.push(code);
+      setDiscountStatus(i18n('discountApplied', { code }) || ('Code applied: ' + code));
+      autoEstimateIfReady({ source: 'address' });
+    });
+  }
 
   if (qDiscountApply) {
     qDiscountApply.addEventListener('click', function(){
       const code = normalizeDiscountCode(qDiscount && qDiscount.value);
-      if (!code) { clearActiveDiscount(); return; }
+      if (!code) { clearActiveDiscount(); clearAccountMode(); return; }
       setDiscountStatus(i18n('discountChecking') || 'Checking code...');
-      ensureDiscountsLoaded().then(function(){
-        const discount = findDiscountByCode(code);
-        if (!discount) {
-          setDiscountStatus(i18n('discountNotFound') || 'Code not found.', true);
-          return;
-        }
-        if (activeDiscountCodes.includes(code)) {
-          setDiscountStatus('Code already applied.');
-          return;
-        }
-        activeDiscountCodes.push(code);
-        setDiscountStatus(i18n('discountApplied', { code }) || ('Code applied: ' + code));
-        autoEstimateIfReady({ source: 'address' });
-      });
+      if (!BOOKING_API_BASE) { applyPromoCode(code); return; }
+      fetch(BOOKING_API_BASE + '?action=validateAccountToken&token=' + encodeURIComponent(code))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data && data.valid) { setAccountMode(code, data.accountName, data.requires || {}); return; }
+          clearAccountMode();
+          applyPromoCode(code);
+        })
+        .catch(function() { clearAccountMode(); applyPromoCode(code); });
     });
   }
   if (qDiscount) {
@@ -1681,6 +1723,25 @@ window.initZonesMap = function initZonesMap(){
       if (!code || !activeDiscountCodes.includes(code)) setDiscountStatus('');
     });
   }
+
+  // Restore account token from previous visit
+  (function(){
+    try {
+      const stored = localStorage.getItem('cwAccountToken');
+      if (!stored || !BOOKING_API_BASE) return;
+      fetch(BOOKING_API_BASE + '?action=validateAccountToken&token=' + encodeURIComponent(stored))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data && data.valid) {
+            if (qDiscount) qDiscount.value = stored;
+            setAccountMode(stored, data.accountName, data.requires || {});
+          } else {
+            clearAccountMode();
+          }
+        })
+        .catch(function() { clearAccountMode(); });
+    } catch(_) {}
+  })();
 
   function getBookingValidationState(){
     const hasQuote = !!(window._lastQuoteContext);
@@ -3376,13 +3437,20 @@ window.initZonesMap = function initZonesMap(){
     const mergedQuote = Object.assign({}, ctx, {
       schedule: { date: dateVal, time: timeVal }
     });
+    function acctField(id) { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; }
     return {
       customer: { name, email, phone },
       notes,
       updatesPreference,
       language: document.documentElement.lang || 'en',
       sourceUrl: location.href,
-      quote: mergedQuote
+      quote: mergedQuote,
+      accountToken: cwAccountToken || '',
+      staffName:    acctField('accountStaffName'),
+      pickupTime:   acctField('accountPickupTime'),
+      dropoffTime:  acctField('accountDropoffTime'),
+      attName:      acctField('accountAttName'),
+      attContact:   acctField('accountAttContact')
     };
   }
   function buildTrackingUrlFromRef(ref, trackingToken){
@@ -3705,6 +3773,19 @@ window.initZonesMap = function initZonesMap(){
         });
       } catch(_) {}
 
+      if (paymentMode === 'account') {
+        hidePaymentMount();
+        const acctName = (json.accountName ? String(json.accountName) : cwAccountName) || 'your account';
+        const trackMsg = trackingUrl ? ' Track it here: ' + trackingUrl + '.' : '';
+        setBookingStatus('Order placed on ' + acctName + '. Reference: ' + ref + '.' + trackMsg + ' Invoice will be issued at end of billing cycle.');
+        resetBookingFieldsAfterSuccess();
+        if (cwAccountToken) {
+          if (qDiscount) qDiscount.value = cwAccountToken;
+          setDiscountStatus('Account confirmed: ' + cwAccountName);
+          showAccountFields(cwAccountRequires);
+        }
+        return;
+      }
       if (paymentClientSecret && !hasPublishableKey) {
         hidePaymentMount();
         setBookingStatus(

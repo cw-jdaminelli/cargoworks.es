@@ -450,11 +450,34 @@
 									<div class="config-row quote-promo-inline__row">
 										<div class="config-field config-field--grow">
 											<label class="field-label" for="quoteDiscount" data-i18n="quotePromoLabel">Promo code</label>
-											<input id="quoteDiscount" type="text" placeholder="Add discount code" aria-label="Discount code" />
+											<input id="quoteDiscount" type="text" placeholder="Promo or account code" aria-label="Discount or account code" />
 										</div>
 										<button id="quoteDiscountApply" class="btn btn--ghost" type="button" title="Apply discount code" data-i18n="quoteDiscountApply">Apply</button>
 									</div>
 									<p id="quoteDiscountStatus" class="discount-status" aria-live="polite"></p>
+								</div>
+								<div id="accountFieldsWrap" class="account-fields-wrap is-hidden">
+									<p class="account-fields-label">Additional details</p>
+									<div id="accountField_staffName" class="config-row is-hidden">
+										<label class="field-label" for="accountStaffName">Who is placing this order?</label>
+										<input id="accountStaffName" type="text" placeholder="Staff name" />
+									</div>
+									<div id="accountField_pickupTime" class="config-row is-hidden">
+										<label class="field-label" for="accountPickupTime">Pickup time</label>
+										<input id="accountPickupTime" type="time" />
+									</div>
+									<div id="accountField_dropoffTime" class="config-row is-hidden">
+										<label class="field-label" for="accountDropoffTime">Dropoff time</label>
+										<input id="accountDropoffTime" type="time" />
+									</div>
+									<div id="accountField_attName" class="config-row is-hidden">
+										<label class="field-label" for="accountAttName">Recipient name</label>
+										<input id="accountAttName" type="text" placeholder="Who is this for?" />
+									</div>
+									<div id="accountField_attContact" class="config-row is-hidden">
+										<label class="field-label" for="accountAttContact">Recipient phone</label>
+										<input id="accountAttContact" type="tel" placeholder="Contact number" />
+									</div>
 								</div>
 								<div class="quote-proceed-wrap">
 									<button id="quoteProceedBooking" class="btn is-hidden" type="button" data-i18n="quoteProceedBooking">Everything looks good? Complete your booking.</button>

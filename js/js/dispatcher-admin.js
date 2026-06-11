@@ -1350,6 +1350,7 @@
       badges.className = 'dispatcher-badges';
       badges.appendChild(statusChip(normalizeText(order.status) || 'Unknown', normalizeText(order.status) === 'Canceled' ? 'is-danger' : ''));
       badges.appendChild(statusChip('Payment: ' + (normalizeText(order.paymentStatus) || '-'), normalizeText(order.paymentStatus) === 'Paid' ? 'is-ok' : ''));
+      if (normalizeText(order.paymentStatus) === 'Account') badges.appendChild(statusChip('Account: ' + (normalizeText(order.accountName) || normalizeText(order.accountToken) || 'Account'), 'is-account'));
       if (normalizeText(order.riderName)) badges.appendChild(statusChip('Rider: ' + normalizeText(order.riderName)));
       if (order && order.isArchived) badges.appendChild(statusChip('Archived', 'is-danger'));
       top.appendChild(badges);
@@ -1365,6 +1366,11 @@
         '<span><strong>Pickup:</strong> ' + (normalizeText(order && order.route && order.route.pickup && order.route.pickup.address) || '-') + '</span>' +
         '<span><strong>Dropoff:</strong> ' + (normalizeText(order && order.route && order.route.dropoff && order.route.dropoff.address) || '-') + '</span>' +
         '<span><strong>Updates:</strong> ' + (normalizeText(order && order.updatesPreference) || 'Default') + '</span>';
+      if (normalizeText(order && order.staffName))  meta.innerHTML += '<span><strong>Staff:</strong> '        + normalizeText(order.staffName)  + '</span>';
+      if (normalizeText(order && order.pickupTime)) meta.innerHTML += '<span><strong>Pickup time:</strong> '  + normalizeText(order.pickupTime)  + '</span>';
+      if (normalizeText(order && order.dropoffTime))meta.innerHTML += '<span><strong>Dropoff time:</strong> ' + normalizeText(order.dropoffTime) + '</span>';
+      if (normalizeText(order && order.attName))    meta.innerHTML += '<span><strong>Att name:</strong> '     + normalizeText(order.attName)     + '</span>';
+      if (normalizeText(order && order.attContact)) meta.innerHTML += '<span><strong>Att contact:</strong> '  + normalizeText(order.attContact)  + '</span>';
       card.appendChild(meta);
 
       const quick = document.createElement('div');
