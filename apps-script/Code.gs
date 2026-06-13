@@ -4039,7 +4039,7 @@ function handleAdminManageRiders(payload){
 function testAccountOrder() {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const dateStr = tomorrow.toISOString().slice(0, 10);
+  const dateStr = Utilities.formatDate(tomorrow, TIMEZONE, 'yyyy-MM-dd');
   const fakeE = {
     postData: {
       type: 'application/x-www-form-urlencoded',
