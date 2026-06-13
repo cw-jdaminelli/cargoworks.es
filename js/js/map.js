@@ -1724,24 +1724,11 @@ window.initZonesMap = function initZonesMap(){
     });
   }
 
-  // Restore account token from previous visit
-  (function(){
-    try {
-      const stored = localStorage.getItem('cwAccountToken');
-      if (!stored || !BOOKING_API_BASE) return;
-      fetch(BOOKING_API_BASE + '?action=validateAccountToken&token=' + encodeURIComponent(stored))
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (data && data.valid) {
-            if (qDiscount) qDiscount.value = stored;
-            setAccountMode(stored, data.accountName, data.requires || {});
-          } else {
-            clearAccountMode();
-          }
-        })
-        .catch(function() { clearAccountMode(); });
-    } catch(_) {}
-  })();
+  // Pre-fill token from previous visit — user still needs to click Apply to activate
+  try {
+    const stored = localStorage.getItem('cwAccountToken');
+    if (stored && qDiscount && !qDiscount.value) qDiscount.value = stored;
+  } catch(_) {}
 
   function getBookingValidationState(){
     const hasQuote = !!(window._lastQuoteContext);
