@@ -660,13 +660,9 @@ function buildTrackingUrl(payload, shortRef, trackingToken){
     const originMatch = sourceUrl.match(/^https?:\/\/[^/]+/i);
     const origin = originMatch ? originMatch[0] : '';
     const base = origin || 'https://cargoworks.es';
-    const token = String(trackingToken || '').trim();
-    const tokenParam = token ? ('&t=' + encodeURIComponent(token)) : '';
-    return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(shortRef) + tokenParam;
+    return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(shortRef);
   } catch (err) {
-    const token = String(trackingToken || '').trim();
-    const tokenParam = token ? ('&t=' + encodeURIComponent(token)) : '';
-    return 'https://cargoworks.es/tracking.html?ref=' + encodeURIComponent(shortRef) + tokenParam;
+    return 'https://cargoworks.es/tracking.html?ref=' + encodeURIComponent(shortRef);
   }
 }
 

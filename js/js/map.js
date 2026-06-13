@@ -3764,8 +3764,15 @@ window.initZonesMap = function initZonesMap(){
       if (paymentMode === 'account') {
         hidePaymentMount();
         const acctName = (json.accountName ? String(json.accountName) : cwAccountName) || 'your account';
-        const trackMsg = trackingUrl ? ' Track it here: ' + trackingUrl + '.' : '';
-        setBookingStatus('Order placed on ' + acctName + '. Reference: ' + ref + '.' + trackMsg + ' Invoice will be issued at end of billing cycle.');
+        const shortTrackUrl = ref ? buildTrackingUrlFromRef(ref) : '';
+        const confirmParts = ['Order placed on ' + acctName + '. Reference: ' + ref + '.'];
+        if (shortTrackUrl) {
+          confirmParts.push(' ');
+          confirmParts.push(buildStatusLink(shortTrackUrl, i18n('bookingTrackingLink') || 'Track order'));
+          confirmParts.push('.');
+        }
+        confirmParts.push(' Invoice will be issued at end of billing cycle.');
+        setBookingStatusHtml(confirmParts, false);
         resetBookingFieldsAfterSuccess();
         hideAccountFields();
         if (cwAccountToken) {
