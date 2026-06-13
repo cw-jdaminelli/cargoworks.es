@@ -1840,6 +1840,39 @@ body .hero-section {
   gap: 0.65rem;
 }
 
+.account-fields-wrap {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(45, 26, 77, 0.18);
+  border-radius: 12px;
+  background: rgba(45, 26, 77, 0.04);
+  display: grid;
+  gap: 0.6rem;
+}
+.account-fields-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6c3fc5;
+  margin: 0 0 0.1rem;
+}
+.account-fields-wrap .config-row {
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.account-fields-wrap input {
+  width: 100%;
+}
+@media (min-width: 480px) {
+  .account-fields-wrap {
+    grid-template-columns: 1fr 1fr;
+  }
+  .account-fields-label {
+    grid-column: 1 / -1;
+  }
+}
+
 .quote-payment-mount {
   border: 1px solid rgba(45, 26, 77, 0.16);
   border-radius: 10px;

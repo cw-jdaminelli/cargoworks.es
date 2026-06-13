@@ -3779,11 +3779,12 @@ window.initZonesMap = function initZonesMap(){
         const trackMsg = trackingUrl ? ' Track it here: ' + trackingUrl + '.' : '';
         setBookingStatus('Order placed on ' + acctName + '. Reference: ' + ref + '.' + trackMsg + ' Invoice will be issued at end of billing cycle.');
         resetBookingFieldsAfterSuccess();
+        hideAccountFields();
         if (cwAccountToken) {
           if (qDiscount) qDiscount.value = cwAccountToken;
           setDiscountStatus('Account confirmed: ' + cwAccountName);
-          showAccountFields(cwAccountRequires);
         }
+        scrollPanelToTop(qBookingStatus, 16);
         return;
       }
       if (paymentClientSecret && !hasPublishableKey) {
