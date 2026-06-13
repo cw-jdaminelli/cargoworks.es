@@ -905,6 +905,13 @@ body .hero-section {
     padding: 0 0.6rem !important;
     font-size: 0.78rem;
   }
+  .account-fields-wrap input {
+    height: 32px;
+    min-height: 32px;
+    max-height: 32px;
+    font-size: 0.82rem;
+    padding: 0 0.5rem;
+  }
 }
 
 .quote-estimator input,
@@ -1863,6 +1870,7 @@ body .hero-section {
 }
 .account-fields-wrap input {
   width: 100%;
+  flex: none;
   height: 36px;
   min-height: 36px;
   max-height: 36px;

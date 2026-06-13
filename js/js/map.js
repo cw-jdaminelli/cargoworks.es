@@ -1720,6 +1720,7 @@ window.initZonesMap = function initZonesMap(){
   if (qDiscount) {
     qDiscount.addEventListener('input', function(){
       const code = normalizeDiscountCode(qDiscount.value);
+      if (cwAccountToken && code !== cwAccountToken) clearAccountMode();
       if (!code || !activeDiscountCodes.includes(code)) setDiscountStatus('');
     });
   }
