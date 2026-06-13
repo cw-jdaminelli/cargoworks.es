@@ -202,6 +202,7 @@ function handleAccountOrders(params) {
       dropoffTime:   String(payload.dropoffTime || ''),
       attName:       String(payload.attName     || ''),
       attContact:    String(payload.attContact  || ''),
+      notes:         String(payload.notes       || ''),
       createdAt:     event.getDateCreated().toISOString()
     });
   });

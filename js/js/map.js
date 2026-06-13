@@ -1756,6 +1756,23 @@ window.initZonesMap = function initZonesMap(){
     if (!isValidPhone(phone)) return { error: i18n('bookingPhoneInvalid') || 'Please enter a valid phone number with country code.', section: 'booking' };
     if (!consent) return { error: i18n('bookingConsentRequired') || 'Please confirm you agree to be contacted.', section: 'booking' };
     if (!dateVal || !timeVal) return { error: i18n('quoteDateTimeRequired') || 'Please choose a date and time.', section: 'datetime' };
+    if (cwAccountToken) {
+      var acctFields = [
+        { row: 'accountField_staffName',   el: 'accountStaffName',   msg: 'Please enter who is placing this order.' },
+        { row: 'accountField_pickupTime',  el: 'accountPickupTime',  msg: 'Please enter a pickup time.' },
+        { row: 'accountField_dropoffTime', el: 'accountDropoffTime', msg: 'Please enter a dropoff time.' },
+        { row: 'accountField_attName',     el: 'accountAttName',     msg: 'Please enter the recipient name.' },
+        { row: 'accountField_attContact',  el: 'accountAttContact',  msg: 'Please enter a recipient contact number.' }
+      ];
+      for (var _i = 0; _i < acctFields.length; _i++) {
+        var _f = acctFields[_i];
+        var _row = document.getElementById(_f.row);
+        if (_row && !_row.classList.contains('is-hidden')) {
+          var _el = document.getElementById(_f.el);
+          if (!_el || !String(_el.value || '').trim()) return { error: _f.msg, section: 'booking' };
+        }
+      }
+    }
     return { error: '', section: '' };
   }
   function getBookingValidationError(){
