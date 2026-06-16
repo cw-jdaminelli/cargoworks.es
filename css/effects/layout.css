@@ -1878,6 +1878,11 @@ body .hero-section {
   padding: 0 0.55rem;
   box-sizing: border-box;
 }
+.account-fields-wrap .config-row:not(.is-hidden) .field-label::after {
+  content: " *";
+  color: var(--accent-primary, #6c3fc5);
+  font-size: 0.8em;
+}
 
 .quote-payment-mount {
   border: 1px solid rgba(45, 26, 77, 0.16);
@@ -2267,119 +2272,6 @@ a { color: var(--accent-primary); }
 }
 
 
-/* ── ASAP / Urgent delivery ─────────────────────────────────────────── */
-.asap-toggle-row {
-  margin-bottom: 0.75rem;
-}
-
-.btn.btn--asap {
-  background: transparent;
-  color: #c0392b;
-  border: 1.5px solid #c0392b;
-  box-shadow: none;
-  text-transform: none;
-  letter-spacing: 0.02em;
-  font-weight: 600;
-  width: 100%;
-  justify-content: center;
-}
-
-.btn.btn--asap:hover {
-  background: rgba(192, 57, 43, 0.08);
-  box-shadow: none;
-}
-
-.btn.btn--asap--active {
-  background: #c0392b;
-  color: #fff;
-}
-
-.btn.btn--asap--active:hover {
-  background: #a93226;
-}
-
-.asap-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  background: rgba(192, 57, 43, 0.07);
-  border: 1px solid rgba(192, 57, 43, 0.3);
-  border-radius: 6px;
-  padding: 0.75rem 1rem;
-  margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.asap-banner.is-hidden { display: none; }
-
-.asap-banner__icon {
-  font-size: 1.2rem;
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-}
-
-.asap-banner__body {
-  font-size: 0.92rem;
-  line-height: 1.5;
-  color: inherit;
-}
-
-.asap-banner__body strong {
-  display: block;
-  margin-bottom: 0.25rem;
-  color: #c0392b;
-}
-
-.asap-banner__body p {
-  margin: 0;
-  opacity: 0.85;
-}
-
-.asap-badge {
-  display: inline-block;
-  background: #c0392b;
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 0.1em 0.45em;
-  border-radius: 4px;
-  vertical-align: middle;
-  margin-left: 0.3em;
-  letter-spacing: 0.03em;
-}
-
-.btn.btn--urgent {
-  background: #c0392b;
-  color: #fff;
-  border: none;
-  font-weight: 700;
-  width: 100%;
-  justify-content: center;
-  margin-top: 0.5rem;
-}
-
-.btn.btn--urgent:hover {
-  background: #a93226;
-}
-
-.btn.btn--urgent:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-#quoteDateTimeFields.is-hidden {
-  display: none;
-}
-
-@media (max-width: 380px) {
-  .asap-banner {
-    flex-direction: column;
-    gap: 0.3rem;
-  }
-  .asap-banner__icon {
-    font-size: 1rem;
-  }
-}
 
 /* ── Panel scroll hint ──────────────────────────────────────────────── */
 .panel-scroll-hint {

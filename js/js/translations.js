@@ -595,7 +595,22 @@
       apiStatusNoPlaces: "Address suggestions unavailable — enable Places API and referrers for this key.",
       mapFailedLoad: "Map failed to load. Check API key/referrer settings."
       ,
-      mapAuthFailure: "Maps authentication failed — verify API key, enabled APIs (Maps JavaScript, Places), billing, and allowed website referrers."
+      mapAuthFailure: "Maps authentication failed — verify API key, enabled APIs (Maps JavaScript, Places), billing, and allowed website referrers.",
+      // --- Account extra fields ---
+      accountFieldsTitle: "Additional details",
+      accountFieldStaffName: "Who is placing this order?",
+      accountFieldStaffNamePlaceholder: "Staff name",
+      accountFieldPickupTime: "Pickup time",
+      accountFieldDropoffTime: "Dropoff time",
+      accountFieldAttName: "Recipient name",
+      accountFieldAttNamePlaceholder: "Who is this for?",
+      accountFieldAttContact: "Recipient phone",
+      accountFieldAttContactPlaceholder: "Contact number",
+      accountFieldStaffNameRequired: "Please enter who is placing this order.",
+      accountFieldPickupTimeRequired: "Please enter a pickup time.",
+      accountFieldDropoffTimeRequired: "Please enter a dropoff time.",
+      accountFieldAttNameRequired: "Please enter the recipient name.",
+      accountFieldAttContactRequired: "Please enter a recipient contact number."
     },
     es: {
       // --- Navegación ---
@@ -1146,7 +1161,22 @@
       apiStatusNoPlaces: "Suggeriments d'adreces no disponibles — activa la Places API i els referents per a aquesta clau.",
       mapFailedLoad: "No s'ha pogut carregar el mapa. Comprova la clau i els referents permesos."
       ,
-      mapAuthFailure: "Ha fallat l'autenticació de Maps — verifica la clau, les APIs habilitades (Maps JavaScript, Places), la facturació i els referents permesos."
+      mapAuthFailure: "Ha fallat l'autenticació de Maps — verifica la clau, les APIs habilitades (Maps JavaScript, Places), la facturació i els referents permesos.",
+      // --- Campos adicionales de cuenta ---
+      accountFieldsTitle: "Detalles adicionales",
+      accountFieldStaffName: "¿Quién realiza este pedido?",
+      accountFieldStaffNamePlaceholder: "Nombre del empleado",
+      accountFieldPickupTime: "Hora de recogida",
+      accountFieldDropoffTime: "Hora de entrega",
+      accountFieldAttName: "Nombre del destinatario",
+      accountFieldAttNamePlaceholder: "¿Para quién es?",
+      accountFieldAttContact: "Teléfono del destinatario",
+      accountFieldAttContactPlaceholder: "Número de contacto",
+      accountFieldStaffNameRequired: "Por favor, indica quién realiza este pedido.",
+      accountFieldPickupTimeRequired: "Por favor, indica la hora de recogida.",
+      accountFieldDropoffTimeRequired: "Por favor, indica la hora de entrega.",
+      accountFieldAttNameRequired: "Por favor, indica el nombre del destinatario.",
+      accountFieldAttContactRequired: "Por favor, indica el número de contacto del destinatario."
     },
     ca: {
       // --- Navegació ---
@@ -1685,7 +1715,22 @@
       apiStatusNoPlaces: "Suggeriments d'adreces no disponibles — activa la Places API i els referents per a aquesta clau.",
       mapFailedLoad: "No s'ha pogut carregar el mapa. Comprova la clau i els referents permesos."
       ,
-      mapAuthFailure: "Ha fallat l'autenticació de Maps — verifica la clau, les APIs habilitades (Maps JavaScript, Places), la facturació i els referents permesos."
+      mapAuthFailure: "Ha fallat l'autenticació de Maps — verifica la clau, les APIs habilitades (Maps JavaScript, Places), la facturació i els referents permesos.",
+      // --- Camps addicionals de compte ---
+      accountFieldsTitle: "Detalls addicionals",
+      accountFieldStaffName: "Qui fa aquesta comanda?",
+      accountFieldStaffNamePlaceholder: "Nom de l'empleat",
+      accountFieldPickupTime: "Hora de recollida",
+      accountFieldDropoffTime: "Hora d'entrega",
+      accountFieldAttName: "Nom del destinatari",
+      accountFieldAttNamePlaceholder: "Per a qui és?",
+      accountFieldAttContact: "Telèfon del destinatari",
+      accountFieldAttContactPlaceholder: "Número de contacte",
+      accountFieldStaffNameRequired: "Si us plau, indica qui fa aquesta comanda.",
+      accountFieldPickupTimeRequired: "Si us plau, indica l'hora de recollida.",
+      accountFieldDropoffTimeRequired: "Si us plau, indica l'hora d'entrega.",
+      accountFieldAttNameRequired: "Si us plau, indica el nom del destinatari.",
+      accountFieldAttContactRequired: "Si us plau, indica el número de contacte del destinatari."
     },
     pt: {
       // --- Navegação ---
@@ -2225,7 +2270,22 @@
       apiStatusNoPlaces: "Sugestões de endereço indisponíveis — ative a Places API e os referents per a aquesta clau.",
       mapFailedLoad: "Não foi possível carregar o mapa. Verifique a chave e os referents permitidos."
       ,
-      mapAuthFailure: "Falha na autenticação do Maps — verifique a chave, as APIs habilitadas (Maps JavaScript, Places), a cobrança e os referents permitidos."
+      mapAuthFailure: "Falha na autenticação do Maps — verifique a chave, as APIs habilitadas (Maps JavaScript, Places), a cobrança e os referents permitidos.",
+      // --- Campos adicionais de conta ---
+      accountFieldsTitle: "Detalhes adicionais",
+      accountFieldStaffName: "Quem está fazendo este pedido?",
+      accountFieldStaffNamePlaceholder: "Nome do funcionário",
+      accountFieldPickupTime: "Hora de coleta",
+      accountFieldDropoffTime: "Hora de entrega",
+      accountFieldAttName: "Nome do destinatário",
+      accountFieldAttNamePlaceholder: "Para quem é?",
+      accountFieldAttContact: "Telefone do destinatário",
+      accountFieldAttContactPlaceholder: "Número de contato",
+      accountFieldStaffNameRequired: "Por favor, informe quem está fazendo este pedido.",
+      accountFieldPickupTimeRequired: "Por favor, informe a hora de coleta.",
+      accountFieldDropoffTimeRequired: "Por favor, informe a hora de entrega.",
+      accountFieldAttNameRequired: "Por favor, informe o nome do destinatário.",
+      accountFieldAttContactRequired: "Por favor, informe o número de contato do destinatário."
     }
   };
 

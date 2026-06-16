@@ -875,175 +875,6 @@ window.initZonesMap = function initZonesMap(){
   const qUpdates = document.getElementById('quoteUpdates');
   const qConsent = document.getElementById('quoteConsent');
   const qSubmit = document.getElementById('quoteSubmit');
-  const qAsapBtn = document.getElementById('quoteAsapBtn');
-  const qAsapBanner = document.getElementById('quoteAsapBanner');
-  const qDateTimeFields = document.getElementById('quoteDateTimeFields');
-  const qUrgentSubmit = document.getElementById('quoteUrgentSubmit');
-  let isAsapMode = false;
-
-  const ASAP_MULTIPLIER = 1.30;
-
-  function setAsapMode(active) {
-    isAsapMode = active;
-    if (qAsapBtn) {
-      qAsapBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
-      qAsapBtn.classList.toggle('btn--asap--active', active);
-      qAsapBtn.textContent = active ? '✕ Cancel urgent request' : '⚡ ASAP — I need this now';
-    }
-    if (qDateTimeFields) qDateTimeFields.classList.toggle('is-hidden', active);
-    if (qAsapBanner) qAsapBanner.classList.toggle('is-hidden', !active);
-
-    if (active) {
-      // Pre-fill date/time with today + now so datetime validation passes
-      var now = new Date();
-      var pad = function(n){ return String(n).padStart(2, '0'); };
-      if (qDate && !qDate.value) {
-        qDate.value = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
-        if (typeof syncDateDisplay === 'function') syncDateDisplay();
-      }
-      if (qTime && !qTime.value) {
-        qTime.value = pad(now.getHours()) + ':' + pad(now.getMinutes());
-      }
-      // Force cargo confirmed so its gate passes even without explicit chip click
-      if (qCargo && qCargo.value) cargoExplicitlyConfirmed = true;
-      guidedScrolledToCargo = true;
-      guidedScrolledToDateTime = true;
-      autoEstimateIfReady({ source: 'datetime', immediate: true });
-    } else {
-      // Clear the pre-filled values when cancelling ASAP
-      if (qDate) { qDate.value = ''; }
-      if (qTime) { qTime.value = ''; }
-      var qDateDisplayEl = document.getElementById('quoteDateDisplay');
-      if (qDateDisplayEl) qDateDisplayEl.value = '';
-      // Re-run estimate without ASAP so price recalculates clean
-      if (window._lastQuoteContext) {
-        autoEstimateIfReady({ source: 'datetime', immediate: true });
-      }
-    }
-    updateSubmitVisibility();
-  }
-
-  // refreshAsapPricing is a no-op — urgency is now computed inside runEstimate directly
-  function refreshAsapPricing() {}
-
-  if (qAsapBtn) {
-    qAsapBtn.addEventListener('click', function() {
-      setAsapMode(!isAsapMode);
-      if (isAsapMode && qBookingSection) {
-        setTimeout(function() {
-          qBookingSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 150);
-      }
-    });
-  }
-
-  function submitUrgentRequest() {
-    try {
-      const name = qName ? qName.value.trim() : '';
-      const phone = qPhone ? qPhone.value.trim() : '';
-      const email = qEmail ? qEmail.value.trim() : '';
-      if (!name || !phone) {
-        if (qBookingStatus) {
-          qBookingStatus.textContent = 'Please fill in your name and phone number so we can contact you.';
-          qBookingStatus.style.color = 'var(--color-error, #e53)';
-        }
-        return;
-      }
-      const pickup = qPickup ? qPickup.value.trim() : '';
-      const drop = qDrop ? qDrop.value.trim() : '';
-      const cargo = qCargo ? qCargo.value : 'regular';
-      // Build full quote breakdown for the message
-      const ctx = window._lastQuoteContext || {};
-      const cur = ctx.cur || '€';
-      const notes = qNotes ? qNotes.value.trim() : '';
-      const cargoLabels = { small: 'Shoebox (<10kg)', regular: 'Euronorm Box (<30kg)', large: 'Heavy/Big (<80kg)' };
-      const cargoLabel = cargoLabels[cargo] || cargo;
-
-      // Build breakdown lines
-      const breakdownLines = [];
-      if (ctx.pickupCharge) breakdownLines.push('  Pickup fee: ' + cur + ctx.pickupCharge.toFixed(2));
-      if (ctx.distanceTotal) breakdownLines.push('  Distance (' + (ctx.totalKm || 0).toFixed(2) + 'km): ' + cur + ctx.distanceTotal.toFixed(2));
-      if (ctx.addressFee) breakdownLines.push('  Delivery fee: ' + cur + ctx.addressFee.toFixed(2));
-      if (ctx.cargoAmount && ctx.cargoKey !== 'regular') breakdownLines.push('  Cargo adjustment: ' + cur + ctx.cargoAmount.toFixed(2));
-      if (ctx.surchargeAmount) breakdownLines.push('  Weekend/after-hours: ' + cur + ctx.surchargeAmount.toFixed(2));
-      if (ctx._urgencyAmount) breakdownLines.push('  Urgent delivery: ' + cur + ctx._urgencyAmount.toFixed(2));
-      if (ctx.discountAmount) breakdownLines.push('  Discount: -' + cur + ctx.discountAmount.toFixed(2));
-      breakdownLines.push('  Subtotal (ex. VAT): ' + cur + (ctx.preVatTotal || 0).toFixed(2));
-      breakdownLines.push('  VAT (21%): ' + cur + (ctx.vatAmount || 0).toFixed(2));
-      breakdownLines.push('  TOTAL: ' + cur + (ctx.total || 0).toFixed(2));
-
-      const msgParts = [
-        'CARGOWORKS — ENTREGA URGENTE',
-        '',
-        'Recogida: ' + pickup,
-        'Entrega: ' + drop,
-        'Bulto: ' + cargoLabel,
-        '',
-        'Precio:',
-        breakdownLines.join('\n'),
-        '',
-        'Cliente: ' + name,
-        'Tel: ' + phone,
-        email ? 'Email: ' + email : '',
-        notes ? '' : null,
-        notes ? 'Notas: ' + notes : null
-      ].filter(function(l){ return l !== null; });
-
-      const msg = encodeURIComponent(msgParts.join('\n'));
-      const waUrl = 'https://wa.me/34608081955?text=' + msg;
-
-      // POST to Apps Script
-      const payload = {
-        action: 'urgentRequest',
-        pickup: pickup,
-        drop: drop,
-        cargo: cargo,
-        cargoLabel: cargoLabel,
-        name: name,
-        phone: phone,
-        email: email,
-        notes: notes,
-        quoteContext: {
-          total: ctx.total || 0,
-          preVatTotal: ctx.preVatTotal || 0,
-          vatAmount: ctx.vatAmount || 0,
-          subtotal: ctx.subtotal || 0,
-          pickupCharge: ctx.pickupCharge || 0,
-          distanceTotal: ctx.distanceTotal || 0,
-          addressFee: ctx.addressFee || 0,
-          cargoAmount: ctx.cargoAmount || 0,
-          surchargeAmount: ctx.surchargeAmount || 0,
-          urgencyAmount: ctx._urgencyAmount || 0,
-          discountAmount: ctx.discountAmount || 0,
-          totalKm: ctx.totalKm || 0,
-          etaMins: ctx.etaMins || 0,
-          cur: cur
-        }
-      };
-      fetch(window.CW_API_URL || '', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).catch(function() {}).finally(function() {
-        // Show success regardless — WhatsApp link is the fallback
-        if (qBookingStatus) {
-          qBookingStatus.innerHTML =
-            '✓ Request received. We\'re on it.<br>' +
-            'You\'ll hear from us on <strong>WhatsApp or by phone within 5 minutes</strong> to confirm your ETA.<br>' +
-            'Need us faster? <a href="' + waUrl + '" target="_blank" rel="noopener">Message us directly</a> or call <a href="tel:+34608081955">+34 608 08 19 55</a>.';
-          qBookingStatus.style.color = '';
-        }
-        if (qUrgentSubmit) { qUrgentSubmit.disabled = false; qUrgentSubmit.textContent = '⚡ Request urgent delivery →'; qUrgentSubmit.classList.add('is-hidden'); }
-        if (qSummaryCard) qSummaryCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    } catch(err) {
-      console.error('[ASAP] submit error', err);
-    }
-  }
-
-  if (qUrgentSubmit) {
-    qUrgentSubmit.addEventListener('click', submitUrgentRequest);
-  }
   const qProceedBooking = document.getElementById('quoteProceedBooking');
   const qBookingSection = document.getElementById('quoteBookingSection');
   const qAddressesSection = document.querySelector('.config-section--addresses');
@@ -1664,9 +1495,25 @@ window.initZonesMap = function initZonesMap(){
     const wrap = document.getElementById('accountFieldsWrap');
     if (!wrap) return;
     wrap.classList.remove('is-hidden');
-    ['staffName','pickupTime','dropoffTime','attName','attContact'].forEach(function(key) {
-      const row = document.getElementById('accountField_' + key);
-      if (row) row.classList.toggle('is-hidden', !requires[key]);
+    const titleEl = document.getElementById('accountFieldsLabel');
+    if (titleEl) titleEl.textContent = i18n('accountFieldsTitle') || 'Additional details';
+    const fieldMeta = [
+      { key: 'staffName',   labelKey: 'accountFieldStaffName',   phKey: 'accountFieldStaffNamePlaceholder',   inputId: 'accountStaffName',   labelFor: 'accountStaffName' },
+      { key: 'pickupTime',  labelKey: 'accountFieldPickupTime',  phKey: null,                                  inputId: 'accountPickupTime',  labelFor: 'accountPickupTime' },
+      { key: 'dropoffTime', labelKey: 'accountFieldDropoffTime', phKey: null,                                  inputId: 'accountDropoffTime', labelFor: 'accountDropoffTime' },
+      { key: 'attName',     labelKey: 'accountFieldAttName',     phKey: 'accountFieldAttNamePlaceholder',     inputId: 'accountAttName',     labelFor: 'accountAttName' },
+      { key: 'attContact',  labelKey: 'accountFieldAttContact',  phKey: 'accountFieldAttContactPlaceholder',  inputId: 'accountAttContact',  labelFor: 'accountAttContact' }
+    ];
+    fieldMeta.forEach(function(f) {
+      const row = document.getElementById('accountField_' + f.key);
+      if (!row) return;
+      row.classList.toggle('is-hidden', !requires[f.key]);
+      const lbl = row.querySelector('.field-label');
+      if (lbl) lbl.textContent = i18n(f.labelKey) || lbl.textContent;
+      if (f.phKey) {
+        const inp = document.getElementById(f.inputId);
+        if (inp) inp.placeholder = i18n(f.phKey) || inp.placeholder;
+      }
     });
   }
   function hideAccountFields() {
@@ -1720,7 +1567,6 @@ window.initZonesMap = function initZonesMap(){
   if (qDiscount) {
     qDiscount.addEventListener('input', function(){
       const code = normalizeDiscountCode(qDiscount.value);
-      if (cwAccountToken && code !== cwAccountToken) clearAccountMode();
       if (!code || !activeDiscountCodes.includes(code)) setDiscountStatus('');
     });
   }
@@ -1758,18 +1604,18 @@ window.initZonesMap = function initZonesMap(){
     if (!dateVal || !timeVal) return { error: i18n('quoteDateTimeRequired') || 'Please choose a date and time.', section: 'datetime' };
     if (cwAccountToken) {
       var acctFields = [
-        { row: 'accountField_staffName',   el: 'accountStaffName',   msg: 'Please enter who is placing this order.' },
-        { row: 'accountField_pickupTime',  el: 'accountPickupTime',  msg: 'Please enter a pickup time.' },
-        { row: 'accountField_dropoffTime', el: 'accountDropoffTime', msg: 'Please enter a dropoff time.' },
-        { row: 'accountField_attName',     el: 'accountAttName',     msg: 'Please enter the recipient name.' },
-        { row: 'accountField_attContact',  el: 'accountAttContact',  msg: 'Please enter a recipient contact number.' }
+        { row: 'accountField_staffName',   el: 'accountStaffName',   msgKey: 'accountFieldStaffNameRequired' },
+        { row: 'accountField_pickupTime',  el: 'accountPickupTime',  msgKey: 'accountFieldPickupTimeRequired' },
+        { row: 'accountField_dropoffTime', el: 'accountDropoffTime', msgKey: 'accountFieldDropoffTimeRequired' },
+        { row: 'accountField_attName',     el: 'accountAttName',     msgKey: 'accountFieldAttNameRequired' },
+        { row: 'accountField_attContact',  el: 'accountAttContact',  msgKey: 'accountFieldAttContactRequired' }
       ];
       for (var _i = 0; _i < acctFields.length; _i++) {
         var _f = acctFields[_i];
         var _row = document.getElementById(_f.row);
         if (_row && !_row.classList.contains('is-hidden')) {
           var _el = document.getElementById(_f.el);
-          if (!_el || !String(_el.value || '').trim()) return { error: _f.msg, section: 'booking' };
+          if (!_el || !String(_el.value || '').trim()) return { error: i18n(_f.msgKey) || _f.msgKey, section: 'booking' };
         }
       }
     }
@@ -1819,14 +1665,11 @@ window.initZonesMap = function initZonesMap(){
     if (qProceedBooking) qProceedBooking.classList.toggle('is-hidden', !hasQuote);
     if (qBookingSection) qBookingSection.classList.toggle('is-hidden', !bookingDetailsRevealed);
 
-    const showPay = bookingDetailsRevealed && hasQuote && !isAsapMode;
+    const showPay = bookingDetailsRevealed && hasQuote;
     if (qPayNow) {
       qPayNow.classList.toggle('is-hidden', !showPay);
       if (showPay) updatePayButtonLabel();
       qPayNow.disabled = false;
-    }
-    if (qUrgentSubmit) {
-      qUrgentSubmit.classList.toggle('is-hidden', !(isAsapMode && bookingDetailsRevealed && hasQuote));
     }
     const bookingValidation = getBookingValidationState();
     if (!bookingValidation.error || bookingValidation.section !== 'booking') {
@@ -1902,7 +1745,7 @@ window.initZonesMap = function initZonesMap(){
       const summaryTop = getSectionTopInPanel(qSummaryCard);
 
       const addressError = getAddressValidationError();
-      const dateTimeError = isAsapMode ? '' : getDateTimeValidationError();
+      const dateTimeError = getDateTimeValidationError();
       const cargoError = getCargoValidationError();
 
       if (addressError && dateTimeTop != null && dateTimeTop <= threshold) {
@@ -2397,7 +2240,7 @@ window.initZonesMap = function initZonesMap(){
         pushSectionTitle(i18n('breakdownLineItemsLabel') || 'Line items');
         pushLine(i18n('breakdownBaseServiceLabel') || 'Pickup fee', formatMoneyLocalized(ctx.pickupCharge || 0, cur));
         pushLine(i18n('breakdownDistanceLabel') || 'Distance', formatMoneyLocalized(ctx.distanceTotal || 0, cur));
-        if (ctx.addressFeeCount) {
+        if (ctx.addressFeeCount >= 2) {
           pushSectionTitle(i18n('breakdownDeliveriesLabel') || 'Deliveries');
           const legKms = Array.isArray(ctx.legKms) ? ctx.legKms : [];
           const legPrices = Array.isArray(ctx.legPrices) ? ctx.legPrices : [];
@@ -2442,12 +2285,6 @@ window.initZonesMap = function initZonesMap(){
           adjustmentLines.push({
             label: i18n('breakdownSurchargeAfterLabel') || 'After-hours surcharge',
             value: formatMoneyLocalized(ctx.afterHoursSurchargeAmount || 0, cur)
-          });
-        }
-        if (ctx._isAsap && ctx._urgencyAmount) {
-          adjustmentLines.push({
-            label: 'Urgent delivery',
-            value: formatMoneyLocalized(ctx._urgencyAmount || 0, cur)
           });
         }
         if (adjustmentLines.length) {
@@ -3176,7 +3013,7 @@ window.initZonesMap = function initZonesMap(){
         }, 0);
       }
 
-      const dateTimeError = isAsapMode ? null : getDateTimeValidationError();
+      const dateTimeError = getDateTimeValidationError();
       if (dateTimeError) {
         if (highlightErrors && (source === 'datetime' || source === 'cargo')) {
           setSectionValidationState('datetime', dateTimeError);
@@ -3982,8 +3819,7 @@ window.initZonesMap = function initZonesMap(){
       const surchargeAmount = Math.round((subtotal * effectiveRate) * 100) / 100;
       const weekendSurchargeAmount = Math.round((subtotal * (surchargeInfo.isWeekendHoliday ? surchargeInfo.weekendRate : 0)) * 100) / 100;
       const afterHoursSurchargeAmount = Math.round((subtotal * effectiveAfterHoursRate) * 100) / 100;
-      const asapUrgencyAmount = isAsapMode ? Math.round((subtotal + surchargeAmount) * (ASAP_MULTIPLIER - 1) * 100) / 100 : 0;
-      const subtotalBeforeDiscount = Math.round((subtotal + surchargeAmount + asapUrgencyAmount) * 100) / 100;
+      const subtotalBeforeDiscount = Math.round((subtotal + surchargeAmount) * 100) / 100;
       const discountInfo = resolveDiscountsForEstimate(subtotalBeforeDiscount, surchargeInfo.dateKey, cur);
       const discountAmount = Math.round((discountInfo.totalDiscount || 0) * 100) / 100;
       const discountItems = Array.isArray(discountInfo.applied) ? discountInfo.applied : [];
@@ -4084,8 +3920,6 @@ window.initZonesMap = function initZonesMap(){
         discountTotal: discountAmount,
         vatRate: VAT_RATE,
         vatAmount,
-        _isAsap: isAsapMode,
-        _urgencyAmount: asapUrgencyAmount
       });
       const now = new Date();
       const hh = String(now.getHours()).padStart(2, '0');
@@ -4103,8 +3937,6 @@ window.initZonesMap = function initZonesMap(){
         cur: cur,
         currency: cur,
         total: total,
-        _isAsap: isAsapMode,
-        _urgencyAmount: asapUrgencyAmount,
         subtotal: subtotalBeforeDiscount,
         preVatTotal: preVatTotal,
         vatRate: VAT_RATE,
@@ -4159,7 +3991,6 @@ window.initZonesMap = function initZonesMap(){
         }
       };
       updateDeliverySummary();
-      refreshAsapPricing();
       updateSubmitVisibility();
       if (!quoteSummaryAutoScrolled) {
         quoteSummaryAutoScrolled = true;
