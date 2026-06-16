@@ -1551,17 +1551,16 @@ window.initZonesMap = function initZonesMap(){
   if (qDiscountApply) {
     qDiscountApply.addEventListener('click', function(){
       const code = normalizeDiscountCode(qDiscount && qDiscount.value);
-      if (!code) { clearActiveDiscount(); clearAccountMode(); return; }
+      if (!code) { clearActiveDiscount(); return; }
       setDiscountStatus(i18n('discountChecking') || 'Checking code...');
       if (!BOOKING_API_BASE) { applyPromoCode(code); return; }
       fetch(BOOKING_API_BASE + '?action=validateAccountToken&token=' + encodeURIComponent(code))
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (data && data.valid) { setAccountMode(code, data.accountName, data.requires || {}); return; }
-          clearAccountMode();
           applyPromoCode(code);
         })
-        .catch(function() { clearAccountMode(); applyPromoCode(code); });
+        .catch(function() { applyPromoCode(code); });
     });
   }
   if (qDiscount) {
@@ -2262,6 +2261,8 @@ window.initZonesMap = function initZonesMap(){
           }
         }
 
+        const discountItems = Array.isArray(ctx.discountItems) ? ctx.discountItems : [];
+
         const adjustmentLines = [];
         if (ctx.cargoKey === 'large' && ctx.cargoAmount) {
           adjustmentLines.push({
@@ -2294,9 +2295,18 @@ window.initZonesMap = function initZonesMap(){
           });
         }
 
-        const discountItems = Array.isArray(ctx.discountItems) ? ctx.discountItems : [];
+        // Subtotal (after adjustments, before discounts) — only shown when there's something to clarify
+        if (adjustmentLines.length || discountItems.length) {
+          pushLine(
+            i18n('breakdownSubtotalLabel') || 'Subtotal',
+            formatMoneyLocalized(ctx.subtotal || 0, cur),
+            'subtotal'
+          );
+        }
+
         let discountAggregateAmount = 0;
         if (discountItems.length) {
+          pushSectionTitle(i18n('breakdownDiscountsLabel') || 'Discounts');
           discountItems.forEach(function(item){
             const promoLabel = i18n('breakdownPromoLabel', { code: item.code }) || ('Promo ' + item.code);
             const amount = Math.abs(Number(item.amount || 0));
@@ -2308,21 +2318,15 @@ window.initZonesMap = function initZonesMap(){
           }
         }
 
-        pushLine(
-          i18n('breakdownSubtotalLabel') || 'Subtotal',
-          formatMoneyLocalized(ctx.subtotal || 0, cur),
-          'subtotal'
-        );
-
         const vatRatePct = Math.round((Number(ctx.vatRate || 0.21) || 0.21) * 100);
-        const vatLabel = i18n('breakdownVatLabel', { rate: vatRatePct }) || ('VAT (' + vatRatePct + '%)');
-        pushLine(vatLabel, formatMoneyLocalized(ctx.vatAmount || 0, cur));
-
+        const preVatTotal = ctx.preVatTotal != null ? ctx.preVatTotal : Math.max(0, (ctx.subtotal || 0) - (ctx.discountTotal || 0));
         pushLine(
           i18n('breakdownTotalLabel') || 'Total',
-          formatMoneyLocalized(ctx.total || 0, cur),
+          formatMoneyLocalized(preVatTotal, cur),
           'total'
         );
+        const totalWithVatLabel = i18n('breakdownTotalWithVatLabel', { rate: vatRatePct }) || ('Total + IVA (' + vatRatePct + '%)');
+        pushLine(totalWithVatLabel, formatMoneyLocalized(ctx.total || 0, cur), 'total');
         breakdownEl.innerHTML = html.join('');
       }
       if (blockEl) blockEl.classList.remove('is-hidden');
@@ -3918,6 +3922,7 @@ window.initZonesMap = function initZonesMap(){
         discountAmount,
         discountItems,
         discountTotal: discountAmount,
+        preVatTotal,
         vatRate: VAT_RATE,
         vatAmount,
       });

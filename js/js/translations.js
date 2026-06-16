@@ -378,6 +378,8 @@
       breakdownAdjustmentsLabel: "Discounts and surcharges",
       breakdownNoAdjustmentsLabel: "No discounts or surcharges",
       breakdownTotalLabel: "Total",
+      breakdownTotalWithVatLabel: "Total + IVA ({rate}%)",
+      breakdownDiscountsLabel: "Discounts",
       breakdownZoneLabel: "Zone {n}",
       pricingUiSummary: "<strong>Total</strong><br>€16.12<br><br><strong>Route</strong><br>2.7 km <strong>·</strong> 21 min <strong>·</strong> 1 drop<br><br><strong>Service</strong><br>Weekend service · Large cargo<br><br><strong>Discount</strong><br>Discount applied",
       pricingUiBreakdown: "<strong><u>Line items</u></strong><br>- <strong>Pickup fee:</strong> €9.00<br>- <strong>Distance:</strong> €7.02<br>- <strong>Large cargo:</strong> €2.40<br>- <strong>Weekend surcharge:</strong> €4.61<br>- Promo <strong>F&F30</strong>: −€6.91<br><br><strong><u>Total</u></strong><br>€16.12"
@@ -956,6 +958,8 @@
       breakdownAdjustmentsLabel: "Descuentos y suplementos",
       breakdownNoAdjustmentsLabel: "Sin descuentos ni suplementos",
       breakdownTotalLabel: "Total",
+      breakdownTotalWithVatLabel: "Total + IVA ({rate}%)",
+      breakdownDiscountsLabel: "Descuentos",
       breakdownZoneLabel: "Zona {n}",
       pricingUiSummary: "<strong>Total</strong><br>€16,12<br><br><strong>Ruta</strong><br>2,7 km · 21 min · 1 entrega<br><br><strong>Servicio</strong><br>Servicio de fin de semana · Carga grande<br><br><strong>Descuento</strong><br>Descuento aplicado",
       pricingUiBreakdown: "<strong><u>Conceptos</u></strong><br>- <strong>Tarifa de recogida:</strong> €9,00<br>- <strong>Distancia:</strong> €7,02<br>- <strong>Carga grande:</strong> €2,40<br>- <strong>Suplemento fin de semana:</strong> €4,61<br>- <strong>Promoción F&F30:</strong> −€6,91<br><br><strong><u>Total</u></strong><br>€16,12"
@@ -1521,6 +1525,8 @@
       breakdownAdjustmentsLabel: "Descomptes i suplements",
       breakdownNoAdjustmentsLabel: "Sense descomptes ni suplements",
       breakdownTotalLabel: "Total",
+      breakdownTotalWithVatLabel: "Total + IVA ({rate}%)",
+      breakdownDiscountsLabel: "Descomptes",
       breakdownZoneLabel: "Zona {n}",
       pricingUiSummary: "<strong>Total</strong><br>€16,12<br><br><strong>Ruta</strong><br>2,7 km · 21 min · 1 lliurament<br><br><strong>Servei</strong><br>Servei de cap de setmana · Càrrega gran<br><br><strong>Descompte</strong><br>Descompte aplicat",
       pricingUiBreakdown: "<strong><u>Conceptes</u></strong><br>- <strong>Tarifa de recollida:</strong> €9,00<br>- <strong>Distància:</strong> €7,02<br>- <strong>Càrrega gran:</strong> €2,40<br>- <strong>Suplement cap de setmana:</strong> €4,61<br>- <strong>Promoció F&F30:</strong> −€6,91<br><br><strong><u>Total</u></strong><br>€16,12"
@@ -2076,6 +2082,8 @@
       breakdownAdjustmentsLabel: "Descontos e taxas",
       breakdownNoAdjustmentsLabel: "Sem descontos ou taxas",
       breakdownTotalLabel: "Total",
+      breakdownTotalWithVatLabel: "Total + IVA ({rate}%)",
+      breakdownDiscountsLabel: "Descontos",
       breakdownZoneLabel: "Zona {n}",
       pricingUiSummary: "<strong>Total</strong><br>€16,12<br><br><strong>Rota</strong><br>2,7 km · 21 min · 1 entrega<br><br><strong>Serviço</strong><br>Serviço de fim de semana · Carga grande<br><br><strong>Desconto</strong><br>Desconto aplicado",
       pricingUiBreakdown: "<strong><u>Itens</u></strong><br>- <strong>Taxa de coleta:</strong> €9,00<br>- <strong>Distância:</strong> €7,02<br>- <strong>Carga grande:</strong> €2,40<br>- <strong>Taxa de fim de semana:</strong> €4,61<br>- <strong>Promoção F&F30:</strong> −€6,91<br><br><strong><u>Total</u></strong><br>€16,12"

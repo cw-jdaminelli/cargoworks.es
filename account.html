@@ -48,6 +48,10 @@
     .acct-empty { text-align: center; color: var(--acct-muted); padding: 2rem 0; }
     .acct-footer { margin-top: 1.5rem; font-size: 0.84rem; color: var(--acct-muted); text-align: center; }
     .acct-footer a { color: var(--acct-accent); }
+    .acct-totals { margin-top: 1rem; border-top: 2px solid var(--acct-border); padding-top: 0.75rem; display: flex; flex-direction: column; align-items: flex-end; gap: 0.3rem; }
+    .acct-totals__row { display: flex; gap: 2rem; justify-content: flex-end; font-size: 0.9rem; color: var(--acct-muted); }
+    .acct-totals__row--iva { font-size: 1rem; font-weight: 700; color: var(--acct-ink); }
+    .acct-totals__value { min-width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
     @media (max-width: 640px) {
       table.acct-table thead { display: none; }
       table.acct-table tr { display: block; border-bottom: 1px solid var(--acct-border); padding: 0.6rem 0; }
@@ -99,6 +103,17 @@
         <p id="acctEmpty" class="acct-empty" style="display:none">No orders found.</p>
       </div>
 
+      <div id="acctTotals" class="acct-totals" style="display:none">
+        <div class="acct-totals__row">
+          <span class="acct-totals__label">Total (<span id="acctOrderCount">0</span> orders)</span>
+          <span class="acct-totals__value" id="acctTotalNet"></span>
+        </div>
+        <div class="acct-totals__row acct-totals__row--iva">
+          <span class="acct-totals__label">Total + IVA (21%)</span>
+          <span class="acct-totals__value" id="acctTotalIva"></span>
+        </div>
+      </div>
+
       <p class="acct-footer">For billing questions contact us at <a href="mailto:info@cargoworks.es">info@cargoworks.es</a></p>
     </div>
   </main>
@@ -135,15 +150,33 @@
       return 'acct-badge--default';
     }
 
+    var elTotals     = document.getElementById('acctTotals');
+    var elTotalNet   = document.getElementById('acctTotalNet');
+    var elTotalIva   = document.getElementById('acctTotalIva');
+    var elOrderCount = document.getElementById('acctOrderCount');
+
     function renderRows(orders) {
       elBody.innerHTML = '';
       if (!orders || !orders.length) {
         elTable.style.display = 'none';
         elEmpty.style.display = '';
+        if (elTotals) elTotals.style.display = 'none';
         return;
       }
       elEmpty.style.display = 'none';
       elTable.style.display = '';
+
+      var netSum = 0;
+      orders.forEach(function(o) { netSum += Number(o.total) || 0; });
+      var ivaSum = Math.round(netSum * 1.21 * 100) / 100;
+      netSum = Math.round(netSum * 100) / 100;
+      if (elTotals) {
+        elTotals.style.display = '';
+        if (elOrderCount) elOrderCount.textContent = orders.length;
+        if (elTotalNet)  elTotalNet.textContent  = 'EUR ' + netSum.toFixed(2);
+        if (elTotalIva)  elTotalIva.textContent  = 'EUR ' + ivaSum.toFixed(2);
+      }
+
       orders.forEach(function(o) {
         var tr = document.createElement('tr');
         var refLabel = String(o.reference || '—');
