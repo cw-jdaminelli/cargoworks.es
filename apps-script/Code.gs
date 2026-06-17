@@ -1278,7 +1278,7 @@ function handleVisionExtract(payload) {
     var mimeType = String(payload.mimeType || 'image/jpeg').trim();
     if (!imageBase64) return jsonResponse({ error: 'Missing image' }, 400);
 
-    var apiKey = String(PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY') || '').trim();
+    var apiKey = String(PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY') || '').trim();
     if (!apiKey) return jsonResponse({ error: 'Anthropic API key not configured' }, 500);
 
     var prompt = [
