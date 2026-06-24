@@ -5,6 +5,7 @@ if ('scrollRestoration' in history) {
 window.scrollTo(0, 0);
 
 // ===== LANGUAGE DROPDOWN =====
+let _captionReady = false; // true after load-time sizing pass; gates fit/match in applyLanguage
 const langSelect = document.getElementById("langSelect");
 if (langSelect) {
   const translations = window.CARGOWORKS_TRANSLATIONS || {};
@@ -297,8 +298,10 @@ if (langSelect) {
     document.documentElement.lang = lang;
     try { localStorage.setItem('lang', lang); } catch (err) { /* storage optional */ }
 
-    fitHeroCaption();
-    matchCaptionToTitle();
+    if (_captionReady) {
+      fitHeroCaption();
+      matchCaptionToTitle();
+    }
 
     // Generic pass: apply any additional keys present in the dictionary to matching elements
     // This lets new pages (e.g., About) use translations without modifying this file again.
@@ -370,8 +373,7 @@ function fitHeroCaption() {
   }
 }
 
-// Run on load and resize
-window.addEventListener('load', () => setTimeout(fitHeroCaption, 60));
+// Run on resize only (load is handled by the matchCaptionToTitle load handler below)
 window.addEventListener('resize', () => {
   // debounce resize handlers to avoid repeated layout thrash
   if (window._heroResizeTimer) clearTimeout(window._heroResizeTimer);
@@ -401,8 +403,13 @@ function matchCaptionToTitle() {
   fitHeroCaption();
 }
 
-// ensure caption width matching runs after load and on resize (debounced)
-window.addEventListener('load', () => setTimeout(matchCaptionToTitle, 120));
+// Single load-time sizing pass: runs once after fonts are ready, then reveals caption
+window.addEventListener('load', () => setTimeout(() => {
+  matchCaptionToTitle(); // calls fitHeroCaption internally
+  _captionReady = true;
+  const caption = document.getElementById('heroCaption');
+  if (caption) caption.style.opacity = '1';
+}, 120));
 window.addEventListener('resize', () => {
   if (window._heroResizeTimer) clearTimeout(window._heroResizeTimer);
   window._heroResizeTimer = setTimeout(() => {
