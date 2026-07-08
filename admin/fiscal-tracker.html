@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cargoworks — Fiscal Progress Tracker</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --border: #e0dcd3;
+    --purple: #6b46c1;
+    --coral: #ff6b5b;
+    --green: #4caf50;
+    --amber: #f59e0b;
+    --red: #dc2626;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+    padding: 24px 16px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-family: 'Oswald', sans-serif;
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    letter-spacing: -0.02em;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 14px;
+    margin-bottom: 24px;
+  }
+  .summary {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 24px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+  }
+  .summary-item {
+    text-align: center;
+  }
+  .summary-value {
+    font-family: 'Oswald', sans-serif;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--purple);
+  }
+  .summary-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .phase {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .phase-header {
+    padding: 16px;
+    background: linear-gradient(to right, rgba(107, 70, 193, 0.06), transparent);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+  .phase-title {
+    font-family: 'Oswald', sans-serif;
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  .phase-title small {
+    font-family: 'Inter', sans-serif;
+    font-weight: 400;
+    color: var(--muted);
+    font-size: 13px;
+    margin-left: 8px;
+  }
+  .phase-progress {
+    font-size: 13px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .phase-progress.complete {
+    color: var(--green);
+    font-weight: 600;
+  }
+  .phase-body {
+    padding: 8px 16px 16px;
+  }
+  .phase-body.collapsed {
+    display: none;
+  }
+  .task {
+    padding: 12px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .task:last-child { border-bottom: none; }
+  .task-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .task-checkbox {
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    flex-shrink: 0;
+    accent-color: var(--purple);
+  }
+  .task-content {
+    flex: 1;
+  }
+  .task-title {
+    font-weight: 500;
+    font-size: 15px;
+    line-height: 1.4;
+  }
+  .task-title.done {
+    text-decoration: line-through;
+    color: var(--muted);
+  }
+  .task-detail {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+  .task-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+  .badge-urgent { background: #fee2e2; color: var(--red); }
+  .badge-time { background: #fef3c7; color: #92400e; }
+  .badge-info { background: #dbeafe; color: #1e40af; }
+  .badge-deferred { background: #f3f4f6; color: var(--muted); }
+  .notes-toggle {
+    background: none;
+    border: none;
+    color: var(--purple);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 0 0;
+    text-decoration: underline;
+  }
+  .notes-area {
+    margin-top: 8px;
+    display: none;
+  }
+  .notes-area.open { display: block; }
+  .notes-area textarea {
+    width: 100%;
+    min-height: 60px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+    background: #fafaf7;
+  }
+  .actions {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg);
+    padding: 16px 0;
+    margin-top: 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  button.action {
+    background: var(--purple);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button.action.secondary {
+    background: white;
+    color: var(--purple);
+    border: 1px solid var(--purple);
+  }
+  button.action.danger {
+    background: white;
+    color: var(--red);
+    border: 1px solid var(--red);
+  }
+  .deadline-list {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+  .deadline-list h2 {
+    font-family: 'Oswald', sans-serif;
+    font-size: 16px;
+    margin-bottom: 12px;
+    letter-spacing: 0.01em;
+  }
+  .deadline-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 13px;
+    border-bottom: 1px dashed var(--border);
+  }
+  .deadline-row:last-child { border-bottom: none; }
+  .deadline-row .date {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  .deadline-row.overdue .date { color: var(--red); font-weight: 600; }
+  .deadline-row.imminent .date { color: var(--amber); font-weight: 600; }
+  @media (max-width: 600px) {
+    body { padding: 16px 12px; }
+    h1 { font-size: 24px; }
+    .summary-value { font-size: 22px; }
+    .phase-title { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Cargoworks — Fiscal Progress</h1>
+<p class="subtitle" id="lastUpdated">Live checklist. State saves automatically.</p>
+
+<div class="summary">
+  <div class="summary-item">
+    <div class="summary-value" id="totalDone">0</div>
+    <div class="summary-label">Tasks done</div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-value" id="totalPending">0</div>
+    <div class="summary-label">Pending</div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-value" id="percentDone">0%</div>
+    <div class="summary-label">Complete</div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-value" id="urgentCount">0</div>
+    <div class="summary-label">Urgent</div>
+  </div>
+</div>
+
+<div class="deadline-list">
+  <h2>Upcoming AEAT deadlines</h2>
+  <div class="deadline-row overdue">
+    <span>Modelo 100 (2025)</span>
+    <span class="date">30 Jun 2026 — 8 days late</span>
+  </div>
+  <div class="deadline-row overdue">
+    <span>Q1 2026 (130 / 303 / 349)</span>
+    <span class="date">20 Apr 2026 — ~11 weeks late</span>
+  </div>
+  <div class="deadline-row imminent">
+    <span>Q2 2026 (130 / 303 / 349)</span>
+    <span class="date">20 Jul 2026 — 12 days</span>
+  </div>
+  <div class="deadline-row">
+    <span>Q3 2026 (130 / 303 / 349)</span>
+    <span class="date">20 Oct 2026</span>
+  </div>
+  <div class="deadline-row">
+    <span>Q4 2026 + Modelo 390 (annual VAT)</span>
+    <span class="date">30 Jan 2027</span>
+  </div>
+</div>
+
+<div id="phases"></div>
+
+<div class="actions">
+  <button class="action" onclick="exportState()">Export progress (for Julian)</button>
+  <button class="action secondary" onclick="copyStateToClipboard()">Copy state to clipboard</button>
+  <button class="action danger" onclick="resetState()">Reset all</button>
+</div>
+
+<script>
+const phases = [
+  {
+    id: 'aplazamiento',
+    title: 'Phase 1 — Aplazamiento modifications',
+    subtitle: 'Stops the breach clock on the two overdue installments',
+    tasks: [
+      { id: 'ap1', title: 'Log into sede.agenciatributaria.gob.es', urgency: 'urgent', time: '5 min' },
+      { id: 'ap2', title: 'Navigate to Recaudación → Aplazamientos y fraccionamientos → Consulta', time: '2 min' },
+      { id: 'ap3', title: 'Confirm both existing aplazamientos are listed with their references', time: '5 min' },
+      { id: 'ap4', title: 'Submit modificación on aplazamiento 1', detail: 'Use LGT 65.4 justification text: dificultad transitoria de tesorería, request 24 months, reduce cuotas', time: '10 min' },
+      { id: 'ap5', title: 'Submit modificación on aplazamiento 2', detail: 'Same justification, request synchronized calendar', time: '10 min' },
+      { id: 'ap6', title: 'Download both justificantes to /filed-justificantes/ folder', time: '5 min' }
+    ]
+  },
+  {
+    id: 'q1-prep',
+    title: 'Phase 2A — Q1 2026 tracker completion & Declarando entry',
+    subtitle: 'Q1 filing, ~11 weeks late, recargo ~3%',
+    tasks: [
+      { id: 'q1-1', title: 'Log into importass.seg-social.gob.es', time: '2 min' },
+      { id: 'q1-2', title: 'Screenshot Jan 2026 cuota — save data (date, amount, referencia)', time: '3 min' },
+      { id: 'q1-3', title: 'Screenshot Feb 2026 cuota', time: '3 min' },
+      { id: 'q1-4', title: 'Screenshot Mar 2026 cuota', time: '3 min' },
+      { id: 'q1-5', title: 'Add 3 cuota rows to tracker (Jan/Feb/Mar 2026)', detail: 'Vendor: TGSS. NIF: S2800098I. Type: cuota-ss. Filing: irpf-only.', time: '10 min' },
+      { id: 'q1-6', title: 'Open Declarando', time: '2 min' },
+      { id: 'q1-7', title: 'Enter Q1 2026 income total (all invoices Jan-Mar)', urgency: 'urgent', time: '5 min' },
+      { id: 'q1-8', title: 'Enter 13 Q1 2026 expense rows from tracker', detail: 'Skip the earbuds unclear row. Include: Naturals ceras, Bike24, ART Suministros, Impextrom F1207/F1131/rectificativa, GitHub Jan/Feb/Mar, OpenAI Jan/Feb, Anthropic Mar, Forico Grup', time: '30 min' },
+      { id: 'q1-9', title: 'Enter 3 cuotas in Declarando cuotas-autónomo section', time: '5 min' },
+      { id: 'q1-10', title: 'Verify Declarando applies reverse charge correctly on EU/US entries', detail: 'Base + self-accounted IVA should show on both output and input sides of the 303', time: '10 min' }
+    ]
+  },
+  {
+    id: 'q1-submit',
+    title: 'Phase 2B — Q1 2026 generate & submit forms',
+    subtitle: 'Three forms: 130, 303, 349',
+    tasks: [
+      { id: 'q1s-1', title: 'Generate Modelo 130 Q1 2026 in Declarando', time: '5 min' },
+      { id: 'q1s-2', title: 'Generate Modelo 303 Q1 2026 in Declarando', time: '5 min' },
+      { id: 'q1s-3', title: 'Generate Modelo 349 Q1 2026 in Declarando', detail: 'Bike24 DE299379692 €53.03 clave A; OpenAI IE4143435AH €19.01 clave I (x2)', time: '5 min' },
+      { id: 'q1s-4', title: 'Submit 303 at sede AEAT', detail: 'Payment step: "Reconocer deuda con solicitud de aplazamiento" → 24 months', time: '15 min' },
+      { id: 'q1s-5', title: 'Submit 130 at sede AEAT', detail: 'Same aplazamiento request if payment due', time: '10 min' },
+      { id: 'q1s-6', title: 'Submit 349 at sede AEAT', detail: 'No payment, just informational', time: '10 min' },
+      { id: 'q1s-7', title: 'Download 3 justificantes to /filed-justificantes/', time: '3 min' },
+      { id: 'q1s-8', title: 'Update tracker: 13 expense rows + 3 cuotas → filed-correctly', time: '10 min' },
+      { id: 'q1s-9', title: 'Add justificante references in Notes column', time: '5 min' }
+    ]
+  },
+  {
+    id: 'catchup-349',
+    title: 'Phase 3 — Missing 349s (Q3 & Q4 2025)',
+    subtitle: 'Historical 349 filings for reverse-charge purchases not previously reported',
+    tasks: [
+      { id: 'c349-1', title: 'Verify if Declarando generates historical 349s or need to file manually', time: '5 min' },
+      { id: 'c349-2', title: 'File 349 Q3 2025 at sede AEAT', detail: 'OpenAI IE4143435AH €19.01 (29/09/2025) clave I. Single operation.', time: '15 min' },
+      { id: 'c349-3', title: 'File 349 Q4 2025 at sede AEAT', detail: 'BikeDiscount DE204042912 €262.82 (3 invoices) clave A. OpenAI IE4143435AH €57.03 (3 invoices) clave I.', time: '20 min' },
+      { id: 'c349-4', title: 'Download both justificantes', time: '3 min' },
+      { id: 'c349-5', title: 'Update tracker Notes on affected 2025 rows', time: '10 min' }
+    ]
+  },
+  {
+    id: 'modelo-100-prep',
+    title: 'Phase 4A — Modelo 100 tracker completion',
+    subtitle: 'Fill the gaps before generating the annual return',
+    tasks: [
+      { id: 'm100-1', title: 'Add 9 cuota rows for 2025 (Apr-Dec)', detail: 'From importass. €87.61 × 9 = ~€788. Same structure as Q1 2026 cuotas.', urgency: 'urgent', time: '30 min' },
+      { id: 'm100-2', title: 'Add RC profesional annual 2025 row', detail: '€175, dated April 2025, type=insurance, filing=irpf-only', time: '5 min' },
+      { id: 'm100-3', title: 'Add health insurance rows 2025', detail: 'Monthly rows or one aggregated. Cap total at €500 per Ley 35/2006 art. 30.', time: '15 min' },
+      { id: 'm100-4', title: 'Recreate 18 Sheet3 entries', detail: 'Open Declarando → 2025 expenses → transcribe each into tracker with filing-status=filed-correctly', urgency: 'urgent', time: '60 min' },
+      { id: 'm100-5', title: 'Verify OMNIUM ApS row is present with note about amortization question', detail: '€1,642.83 filed as full deduction. Ask Declarando: keep or amortize over 8 years?', time: '10 min' }
+    ]
+  },
+  {
+    id: 'modelo-100-submit',
+    title: 'Phase 4B — Modelo 100 generate & submit',
+    subtitle: 'Currently 8 days late, recargo ~1-1.5%',
+    tasks: [
+      { id: 'm100s-1', title: 'Enter 2025 income total in Declarando', urgency: 'urgent', time: '10 min' },
+      { id: 'm100s-2', title: 'Verify 5% gastos difícil justificación is applied', time: '5 min' },
+      { id: 'm100s-3', title: 'Verify health insurance cap €500', time: '3 min' },
+      { id: 'm100s-4', title: 'Ask Declarando human about OMNIUM treatment', time: '15 min' },
+      { id: 'm100s-5', title: 'Generate Modelo 100 in Declarando', time: '10 min' },
+      { id: 'm100s-6', title: 'Submit Modelo 100 at sede AEAT with aplazamiento if payment due', urgency: 'urgent', time: '15 min' },
+      { id: 'm100s-7', title: 'Download justificante', time: '2 min' },
+      { id: 'm100s-8', title: 'Update tracker: 2025 rows → filed-correctly', time: '15 min' }
+    ]
+  },
+  {
+    id: 'q2-2026',
+    title: 'Phase 5 — Q2 2026 (deadline July 20)',
+    subtitle: '12 days away. On-time filing = zero recargo.',
+    tasks: [
+      { id: 'q2-1', title: 'Add 3 cuota rows for Q2 2026 (Apr/May/Jun)', time: '10 min' },
+      { id: 'q2-2', title: 'Enter Q2 2026 income in Declarando', time: '10 min' },
+      { id: 'q2-3', title: 'Enter Q2 2026 expenses (rows 24-34 from tracker)', time: '30 min' },
+      { id: 'q2-4', title: 'Enter catch-up 2025-Q3 and Q4 reverse charges on Q2 303', detail: '4-year rule. Include OpenAI Sept-Dec 2025, BikeDiscount Oct-Dec 2025, GitHub Oct-Nov 2025.', time: '20 min' },
+      { id: 'q2-5', title: 'Generate 130, 303, 349 for Q2 2026', time: '10 min' },
+      { id: 'q2-6', title: 'Submit all three at sede AEAT with aplazamiento requests', urgency: 'urgent', time: '30 min' },
+      { id: 'q2-7', title: 'Download justificantes', time: '3 min' },
+      { id: 'q2-8', title: 'Update tracker: all filed rows → filed-correctly', time: '15 min' }
+    ]
+  }
+];
+
+const state = JSON.parse(localStorage.getItem('cwFiscalState') || '{}');
+
+function saveState() {
+  state.lastUpdated = new Date().toISOString();
+  localStorage.setItem('cwFiscalState', JSON.stringify(state));
+  updateSummary();
+  updateLastUpdated();
+}
+
+function updateLastUpdated() {
+  const el = document.getElementById('lastUpdated');
+  if (state.lastUpdated) {
+    const d = new Date(state.lastUpdated);
+    el.textContent = 'Live checklist. Last updated ' + d.toLocaleString();
+  }
+}
+
+function updateSummary() {
+  let done = 0, total = 0, urgent = 0;
+  phases.forEach(p => {
+    p.tasks.forEach(t => {
+      total++;
+      if (state[t.id]?.done) done++;
+      else if (t.urgency === 'urgent') urgent++;
+    });
+  });
+  document.getElementById('totalDone').textContent = done;
+  document.getElementById('totalPending').textContent = total - done;
+  document.getElementById('percentDone').textContent = Math.round(done/total*100) + '%';
+  document.getElementById('urgentCount').textContent = urgent;
+  // Update phase progress
+  phases.forEach(p => {
+    const el = document.querySelector(`[data-phase-progress="${p.id}"]`);
+    if (!el) return;
+    const d = p.tasks.filter(t => state[t.id]?.done).length;
+    const total = p.tasks.length;
+    el.textContent = `${d}/${total}`;
+    el.classList.toggle('complete', d === total);
+  });
+}
+
+function render() {
+  const container = document.getElementById('phases');
+  container.innerHTML = phases.map(phase => `
+    <div class="phase">
+      <div class="phase-header" onclick="togglePhase('${phase.id}')">
+        <div class="phase-title">${phase.title}<small>${phase.subtitle || ''}</small></div>
+        <div class="phase-progress" data-phase-progress="${phase.id}">0/${phase.tasks.length}</div>
+      </div>
+      <div class="phase-body" id="body-${phase.id}">
+        ${phase.tasks.map(t => `
+          <div class="task">
+            <div class="task-main">
+              <input type="checkbox" class="task-checkbox" id="cb-${t.id}"
+                ${state[t.id]?.done ? 'checked' : ''}
+                onchange="toggleTask('${t.id}')">
+              <div class="task-content">
+                <div class="task-title ${state[t.id]?.done ? 'done' : ''}" id="title-${t.id}">${t.title}</div>
+                ${t.detail ? `<div class="task-detail">${t.detail}</div>` : ''}
+                <div class="task-meta">
+                  ${t.urgency === 'urgent' ? '<span class="badge badge-urgent">Urgent</span>' : ''}
+                  ${t.time ? `<span class="badge badge-time">${t.time}</span>` : ''}
+                </div>
+                <button class="notes-toggle" onclick="toggleNotes('${t.id}')">
+                  ${state[t.id]?.notes ? '📝 Notes (saved)' : '+ Add note'}
+                </button>
+                <div class="notes-area ${state[t.id]?.notesOpen ? 'open' : ''}" id="notes-${t.id}">
+                  <textarea placeholder="Notes, blockers, questions for Julian..."
+                    oninput="updateNotes('${t.id}', this.value)">${state[t.id]?.notes || ''}</textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+  updateSummary();
+  updateLastUpdated();
+}
+
+function toggleTask(id) {
+  if (!state[id]) state[id] = {};
+  state[id].done = !state[id].done;
+  document.getElementById(`title-${id}`).classList.toggle('done', state[id].done);
+  saveState();
+}
+
+function toggleNotes(id) {
+  if (!state[id]) state[id] = {};
+  state[id].notesOpen = !state[id].notesOpen;
+  document.getElementById(`notes-${id}`).classList.toggle('open', state[id].notesOpen);
+}
+
+function updateNotes(id, value) {
+  if (!state[id]) state[id] = {};
+  state[id].notes = value;
+  saveState();
+}
+
+function togglePhase(id) {
+  const body = document.getElementById(`body-${id}`);
+  body.classList.toggle('collapsed');
+}
+
+function exportState() {
+  let out = '# Cargoworks Fiscal Progress\n\n';
+  out += `Exported: ${new Date().toLocaleString()}\n\n`;
+  phases.forEach(phase => {
+    const done = phase.tasks.filter(t => state[t.id]?.done).length;
+    out += `## ${phase.title} (${done}/${phase.tasks.length})\n\n`;
+    phase.tasks.forEach(t => {
+      const s = state[t.id];
+      out += `- [${s?.done ? 'x' : ' '}] ${t.title}`;
+      if (s?.notes) out += `\n  Notes: ${s.notes}`;
+      out += '\n';
+    });
+    out += '\n';
+  });
+  // Download as .md
+  const blob = new Blob([out], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `fiscal-progress-${new Date().toISOString().split('T')[0]}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function copyStateToClipboard() {
+  let out = 'Cargoworks Fiscal Progress\n\n';
+  phases.forEach(phase => {
+    const done = phase.tasks.filter(t => state[t.id]?.done).length;
+    if (done === 0 && !phase.tasks.some(t => state[t.id]?.notes)) return;
+    out += `## ${phase.title} (${done}/${phase.tasks.length})\n`;
+    phase.tasks.forEach(t => {
+      const s = state[t.id];
+      if (s?.done || s?.notes) {
+        out += `${s?.done ? '✓' : '○'} ${t.title}\n`;
+        if (s?.notes) out += `  → ${s.notes}\n`;
+      }
+    });
+    out += '\n';
+  });
+  navigator.clipboard.writeText(out).then(() => {
+    alert('Progress copied. Paste it in the chat with Claude.');
+  });
+}
+
+function resetState() {
+  if (confirm('Reset all progress? This cannot be undone.')) {
+    localStorage.removeItem('cwFiscalState');
+    Object.keys(state).forEach(k => delete state[k]);
+    render();
+  }
+}
+
+render();
+</script>
+
+</body>
+</html>

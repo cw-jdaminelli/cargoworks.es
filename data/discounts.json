@@ -72,6 +72,18 @@
       "maxUsesPerEmail": 100,
       "active": true,
       "notes": "Marea Verde trial discount"
+    },
+    {
+      "code": "flowerprojectbcn",
+      "type": "percent",
+      "amount": 30,
+      "minOrder": 0,
+      "start": "2026-07-01",
+      "end": "2026-07-30",
+      "maxUses": 100,
+      "maxUsesPerEmail": 100,
+      "active": true,
+      "notes": "flower project bcn discount 30 pcnt"
     }
   ]
 }
