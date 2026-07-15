@@ -83,6 +83,15 @@
   const editCustomerEmail = document.getElementById('editCustomerEmail');
   const editCustomerPhone = document.getElementById('editCustomerPhone');
   const editUpdatesPreference = document.getElementById('editUpdatesPreference');
+  const editAccountToken = document.getElementById('editAccountToken');
+  const editAccountVerifyBtn = document.getElementById('editAccountVerifyBtn');
+  const editAccountStatus = document.getElementById('editAccountStatus');
+  const editAccountFieldsWrap = document.getElementById('editAccountFieldsWrap');
+  const editAccountStaffName = document.getElementById('editAccountStaffName');
+  const editAccountPickupTime = document.getElementById('editAccountPickupTime');
+  const editAccountDropoffTime = document.getElementById('editAccountDropoffTime');
+  const editAccountAttName = document.getElementById('editAccountAttName');
+  const editAccountAttContact = document.getElementById('editAccountAttContact');
   const editPickupAddress = document.getElementById('editPickupAddress');
   const editRouteStops = document.getElementById('editRouteStops');
   const editDropoffAddress = document.getElementById('editDropoffAddress');
@@ -371,6 +380,30 @@
 
   function money(value){
     return safeNumber(value, 0).toFixed(2);
+  }
+
+  // Orders booked through the public site never write a quote.breakdown
+  // object — they store the pricing engine's raw fields instead (pickupCharge,
+  // distanceTotal, addressFee, cargoAmount, surchargeAmount, discountAmount,
+  // vatAmount; see map.js's distance pricing calc). Only orders already
+  // created/edited via this dispatcher have a real breakdown object. Derive
+  // one from the raw fields when it's missing so the editor doesn't show all
+  // zeros; base+distance+stops+surcharge-discount+adjustment reconstructs
+  // quote.total exactly.
+  function deriveQuoteBreakdown(quote){
+    const src = quote && typeof quote === 'object' ? quote : {};
+    const explicit = src.breakdown && typeof src.breakdown === 'object' ? src.breakdown : {};
+    const hasExplicit = ['base', 'distance', 'stops', 'surcharge', 'discount', 'adjustment']
+      .some(function(key){ return safeNumber(explicit[key], 0) !== 0; });
+    if (hasExplicit) return explicit;
+    return {
+      base: safeNumber(src.pickupCharge, 0),
+      distance: safeNumber(src.distanceTotal, 0),
+      stops: safeNumber(src.addressFee, 0),
+      surcharge: safeNumber(src.cargoAmount, 0) + safeNumber(src.surchargeAmount, 0),
+      discount: safeNumber(src.discountAmount, 0),
+      adjustment: safeNumber(src.vatAmount, 0)
+    };
   }
 
   function normalizeText(value){
@@ -859,6 +892,12 @@
       customerEmail: normalizeText(editCustomerEmail && editCustomerEmail.value),
       customerPhone: normalizeText(editCustomerPhone && editCustomerPhone.value),
       updatesPreference: normalizeText(editUpdatesPreference && editUpdatesPreference.value),
+      accountToken: normalizeText(editAccountToken && editAccountToken.value),
+      accountStaffName: normalizeText(editAccountStaffName && editAccountStaffName.value),
+      accountPickupTime: normalizeText(editAccountPickupTime && editAccountPickupTime.value),
+      accountDropoffTime: normalizeText(editAccountDropoffTime && editAccountDropoffTime.value),
+      accountAttName: normalizeText(editAccountAttName && editAccountAttName.value),
+      accountAttContact: normalizeText(editAccountAttContact && editAccountAttContact.value),
       pickup: normalizeText(editPickupAddress && editPickupAddress.value),
       stops: normalizeText(editRouteStops && editRouteStops.value),
       dropoff: normalizeText(editDropoffAddress && editDropoffAddress.value),
@@ -957,7 +996,7 @@
     const quote = source && source.quote ? source.quote : {};
     const route = source && source.route ? source.route : (quote.route || {});
     const customer = source && source.customer ? source.customer : {};
-    const breakdown = quote && quote.breakdown ? quote.breakdown : {};
+    const breakdown = deriveQuoteBreakdown(quote);
 
     if (editorTitle) {
       editorTitle.textContent = normalizedMode === 'create'
@@ -979,6 +1018,15 @@
     if (editCustomerEmail) editCustomerEmail.value = modeCreate ? '' : normalizeText(customer.email);
     if (editCustomerPhone) editCustomerPhone.value = modeCreate ? '' : normalizeText(customer.phone);
     if (editUpdatesPreference) editUpdatesPreference.value = modeCreate ? '' : normalizeText(source && source.updatesPreference);
+
+    if (editAccountToken) editAccountToken.value = modeCreate ? '' : normalizeText(source && source.accountToken);
+    if (editAccountStaffName) editAccountStaffName.value = modeCreate ? '' : normalizeText(source && source.staffName);
+    if (editAccountPickupTime) editAccountPickupTime.value = modeCreate ? '' : normalizeText(source && source.pickupTime);
+    if (editAccountDropoffTime) editAccountDropoffTime.value = modeCreate ? '' : normalizeText(source && source.dropoffTime);
+    if (editAccountAttName) editAccountAttName.value = modeCreate ? '' : normalizeText(source && source.attName);
+    if (editAccountAttContact) editAccountAttContact.value = modeCreate ? '' : normalizeText(source && source.attContact);
+    resetAccountStatus();
+    if (editAccountToken && editAccountToken.value) verifyAccountToken(true);
 
     if (editPickupAddress) editPickupAddress.value = modeCreate ? '' : normalizeText(route && route.pickup && route.pickup.address);
     if (editRouteStops) editRouteStops.value = modeCreate ? '' : stopTextFromRoute(route);
@@ -1105,7 +1153,13 @@
       notes: normalizeText(editNotes && editNotes.value),
       updatesPreference: normalizeText(editUpdatesPreference && editUpdatesPreference.value),
       language: 'en',
-      sourceUrl: window.location.href
+      sourceUrl: window.location.href,
+      accountToken: normalizeText(editAccountToken && editAccountToken.value).toUpperCase(),
+      staffName: normalizeText(editAccountStaffName && editAccountStaffName.value),
+      pickupTime: normalizeText(editAccountPickupTime && editAccountPickupTime.value),
+      dropoffTime: normalizeText(editAccountDropoffTime && editAccountDropoffTime.value),
+      attName: normalizeText(editAccountAttName && editAccountAttName.value),
+      attContact: normalizeText(editAccountAttContact && editAccountAttContact.value)
     };
   }
 
@@ -2154,6 +2208,53 @@
     editMapsRouteLink.style.display = 'inline';
   }
 
+  // ── Account order verification ───────────────────────────────────────────
+  // Lets dispatcher tag a manually-entered order with a customer account token
+  // (phone/WhatsApp orders for account clients), reusing the same public
+  // validateAccountToken endpoint the booking site uses. A verified token
+  // shows the account name, reveals the account-specific fields, and marks
+  // the order Payment status = Account (no Stripe link needed).
+
+  function resetAccountStatus() {
+    if (editAccountStatus) {
+      editAccountStatus.textContent = '';
+      editAccountStatus.style.display = 'none';
+      editAccountStatus.classList.remove('is-error');
+    }
+    if (editAccountFieldsWrap) editAccountFieldsWrap.style.display = 'none';
+  }
+
+  function setAccountStatus(msg, isError) {
+    if (!editAccountStatus) return;
+    editAccountStatus.textContent = msg || '';
+    editAccountStatus.classList.toggle('is-error', !!isError);
+    editAccountStatus.style.display = msg ? 'block' : 'none';
+  }
+
+  async function verifyAccountToken(silent) {
+    const token = normalizeText(editAccountToken && editAccountToken.value).toUpperCase();
+    if (!token) {
+      resetAccountStatus();
+      return;
+    }
+    if (!silent) setAccountStatus('Verifying…', false);
+    try {
+      const res = await fetch(API_BASE + '?action=validateAccountToken&token=' + encodeURIComponent(token));
+      const json = await res.json();
+      if (!json || !json.valid) {
+        setAccountStatus('Invalid or inactive account token.', true);
+        if (editAccountFieldsWrap) editAccountFieldsWrap.style.display = 'none';
+        return;
+      }
+      setAccountStatus('✓ ' + (json.accountName || 'Account') + ' — order will appear in their account panel, no payment link needed.', false);
+      if (editAccountFieldsWrap) editAccountFieldsWrap.style.display = '';
+      if (editPaymentStatus) editPaymentStatus.value = 'Account';
+      updateEditorDirtyFromForm();
+    } catch (err) {
+      setAccountStatus('Could not verify token: ' + ((err && err.message) || 'network error'), true);
+    }
+  }
+
   // ── Pricing manual override ──────────────────────────────────────────────
 
   function applyPriceOverride() {
@@ -2817,6 +2918,10 @@
 
   // Pricing override toggle
   if (editPriceOverride) editPriceOverride.addEventListener('change', applyPriceOverride);
+
+  // Account token verification
+  if (editAccountVerifyBtn) editAccountVerifyBtn.addEventListener('click', function(){ verifyAccountToken(false); });
+  if (editAccountToken) editAccountToken.addEventListener('blur', function(){ verifyAccountToken(false); });
 
   // Stop quick-add wiring done inside setupStopsQuickAdd()
 

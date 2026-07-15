@@ -86,17 +86,7 @@
       <div class="acct-table-wrap">
         <table class="acct-table" id="acctTable" style="display:none">
           <thead>
-            <tr>
-              <th>Ref</th>
-              <th>Date</th>
-              <th>Route</th>
-              <th>Staff</th>
-              <th>Recipient</th>
-              <th>Notes</th>
-              <th>Status</th>
-              <th>Total</th>
-              <th></th>
-            </tr>
+            <tr id="acctTableHeadRow"></tr>
           </thead>
           <tbody id="acctTableBody"></tbody>
         </table>
@@ -123,6 +113,7 @@
     var api = window.CARGOWORKS_BOOKING_API || '';
     var currentToken = '';
     var allOrders = [];
+    var currentRequires = {};
     var refreshTimer = null;
 
     var elSubtitle  = document.getElementById('acctSubtitle');
@@ -132,6 +123,7 @@
     var elStatus    = document.getElementById('acctStatus');
     var elSearch    = document.getElementById('acctSearch');
     var elTable     = document.getElementById('acctTable');
+    var elTableHead = document.getElementById('acctTableHeadRow');
     var elBody      = document.getElementById('acctTableBody');
     var elEmpty     = document.getElementById('acctEmpty');
 
@@ -155,7 +147,62 @@
     var elTotalIva   = document.getElementById('acctTotalIva');
     var elOrderCount = document.getElementById('acctOrderCount');
 
+    // Columns that depend on the account's requires* config only render when
+    // that account actually collects the field — keeps the table from showing
+    // empty Staff/Recipient/time columns for accounts that don't use them.
+    function getColumns(requires) {
+      var req = requires || {};
+      return [
+        { key: 'ref', label: 'Ref' },
+        { key: 'date', label: 'Date' },
+        { key: 'route', label: 'Route' },
+        { key: 'staff', label: 'Staff', show: !!req.staffName },
+        { key: 'pickupTime', label: 'Pickup time', show: !!req.pickupTime },
+        { key: 'dropoffTime', label: 'Dropoff time', show: !!req.dropoffTime },
+        { key: 'recipient', label: 'Recipient', show: !!(req.attName || req.attContact) },
+        { key: 'notes', label: 'Notes' },
+        { key: 'status', label: 'Status' },
+        { key: 'total', label: 'Total' },
+        { key: 'track', label: 'Track' },
+        { key: 'pod', label: 'POD' }
+      ].filter(function(c) { return c.show !== false; });
+    }
+
+    function cellHtml(col, o) {
+      switch (col.key) {
+        case 'ref':
+          var stopsHtml = o.stops > 0 ? ' <span class="acct-badge acct-badge--stops">+' + o.stops + ' stops</span>' : '';
+          return escHtml(o.reference || '—') + stopsHtml;
+        case 'date':
+          return escHtml(o.date || '—');
+        case 'route':
+          return '<span class="acct-route">' + escHtml(o.pickup || '—') + '<span class="acct-route-arrow">→</span>' + escHtml(o.dropoff || '—') + '</span>';
+        case 'staff':
+          return escHtml(o.staffName || '—');
+        case 'pickupTime':
+          return escHtml(o.pickupTime || '—');
+        case 'dropoffTime':
+          return escHtml(o.dropoffTime || '—');
+        case 'recipient':
+          return escHtml(o.attName || o.attContact || '—');
+        case 'notes':
+          return escHtml(o.notes || '—');
+        case 'status':
+          return '<span class="acct-badge ' + statusBadgeClass(o.status) + '">' + escHtml(o.status || '—') + '</span>';
+        case 'total':
+          return escHtml(o.total ? 'EUR ' + Number(o.total).toFixed(2) : '—');
+        case 'track':
+          return o.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(o.trackingUrl) + '" target="_blank">Track →</a>' : '—';
+        case 'pod':
+          return o.podUrl ? '<a class="acct-track-link" href="' + escHtml(o.podUrl) + '" target="_blank">POD →</a>' : '—';
+        default:
+          return '';
+      }
+    }
+
     function renderRows(orders) {
+      var columns = getColumns(currentRequires);
+      elTableHead.innerHTML = columns.map(function(c) { return '<th>' + escHtml(c.label) + '</th>'; }).join('');
       elBody.innerHTML = '';
       if (!orders || !orders.length) {
         elTable.style.display = 'none';
@@ -179,27 +226,9 @@
 
       orders.forEach(function(o) {
         var tr = document.createElement('tr');
-        var refLabel = String(o.reference || '—');
-        var stopsHtml = o.stops > 0 ? ' <span class="acct-badge acct-badge--stops">+' + o.stops + ' stops</span>' : '';
-        var route = '<span class="acct-route">' +
-          escHtml(o.pickup || '—') +
-          '<span class="acct-route-arrow">→</span>' +
-          escHtml(o.dropoff || '—') +
-          '</span>';
-        var trackHtml = o.trackingUrl
-          ? '<a class="acct-track-link" href="' + escHtml(o.trackingUrl) + '" target="_blank">Track →</a>'
-          : '—';
-        var total = o.total ? 'EUR ' + Number(o.total).toFixed(2) : '—';
-        tr.innerHTML =
-          '<td data-label="Ref">' + escHtml(refLabel) + stopsHtml + '</td>' +
-          '<td data-label="Date">' + escHtml(o.date || '—') + '</td>' +
-          '<td data-label="Route">' + route + '</td>' +
-          '<td data-label="Staff">' + escHtml(o.staffName || '—') + '</td>' +
-          '<td data-label="Recipient">' + escHtml(o.attName || o.attContact || '—') + '</td>' +
-          '<td data-label="Notes">' + escHtml(o.notes || '—') + '</td>' +
-          '<td data-label="Status"><span class="acct-badge ' + statusBadgeClass(o.status) + '">' + escHtml(o.status || '—') + '</span></td>' +
-          '<td data-label="Total">' + escHtml(total) + '</td>' +
-          '<td>' + trackHtml + '</td>';
+        tr.innerHTML = columns.map(function(c) {
+          return '<td data-label="' + escHtml(c.label) + '">' + cellHtml(c, o) + '</td>';
+        }).join('');
         elBody.appendChild(tr);
       });
     }
@@ -227,6 +256,7 @@
         .then(function(data) {
           if (data.error) { setStatus(data.error, true); return; }
           allOrders = data.orders || [];
+          currentRequires = data.requires || {};
           var name = data.accountName || token;
           elSubtitle.textContent = 'Account: ' + name;
           elTokenForm.style.display = 'none';

@@ -652,6 +652,25 @@
           </div>
         </section>
 
+        <section class="dispatcher-section span-4" id="secAccount">
+          <h3>Account</h3>
+          <div class="dispatcher-field">
+            <label for="editAccountToken" class="field-label-row">
+              <span>Account token</span>
+              <button type="button" id="editAccountVerifyBtn" class="btn btn--ghost" style="font-size:0.7rem;padding:0.18rem 0.42rem;">Verify</button>
+            </label>
+            <input id="editAccountToken" type="text" placeholder="e.g. BIZ-EXAMPLE" />
+          </div>
+          <div id="editAccountStatus" class="dispatcher-status" style="display:none;font-size:0.72rem;"></div>
+          <div id="editAccountFieldsWrap" style="display:none;">
+            <div class="dispatcher-field"><label for="editAccountStaffName">Staff name</label><input id="editAccountStaffName" type="text" /></div>
+            <div class="dispatcher-field"><label for="editAccountPickupTime">Requested pickup time</label><input id="editAccountPickupTime" type="text" /></div>
+            <div class="dispatcher-field"><label for="editAccountDropoffTime">Requested dropoff time</label><input id="editAccountDropoffTime" type="text" /></div>
+            <div class="dispatcher-field"><label for="editAccountAttName">Attention name</label><input id="editAccountAttName" type="text" /></div>
+            <div class="dispatcher-field"><label for="editAccountAttContact">Attention contact</label><input id="editAccountAttContact" type="text" /></div>
+          </div>
+        </section>
+
         <section class="dispatcher-section span-4" id="secRoute">
           <h3>Route</h3>
           <div class="dispatcher-field">
@@ -771,6 +790,7 @@
               <option value="Pending">Pending</option>
               <option value="Paid">Paid</option>
               <option value="Failed">Failed</option>
+              <option value="Account">Account</option>
             </select>
           </div>
           <div class="dispatcher-field">

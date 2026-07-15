@@ -144,6 +144,16 @@ function getAccountConfig(rawToken) {
   return config;
 }
 
+function buildAccountRequires(config){
+  return {
+    staffName:   !!(config && config.requiresStaffName),
+    pickupTime:  !!(config && config.requiresPickupTime),
+    dropoffTime: !!(config && config.requiresDropoffTime),
+    attName:     !!(config && config.requiresAttName),
+    attContact:  !!(config && config.requiresAttContact)
+  };
+}
+
 function handleValidateAccountToken(params) {
   const config = getAccountConfig(String(params.token || ''));
   if (!config) {
@@ -152,13 +162,7 @@ function handleValidateAccountToken(params) {
   return jsonResponse({
     valid: true,
     accountName: String(config.name || ''),
-    requires: {
-      staffName:   !!config.requiresStaffName,
-      pickupTime:  !!config.requiresPickupTime,
-      dropoffTime: !!config.requiresDropoffTime,
-      attName:     !!config.requiresAttName,
-      attContact:  !!config.requiresAttContact
-    }
+    requires: buildAccountRequires(config)
   }, 200);
 }
 
@@ -197,6 +201,7 @@ function handleAccountOrders(params) {
       stops:         Array.isArray(route.stops) ? route.stops.length : 0,
       total:         Number(quote.total || 0),
       trackingUrl:   String(payload.trackingUrl || adminData.trackingUrl || ''),
+      podUrl:        String(adminData.podUrl || ''),
       staffName:     String(payload.staffName   || ''),
       pickupTime:    String(payload.pickupTime  || ''),
       dropoffTime:   String(payload.dropoffTime || ''),
@@ -210,7 +215,7 @@ function handleAccountOrders(params) {
   orders.sort(function(a, b) { return b.createdAt > a.createdAt ? 1 : -1; });
   orders.splice(100);
 
-  return jsonResponse({ accountName: String(config.name || ''), orders: orders }, 200);
+  return jsonResponse({ accountName: String(config.name || ''), requires: buildAccountRequires(config), orders: orders }, 200);
 }
 
 function normalizeOrderStatus(value){
@@ -1939,7 +1944,13 @@ function mergeAdminOrderPayload(orderInput, existingPayload){
     notes: cleanOrderText((incoming.notes != null ? incoming.notes : base.notes) || ''),
     updatesPreference: cleanOrderText((incoming.updatesPreference != null ? incoming.updatesPreference : base.updatesPreference) || ''),
     language: cleanOrderText((incoming.language != null ? incoming.language : base.language) || 'en'),
-    sourceUrl: cleanOrderText((incoming.sourceUrl != null ? incoming.sourceUrl : base.sourceUrl) || 'https://cargoworks.es/admin/dispatcher.html')
+    sourceUrl: cleanOrderText((incoming.sourceUrl != null ? incoming.sourceUrl : base.sourceUrl) || 'https://cargoworks.es/admin/dispatcher.html'),
+    accountToken: cleanOrderText((incoming.accountToken != null ? incoming.accountToken : base.accountToken) || '').toUpperCase(),
+    staffName: cleanOrderText((incoming.staffName != null ? incoming.staffName : base.staffName) || ''),
+    pickupTime: cleanOrderText((incoming.pickupTime != null ? incoming.pickupTime : base.pickupTime) || ''),
+    dropoffTime: cleanOrderText((incoming.dropoffTime != null ? incoming.dropoffTime : base.dropoffTime) || ''),
+    attName: cleanOrderText((incoming.attName != null ? incoming.attName : base.attName) || ''),
+    attContact: cleanOrderText((incoming.attContact != null ? incoming.attContact : base.attContact) || '')
   };
 }
 
@@ -2010,6 +2021,8 @@ function handleAdminCreateOrder(payload){
     adminData.paymentStatus = paymentStatus;
     adminData.paymentUrl = draft.paymentUrl;
     adminData.updatesPreference = updatesPreference;
+    adminData.accountToken = draft.accountToken || '';
+    adminData.accountName = draft.accountToken ? String((getAccountConfig(draft.accountToken) || {}).name || '') : '';
     adminData.rider = {
       name: cleanOrderText(payload.riderName || (payload.order && payload.order.riderName) || ''),
       phone: cleanOrderText(payload.riderPhone || (payload.order && payload.order.riderPhone) || '')
@@ -2079,6 +2092,8 @@ function handleAdminEditOrder(payload){
     adminData.paymentStatus = paymentStatus;
     adminData.paymentUrl = draft.paymentUrl;
     adminData.updatesPreference = cleanOrderText(payload.updatesPreference || draft.updatesPreference || adminData.updatesPreference || '');
+    adminData.accountToken = draft.accountToken || '';
+    adminData.accountName = draft.accountToken ? String((getAccountConfig(draft.accountToken) || {}).name || '') : '';
     adminData.rider = {
       name: cleanOrderText(payload.riderName || (payload.order && payload.order.riderName) || (adminData.rider && adminData.rider.name) || ''),
       phone: cleanOrderText(payload.riderPhone || (payload.order && payload.order.riderPhone) || (adminData.rider && adminData.rider.phone) || '')
@@ -2146,6 +2161,8 @@ function handleAdminDuplicateOrder(payload){
     adminData.status = status;
     adminData.paymentStatus = paymentStatus;
     adminData.paymentUrl = draft.paymentUrl;
+    adminData.accountToken = draft.accountToken || '';
+    adminData.accountName = draft.accountToken ? String((getAccountConfig(draft.accountToken) || {}).name || '') : '';
     adminData.rider = {
       name: cleanOrderText((existingAdminData.rider && existingAdminData.rider.name) || ''),
       phone: cleanOrderText((existingAdminData.rider && existingAdminData.rider.phone) || '')
@@ -2847,7 +2864,14 @@ function buildOrderSummary(event){
       },
       route: payload.quote && payload.quote.route ? payload.quote.route : null,
       notes: String(payload.notes || ''),
-      language: String(payload.language || 'es')
+      language: String(payload.language || 'es'),
+      accountToken: cleanOrderText(payload.accountToken || adminData.accountToken || ''),
+      accountName: cleanOrderText(adminData.accountName || ''),
+      staffName: cleanOrderText(payload.staffName || ''),
+      pickupTime: cleanOrderText(payload.pickupTime || ''),
+      dropoffTime: cleanOrderText(payload.dropoffTime || ''),
+      attName: cleanOrderText(payload.attName || ''),
+      attContact: cleanOrderText(payload.attContact || '')
     };
   } catch (err) {
     return null;
