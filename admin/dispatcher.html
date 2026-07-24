@@ -399,6 +399,17 @@
       white-space: nowrap;
     }
     .pricing-override-label input { margin: 0; cursor: pointer; }
+    .stop-badge {
+      display: inline-block;
+      padding: 0.05rem 0.4rem;
+      border-radius: 6px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      background: var(--dispatch-border, #eee);
+      color: var(--dispatch-muted, #666);
+    }
+    .stop-badge--ok { background: #e6f4ea; color: #2b6e3a; }
+    .stop-badge--fail { background: #fdecea; color: #8b0000; }
     /* ── Inline label actions ────────────────────────────────────────── */
     .field-label-row {
       display: flex;
@@ -681,8 +692,8 @@
             <input id="editPickupAddress" type="text" required />
           </div>
           <div class="dispatcher-field">
-            <label for="editRouteStops" class="field-label-row">
-              <span>Stops (one per line)</span>
+            <label class="field-label-row">
+              <span>Stops</span>
               <button type="button" id="stopsQuickAddToggle" class="btn btn--ghost">⚡ Quick add</button>
             </label>
             <!-- Stop quick-add panel -->
@@ -716,7 +727,8 @@
                 <ol id="stopsQListItems" class="stops-q-list"></ol>
               </div>
             </div>
-            <textarea id="editRouteStops" placeholder="Optional intermediate stops"></textarea>
+            <div id="editStopsList" class="stops-editor-list"></div>
+            <button type="button" id="addStopBtn" class="btn btn--ghost" style="margin-top:0.3rem;font-size:0.72rem;">+ Add stop</button>
           </div>
           <div class="dispatcher-field">
             <label for="editDropoffAddress">Dropoff</label>
@@ -746,6 +758,13 @@
 
         <section class="dispatcher-section span-6" id="secPricing">
             <h3>Pricing breakdown</h3>
+            <div class="dispatcher-field">
+              <label for="editBillingMode">Billing mode</label>
+              <select id="editBillingMode">
+                <option value="flat">Flat rate (zone/distance)</option>
+                <option value="elapsed">Elapsed time (hourly rate)</option>
+              </select>
+            </div>
             <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
               <button type="button" id="editGetSystemPricing" class="btn btn--ghost" style="font-size:0.7rem;padding:0.18rem 0.42rem;">⚙ Get system pricing</button>
               <label class="pricing-override-label">
@@ -761,6 +780,18 @@
             <div class="dispatcher-field"><label for="editPriceSurcharge">Surcharge (cargo / time)</label><input id="editPriceSurcharge" type="number" step="0.01" /></div>
             <div class="dispatcher-field"><label for="editPriceDiscount">Discount</label><input id="editPriceDiscount" type="number" step="0.01" /></div>
             <div class="dispatcher-field"><label for="editPriceAdjustment">VAT / Adjustment</label><input id="editPriceAdjustment" type="number" step="0.01" /></div>
+          </div>
+          <div id="editElapsedFields" style="display:none;">
+            <div class="dispatcher-field"><label for="editHourlyRate">Hourly rate (EUR/h)</label><input id="editHourlyRate" type="number" step="0.5" min="0" /></div>
+            <div class="dispatcher-field"><label for="editRouteStartedAt">Route started</label><input id="editRouteStartedAt" type="datetime-local" /></div>
+            <div class="dispatcher-field"><label for="editRouteCompletedAt">Route completed</label><input id="editRouteCompletedAt" type="datetime-local" /></div>
+            <div class="dispatcher-field">
+              <label for="editElapsedMinutes" class="field-label-row">
+                <span>Elapsed minutes (billed) <span id="editElapsedManualHint" style="display:none; font-weight:400; color:var(--dispatch-accent); font-size:0.7rem;">✎ manual</span></span>
+                <label class="pricing-override-label"><input type="checkbox" id="editElapsedOverride" /> Manual override</label>
+              </label>
+              <input id="editElapsedMinutes" type="number" step="1" min="0" />
+            </div>
           </div>
           <div class="dispatcher-field">
             <label for="editPriceTotal" class="field-label-row">

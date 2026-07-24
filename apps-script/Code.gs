@@ -22,6 +22,7 @@ const BUILD_ID = '2026-03-19-1';
 const WHATSAPP_NUMBER = '34608081955';
 const WHATSAPP_DEFAULT_MESSAGE = 'Hola Cargoworks, necesito ayuda con mi pedido numero ';
 const ORDER_STATUS_VALUES = ['Confirmed', 'Assigned', 'OMW', 'Picked up', 'In transit', 'Delivered', 'Failed', 'Canceled', 'Delivery rejected'];
+const STOP_STATUS_VALUES = ['Pending', 'Delivered', 'Failed'];
 const PAYMENT_STATUS_VALUES = ['Paid', 'Pending', 'Failed', 'Account'];
 const ACCOUNT_TOKENS_PROPERTY = 'ACCOUNT_TOKENS';
 const DISCOUNTS_URL = 'https://cargoworks.es/data/discounts.json';
@@ -191,14 +192,27 @@ function handleAccountOrders(params) {
     const adminData = extractAdminData(desc) || {};
     const quote = payload.quote || {};
     const route = quote.route || {};
+    const stopsArr = Array.isArray(route.stops) ? route.stops : [];
+    const reference = String(payload.reference || adminData.reference || '');
     orders.push({
-      reference:     String(payload.reference || adminData.reference || ''),
+      reference:     reference,
       status:        String(adminData.status || DEFAULT_STATUS_LABEL),
       paymentStatus: String(adminData.paymentStatus || 'Account'),
       date:          String((quote.schedule || {}).date || ''),
       pickup:        String((route.pickup   || {}).address || ''),
       dropoff:       String((route.dropoff  || {}).address || ''),
-      stops:         Array.isArray(route.stops) ? route.stops.length : 0,
+      stops:         stopsArr.length,
+      stopsDetail:   stopsArr.length ? stopsArr.map(function(s){
+        return {
+          id: String(s.id || ''),
+          address: String(s.address || ''),
+          status: String(s.status || 'Pending'),
+          failureReason: String(s.failureReason || ''),
+          podUrl: s.status === 'Delivered' ? String(s.podUrl || '') : '',
+          completedAt: String(s.completedAt || ''),
+          trackingUrl: (s.id && s.trackingToken) ? buildStopTrackingUrl(payload, reference, s.id, s.trackingToken) : ''
+        };
+      }) : [],
       total:         Number(quote.total || 0),
       trackingUrl:   String(payload.trackingUrl || adminData.trackingUrl || ''),
       podUrl:        String(adminData.podUrl || ''),
@@ -293,6 +307,7 @@ function doGet(e){
     if (action === 'track') {
       return handleTrackingGet(params);
     }
+    if (action === 'trackStop') return handleTrackStop(params);
     if (action === 'riderGetOrders') return handleRiderGetOrders(params);
     if (action === 'getRiderEta') return handleGetRiderEta(params);
     if (action === 'riderValidate') return handleRiderValidate(params);
@@ -330,6 +345,8 @@ function doPost(e){
       if (action === 'riderUnassign') return handleRiderUnassign(payload);
       if (action === 'riderUpdateStatus') return handleRiderUpdateStatus(payload);
       if (action === 'riderSetEta') return handleRiderSetEta(payload);
+      if (action === 'riderCompleteStop') return handleRiderCompleteStop(payload);
+      if (action === 'riderSetRouteStart') return handleRiderSetRouteStart(payload);
       if (action === 'adminManageRiders') return handleAdminManageRiders(payload);
       if (action === 'urgentRequest') return handleUrgentRequest(payload);
       if (action === 'visionExtract') return handleVisionExtract(payload);
@@ -494,6 +511,22 @@ function parseFormEncoded(body){
   }
 }
 
+// Converts wall-clock components in `tz` (default Europe/Madrid) to the
+// correct absolute instant, regardless of the Apps Script project's own
+// configured Time Zone. Plain `new Date(y,m,d,h,mi)` resolves using whatever
+// timezone the *project* happens to be set to, which silently drifts from
+// Europe/Madrid if that setting is ever wrong — this is timezone-explicit
+// instead, using Utilities.formatDate (which always respects the tz you pass)
+// to find the UTC offset at that date and correct for it.
+function zonedTimeToUtc(year, month, day, hour, minute, second, tz){
+  const zone = tz || TIMEZONE;
+  const guess = new Date(Date.UTC(year, month, day, hour, minute, second || 0));
+  const offsetLabel = Utilities.formatDate(guess, zone, 'Z'); // e.g. "+0200"
+  const sign = offsetLabel.charAt(0) === '-' ? -1 : 1;
+  const offsetMinutes = sign * (Number(offsetLabel.slice(1, 3)) * 60 + Number(offsetLabel.slice(3, 5)));
+  return new Date(guess.getTime() - offsetMinutes * 60000);
+}
+
 function dayRangeFromKey(dateKey, timezone){
   try {
     const parts = String(dateKey).split('-');
@@ -502,8 +535,9 @@ function dayRangeFromKey(dateKey, timezone){
     const month = Number(parts[1]) - 1;
     const day = Number(parts[2]);
     if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) return null;
-    const start = new Date(year, month, day, 0, 0, 0);
-    const end = new Date(year, month, day, 23, 59, 59);
+    const tz = timezone || TIMEZONE;
+    const start = zonedTimeToUtc(year, month, day, 0, 0, 0, tz);
+    const end = zonedTimeToUtc(year, month, day, 23, 59, 59, tz);
     return { start: start, end: end };
   } catch (err) {
     return null;
@@ -522,7 +556,7 @@ function dateTimeFromKey(dateKey, timeLabel, timezone){
     const hour = Number(t[0]);
     const minute = Number(t[1]);
     if ([year, month, day, hour, minute].some(Number.isNaN)) return null;
-    return new Date(year, month, day, hour, minute, 0);
+    return zonedTimeToUtc(year, month, day, hour, minute, 0, timezone || TIMEZONE);
   } catch (err) {
     return null;
   }
@@ -669,6 +703,18 @@ function buildTrackingUrl(payload, shortRef, trackingToken){
     return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(shortRef);
   } catch (err) {
     return 'https://cargoworks.es/tracking.html?ref=' + encodeURIComponent(shortRef);
+  }
+}
+
+function buildStopTrackingUrl(payload, shortRef, stopId, stopToken){
+  try {
+    const sourceUrl = String(payload && payload.sourceUrl || '').trim();
+    const originMatch = sourceUrl.match(/^https?:\/\/[^/]+/i);
+    const origin = originMatch ? originMatch[0] : '';
+    const base = origin || 'https://cargoworks.es';
+    return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(shortRef) + '&stop=' + encodeURIComponent(stopId) + '&t=' + encodeURIComponent(stopToken);
+  } catch (err) {
+    return 'https://cargoworks.es/tracking.html?ref=' + encodeURIComponent(shortRef) + '&stop=' + encodeURIComponent(stopId) + '&t=' + encodeURIComponent(stopToken);
   }
 }
 
@@ -1186,6 +1232,49 @@ function handleTrackingGet(params){
   }
 }
 
+// Public per-stop tracking. Unlike handleTrackingGet, a missing/wrong token
+// is always Unauthorized here — every stop always has a trackingToken
+// (normalizeStopsForOrder generates one), there's no legacy no-token case to
+// fall back to.
+function handleTrackStop(params){
+  try {
+    const ref = String(params.ref || '').trim();
+    const stopId = String(params.stop || '').trim();
+    if (!ref || !stopId) return jsonResponse({ error: 'Missing ref or stop' }, 400);
+    const token = String(params.t || '').trim();
+    const event = findEventByReference(ref);
+    if (!event) return jsonResponse({ error: 'Not found' }, 404);
+    const summary = buildOrderSummary(event);
+    if (!summary) return jsonResponse({ error: 'Not found' }, 404);
+    const stops = (summary.route && Array.isArray(summary.route.stops)) ? summary.route.stops : [];
+    const stop = stops.find(function(s){ return s && s.id === stopId; });
+    if (!stop) return jsonResponse({ error: 'Not found' }, 404);
+    const requiredToken = String(stop.trackingToken || '').trim();
+    if (!requiredToken || token !== requiredToken) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
+    }
+    return jsonResponse({ stop: buildStopTrackingPayload(stop, stops, summary) }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+function buildStopTrackingPayload(stop, allStops, summary){
+  const idx = allStops.findIndex(function(s){ return s && s.id === stop.id; });
+  return {
+    reference: summary.reference,
+    stopIndex: idx + 1,
+    stopCount: allStops.length,
+    address: stop.address || '',
+    status: stop.status || 'Pending',
+    podUrl: stop.status === 'Delivered' ? (stop.podUrl || '') : '',
+    completedAt: stop.completedAt || '',
+    schedule: summary.schedule,
+    orderStatus: summary.status
+  };
+}
+
 function handleAdminList(params){
   try {
     if (!isAdminAuthorized(String(params.token || '').trim())) {
@@ -1277,7 +1366,8 @@ function handleVisionExtract(payload) {
   try {
     var riderId = String(payload.id || '').trim();
     var rider = getRiderById(riderId);
-    if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+    var isAdmin = !rider && isAdminAuthorized(String(payload.token || '').trim());
+    if (!rider && !isAdmin) return jsonResponse({ error: 'Unauthorized' }, 401);
 
     var imageBase64 = String(payload.image || '').trim();
     var mimeType = String(payload.mimeType || 'image/jpeg').trim();
@@ -1470,16 +1560,9 @@ function handleRiderCommitStops(payload) {
       return jsonResponse({ error: 'You are not assigned to this order' }, 403);
     }
 
-    var newStops = stops.map(function(s) {
-      var item = { address: cleanOrderText(s.address || '') };
-      if (s.tier) item.tier = String(s.tier).trim();
-      if (s.priority) item.priority = true;
-      if (s.outlier) item.outlier = true;
-      return item;
-    }).filter(function(s) { return s.address; });
-
     var quote = existingPayload.quote || {};
     var route = quote.route || {};
+    var newStops = normalizeStopsForOrder(stops, route.stops || []);
     route.stops = newStops;
     quote.route = route;
     existingPayload.quote = quote;
@@ -1841,6 +1924,7 @@ function handleAdminPost(payload){
   if (action === 'adminCancelOrder') return handleAdminCancelOrder(payload);
   if (action === 'adminUpdate') return handleAdminUpdate(payload);
   if (action === 'adminPod') return handleAdminPod(payload);
+  if (action === 'adminUpdateStop') return handleAdminUpdateStop(payload);
   if (action === 'adminCreatePayment') return handleAdminCreatePayment(payload);
   if (action === 'adminGeocode') return handleAdminGeocode(payload);
   return jsonResponse({ error: 'Unknown action' }, 400);
@@ -1855,12 +1939,38 @@ function cleanOrderText(value){
   return String(value || '').trim();
 }
 
-function normalizeStopsForOrder(stops){
-  const items = Array.isArray(stops) ? stops : [];
+// Reconciles the route editor's incoming stop list against the previously-stored
+// stops by `id`. Composition fields (address/tier/priority/outlier) always come
+// from the incoming list; completion fields (status/podUrl/trackingToken/
+// completedAt/failureReason) are ALWAYS carried over verbatim from the prior
+// stop with the same id, never taken from `incoming` — the route editor (used by
+// dispatcher saves and rider route re-sequencing) must never be able to clobber
+// a rider's already-recorded delivery. Stops with no matching prior id (new
+// stops, or first-ever save of a legacy address-only stop) get a fresh id and
+// tracking token.
+function normalizeStopsForOrder(incomingStops, existingStops){
+  const existingById = {};
+  (Array.isArray(existingStops) ? existingStops : []).forEach(function(s){
+    if (s && s.id) existingById[String(s.id)] = s;
+  });
+  const items = Array.isArray(incomingStops) ? incomingStops : [];
   return items.map(function(stop){
     const address = cleanOrderText(stop && stop.address);
     if (!address) return null;
-    return { address: address };
+    const incomingId = cleanOrderText(stop && stop.id);
+    const prior = incomingId ? existingById[incomingId] : null;
+    return {
+      id: prior ? prior.id : Utilities.getUuid(),
+      address: address,
+      tier: cleanOrderText((stop && stop.tier) || (prior && prior.tier) || ''),
+      priority: !!(stop && stop.priority),
+      outlier: !!(stop && stop.outlier),
+      status: (prior && prior.status) || 'Pending',
+      podUrl: (prior && prior.podUrl) || '',
+      trackingToken: (prior && prior.trackingToken) || generatePublicToken(16),
+      completedAt: (prior && prior.completedAt) || '',
+      failureReason: (prior && prior.failureReason) || ''
+    };
   }).filter(Boolean);
 }
 
@@ -1906,7 +2016,8 @@ function mergeAdminOrderPayload(orderInput, existingPayload){
   const pickupAddress = cleanOrderText((incomingRoute.pickup && incomingRoute.pickup.address) || (baseRoute.pickup && baseRoute.pickup.address) || '');
   const dropoffAddress = cleanOrderText((incomingRoute.dropoff && incomingRoute.dropoff.address) || (baseRoute.dropoff && baseRoute.dropoff.address) || '');
   const stops = normalizeStopsForOrder(
-    Array.isArray(incomingRoute.stops) ? incomingRoute.stops : (Array.isArray(baseRoute.stops) ? baseRoute.stops : [])
+    Array.isArray(incomingRoute.stops) ? incomingRoute.stops : (Array.isArray(baseRoute.stops) ? baseRoute.stops : []),
+    Array.isArray(baseRoute.stops) ? baseRoute.stops : []
   );
 
   const schedule = {
@@ -1923,6 +2034,9 @@ function mergeAdminOrderPayload(orderInput, existingPayload){
       dropoff: { address: dropoffAddress }
     },
     total: total,
+    billingMode: cleanOrderText(incomingQuote.billingMode || baseQuote.billingMode || ''),
+    hourlyRate: safeNumber((incomingQuote.hourlyRate != null ? incomingQuote.hourlyRate : baseQuote.hourlyRate), 0),
+    elapsedMinutes: safeNumber((incomingQuote.elapsedMinutes != null ? incomingQuote.elapsedMinutes : baseQuote.elapsedMinutes), 0),
     etaMins: Math.max(15, safeNumber((incomingQuote.etaMins != null ? incomingQuote.etaMins : baseQuote.etaMins), DEFAULT_DURATION_MIN)),
     totalKm: safeNumber((incomingQuote.totalKm != null ? incomingQuote.totalKm : baseQuote.totalKm), 0),
     currency: cleanOrderText(incomingQuote.currency || baseQuote.currency || 'EUR'),
@@ -2028,6 +2142,8 @@ function handleAdminCreateOrder(payload){
       phone: cleanOrderText(payload.riderPhone || (payload.order && payload.order.riderPhone) || '')
     };
     adminData.internalNotes = cleanOrderText(payload.internalNotes || (payload.order && payload.order.internalNotes) || '');
+    if (payload.routeStartedAt) adminData.routeStartedAt = cleanOrderText(payload.routeStartedAt);
+    if (payload.routeCompletedAt) adminData.routeCompletedAt = cleanOrderText(payload.routeCompletedAt);
     const operator = applyOperatorMetadata(adminData, payload.operator);
     adminData.timeline = [];
     pushAdminTimeline(adminData, status, 'Order created manually by ' + operator, 'dispatcher');
@@ -2099,6 +2215,8 @@ function handleAdminEditOrder(payload){
       phone: cleanOrderText(payload.riderPhone || (payload.order && payload.order.riderPhone) || (adminData.rider && adminData.rider.phone) || '')
     };
     adminData.internalNotes = cleanOrderText(payload.internalNotes || (payload.order && payload.order.internalNotes) || adminData.internalNotes || '');
+    if (payload.routeStartedAt) adminData.routeStartedAt = cleanOrderText(payload.routeStartedAt);
+    if (payload.routeCompletedAt) adminData.routeCompletedAt = cleanOrderText(payload.routeCompletedAt);
     const operator = applyOperatorMetadata(adminData, payload.operator);
     const editMessage = cleanOrderText(payload.message || 'Order edited by ' + operator);
     pushAdminTimeline(adminData, status, editMessage, 'dispatcher');
@@ -2141,6 +2259,22 @@ function handleAdminDuplicateOrder(payload){
     const draft = mergeAdminOrderPayload(payload.order || {}, existingPayload);
     const validation = validateAdminOrderPayload(draft);
     if (validation) return jsonResponse({ error: validation }, 400);
+
+    // A duplicate is a brand-new run — never inherit the original's stop
+    // completion state (ids/status/POD/tracking tokens are per-run, not per-route).
+    if (draft.quote && draft.quote.route && Array.isArray(draft.quote.route.stops) && draft.quote.route.stops.length) {
+      draft.quote.route.stops = draft.quote.route.stops.map(function(s){
+        return Object.assign({}, s, {
+          id: Utilities.getUuid(),
+          status: 'Pending',
+          podUrl: '',
+          completedAt: '',
+          failureReason: '',
+          trackingToken: generatePublicToken(16)
+        });
+      });
+    }
+    if (draft.quote) draft.quote.elapsedMinutes = 0;
 
     const quote = draft.quote || {};
     const schedule = quote.schedule || {};
@@ -2871,7 +3005,9 @@ function buildOrderSummary(event){
       pickupTime: cleanOrderText(payload.pickupTime || ''),
       dropoffTime: cleanOrderText(payload.dropoffTime || ''),
       attName: cleanOrderText(payload.attName || ''),
-      attContact: cleanOrderText(payload.attContact || '')
+      attContact: cleanOrderText(payload.attContact || ''),
+      routeStartedAt: cleanOrderText(adminData.routeStartedAt || ''),
+      routeCompletedAt: cleanOrderText(adminData.routeCompletedAt || '')
     };
   } catch (err) {
     return null;
@@ -3082,17 +3218,12 @@ function isValidDateParts(year, month, day){
 
 function formatDateKey(date){
   const d = date instanceof Date ? date : new Date(date);
-  const y = String(d.getFullYear());
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return y + '-' + m + '-' + day;
+  return Utilities.formatDate(d, TIMEZONE, 'yyyy-MM-dd');
 }
 
 function formatTimeLabel(date){
   const d = date instanceof Date ? date : new Date(date);
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  return h + ':' + m;
+  return Utilities.formatDate(d, TIMEZONE, 'HH:mm');
 }
 
 function setEventStatusTitle(event, status){
@@ -3981,6 +4112,7 @@ function handleRiderSetEta(payload){
   adminData.rider = adminData.rider || {};
   adminData.rider.riderId = riderId;
   adminData.rider.name = rider.name;
+  if (!adminData.routeStartedAt) adminData.routeStartedAt = now.toISOString();
   applyOperatorMetadata(adminData, rider.name);
   pushAdminTimeline(adminData, 'OMW',
     rider.name + ' is on the way. ETA: ~' + totalEtaMins + ' min (' + travelMins + ' min to pickup + ' + orderEtaMins + ' min delivery)',
@@ -4010,6 +4142,252 @@ function handleRiderSetEta(payload){
     arrivalTime: new Date(now.getTime() + totalEtaMins * 60000).toISOString(),
     order: buildOrderSummary(event)
   }, 200);
+}
+
+// ── Multi-stop routes: per-stop completion, route auto-aggregation ────────────
+
+// Called after any stop's status changes. Once every stop on the route has
+// reached a terminal status (Delivered or Failed), the whole route always
+// auto-completes to 'Delivered' — a route is "done" once every stop has been
+// attempted; individual failures are per-stop facts (with their own required
+// failureReason), never something that flips the master order to 'Failed'.
+// Dispatcher can still manually set the master status to Failed afterward via
+// the existing status dropdown for a genuine total-loss exception.
+function maybeCompleteRoute(payloadData, adminData, event){
+  const quote = payloadData.quote || {};
+  const route = quote.route || {};
+  const stops = Array.isArray(route.stops) ? route.stops : [];
+  if (!stops.length) return false;
+  const doneCount = stops.filter(function(s){ return s && s.status && s.status !== 'Pending'; }).length;
+  if (doneCount !== stops.length) return false;
+
+  const failedCount = stops.filter(function(s){ return s && s.status === 'Failed'; }).length;
+  adminData.status = 'Delivered';
+  adminData.routeCompletedAt = new Date().toISOString();
+  clearRiderEta(event.getId());
+
+  if (route.dropoff && route.dropoff.address) {
+    adminData.lastDropoffAddress = route.dropoff.address;
+    adminData.lastDropoffAt = adminData.routeCompletedAt;
+  }
+
+  if (String(quote.billingMode || '') === 'elapsed' && adminData.routeStartedAt) {
+    const startMs = Date.parse(adminData.routeStartedAt);
+    const endMs = Date.parse(adminData.routeCompletedAt);
+    if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
+      const mins = Math.round((endMs - startMs) / 60000);
+      quote.elapsedMinutes = mins;
+      const rate = safeNumber(quote.hourlyRate, 0);
+      if (rate > 0) {
+        quote.total = Math.round(rate * (mins / 60) * 100) / 100;
+        if (quote.breakdown) quote.breakdown.total = quote.total;
+      }
+    }
+  }
+
+  pushAdminTimeline(adminData, 'Delivered',
+    'Route auto-completed: ' + (stops.length - failedCount) + '/' + stops.length + ' stop(s) delivered' +
+    (failedCount ? (', ' + failedCount + ' failed') : ''), 'system');
+  event.setTitle(buildOrderTitle('Delivered', payloadData.customer && payloadData.customer.name,
+    payloadData.reference || extractReferenceFromText(event.getTitle() || '')));
+  return true;
+}
+
+function handleRiderCompleteStop(payload){
+  const riderId = String(payload.id || '').trim();
+  const rider = getRiderById(riderId);
+  if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+  const eventId = cleanOrderText(payload.eventId);
+  const stopId = cleanOrderText(payload.stopId);
+  const statusInput = cleanOrderText(payload.status);
+  if (!eventId || !stopId || !statusInput) return jsonResponse({ error: 'Missing eventId, stopId, or status' }, 400);
+  if (statusInput === 'Pending' || STOP_STATUS_VALUES.indexOf(statusInput) < 0) {
+    return jsonResponse({ error: 'Invalid status: ' + statusInput }, 400);
+  }
+  const reason = cleanOrderText(payload.reason || '');
+  if (statusInput === 'Failed' && !reason) {
+    return jsonResponse({ error: 'Reason is required for a failed stop' }, 400);
+  }
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+  const event = cal.getEventById(eventId);
+  if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+  const desc = String(event.getDescription() || '');
+  const payloadData = extractPayloadFromDescription(desc) || {};
+  const adminData = ensureAdminData(desc, payloadData);
+
+  const assignedRiderId = adminData.rider && adminData.rider.riderId;
+  const assignedName = adminData.rider && adminData.rider.name;
+  if (assignedRiderId && assignedRiderId !== riderId && assignedName !== rider.name){
+    return jsonResponse({ error: 'Not your order' }, 403);
+  }
+
+  const quote = payloadData.quote || {};
+  const route = quote.route || {};
+  const stops = Array.isArray(route.stops) ? route.stops : [];
+  const idx = stops.findIndex(function(s){ return s && s.id === stopId; });
+  if (idx < 0) return jsonResponse({ error: 'Stop not found' }, 404);
+
+  stops[idx].status = statusInput;
+  stops[idx].completedAt = new Date().toISOString();
+  stops[idx].failureReason = statusInput === 'Failed' ? reason : '';
+
+  if (payload.podData && statusInput === 'Delivered'){
+    try {
+      const fileName = String(payload.podFileName || 'pod-stop.jpg').trim();
+      const contentType = String(payload.podContentType || 'image/jpeg').trim();
+      const base64 = payload.podData.indexOf('base64,') >= 0
+        ? payload.podData.split('base64,').pop()
+        : payload.podData;
+      const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
+      const folder = ensurePodFolder();
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      stops[idx].podUrl = file.getUrl();
+    } catch(_){}
+  }
+
+  applyOperatorMetadata(adminData, rider.name);
+  const stopMsg = rider.name + ' marked stop ' + (idx + 1) + '/' + stops.length + ' (' + stops[idx].address + ') as ' + statusInput +
+    (statusInput === 'Failed' ? (': ' + reason) : '');
+  pushAdminTimeline(adminData, adminData.status, stopMsg, 'rider');
+
+  maybeCompleteRoute(payloadData, adminData, event);
+  event.setDescription(buildEventDescription(payloadData, adminData));
+
+  appendOrderLogEntry({
+    action: 'rider_complete_stop', eventId: eventId, stopId: stopId, payload: payloadData,
+    adminData: adminData, status: adminData.status,
+    paymentStatus: adminData.paymentStatus,
+    message: stopMsg, build: BUILD_ID
+  });
+
+  return jsonResponse({ ok: true, stop: stops[idx], order: buildOrderSummary(event) }, 200);
+}
+
+function handleAdminUpdateStop(payload){
+  const eventId = cleanOrderText(payload.eventId);
+  const stopId = cleanOrderText(payload.stopId);
+  if (!eventId || !stopId) return jsonResponse({ error: 'Missing eventId or stopId' }, 400);
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+  const event = cal.getEventById(eventId);
+  if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+  const desc = String(event.getDescription() || '');
+  const payloadData = extractPayloadFromDescription(desc) || {};
+  const adminData = ensureAdminData(desc, payloadData);
+
+  const quote = payloadData.quote || {};
+  const route = quote.route || {};
+  const stops = Array.isArray(route.stops) ? route.stops : [];
+  const idx = stops.findIndex(function(s){ return s && s.id === stopId; });
+  if (idx < 0) return jsonResponse({ error: 'Stop not found' }, 404);
+
+  const statusInput = cleanOrderText(payload.status);
+  const reason = cleanOrderText(payload.reason || '');
+  const operator = applyOperatorMetadata(adminData, payload.operator);
+
+  if (statusInput) {
+    if (statusInput === 'Pending' || STOP_STATUS_VALUES.indexOf(statusInput) < 0) {
+      return jsonResponse({ error: 'Invalid status: ' + statusInput }, 400);
+    }
+    if (statusInput === 'Failed' && !reason) {
+      return jsonResponse({ error: 'Reason is required for a failed stop' }, 400);
+    }
+    stops[idx].status = statusInput;
+    stops[idx].completedAt = new Date().toISOString();
+    stops[idx].failureReason = statusInput === 'Failed' ? reason : '';
+    pushAdminTimeline(adminData, adminData.status,
+      operator + ' marked stop ' + (idx + 1) + '/' + stops.length + ' (' + stops[idx].address + ') as ' + statusInput +
+      (statusInput === 'Failed' ? (': ' + reason) : ''), 'dispatcher');
+  }
+
+  if (payload.podData){
+    try {
+      const fileName = String(payload.podFileName || 'pod-stop.jpg').trim();
+      const contentType = String(payload.podContentType || 'image/jpeg').trim();
+      const base64 = payload.podData.indexOf('base64,') >= 0
+        ? payload.podData.split('base64,').pop()
+        : payload.podData;
+      const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
+      const folder = ensurePodFolder();
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      stops[idx].podUrl = file.getUrl();
+      pushAdminTimeline(adminData, adminData.status, 'POD uploaded by dispatcher for stop ' + (idx + 1), 'dispatcher');
+    } catch(_){}
+  }
+
+  maybeCompleteRoute(payloadData, adminData, event);
+  event.setDescription(buildEventDescription(payloadData, adminData));
+
+  appendOrderLogEntry({
+    action: 'admin_update_stop', eventId: eventId, stopId: stopId, payload: payloadData,
+    adminData: adminData, status: adminData.status,
+    paymentStatus: adminData.paymentStatus,
+    message: 'Stop updated by dispatcher', build: BUILD_ID
+  });
+
+  return jsonResponse({ ok: true, stop: stops[idx], order: buildOrderSummary(event) }, 200);
+}
+
+// Lets a rider explicitly set/correct adminData.routeStartedAt, independent of
+// the implicit OMW stamp (handleRiderSetEta) — covers "forgot to tap On My Way"
+// or needing to backdate the actual start time. Unlike the OMW stamp (which
+// only sets if empty), this is an explicit correction action and always
+// overwrites.
+function handleRiderSetRouteStart(payload){
+  const riderId = String(payload.id || '').trim();
+  const rider = getRiderById(riderId);
+  if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+  const eventId = cleanOrderText(payload.eventId);
+  if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+  const event = cal.getEventById(eventId);
+  if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+  const desc = String(event.getDescription() || '');
+  const payloadData = extractPayloadFromDescription(desc) || {};
+  const adminData = ensureAdminData(desc, payloadData);
+
+  const assignedRiderId = adminData.rider && adminData.rider.riderId;
+  const assignedName = adminData.rider && adminData.rider.name;
+  if (assignedRiderId && assignedRiderId !== riderId && assignedName !== rider.name){
+    return jsonResponse({ error: 'Not your order' }, 403);
+  }
+
+  const startedAtInput = String(payload.startedAt || '').trim();
+  let startedAtIso = '';
+  if (startedAtInput) {
+    const parsed = new Date(startedAtInput);
+    if (isNaN(parsed.getTime())) return jsonResponse({ error: 'Invalid startedAt' }, 400);
+    startedAtIso = parsed.toISOString();
+  } else {
+    startedAtIso = new Date().toISOString();
+  }
+
+  adminData.routeStartedAt = startedAtIso;
+  applyOperatorMetadata(adminData, rider.name);
+  pushAdminTimeline(adminData, adminData.status, rider.name + ' set route start time to ' + startedAtIso, 'rider');
+
+  event.setDescription(buildEventDescription(payloadData, adminData));
+
+  appendOrderLogEntry({
+    action: 'rider_set_route_start', eventId: eventId, payload: payloadData,
+    adminData: adminData, status: adminData.status,
+    paymentStatus: adminData.paymentStatus,
+    message: 'Route start set to ' + startedAtIso, build: BUILD_ID
+  });
+
+  return jsonResponse({ ok: true, order: buildOrderSummary(event) }, 200);
 }
 
 // ── Admin: manage riders ──────────────────────────────────────────────────────

@@ -363,6 +363,7 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden;
+      flex-shrink: 0;
     }
     .detail-section-title {
       font-size: 0.68rem;
@@ -372,6 +373,13 @@
       color: var(--text-muted);
       padding: 10px 14px 6px;
       border-bottom: 1px solid var(--border);
+    }
+    .detail-section-title.is-collapsible {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
     }
     .detail-row {
       display: flex;
@@ -416,6 +424,9 @@
     /* ── NOTE INPUT ── */
     .note-wrap {
       padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
     .note-input {
       width: 100%;
@@ -1262,6 +1273,7 @@
     let activeOrder = null;
     let podFile = null;
     let podDataUrl = null;
+    let _stopPodMap = {}; // stopId -> photo data URL, for the active order's per-stop POD capture
 
     // ── Utilities ──────────────────────────────────────────────────────────────
 
@@ -1531,6 +1543,28 @@
 
     document.getElementById('backBtn').addEventListener('click', closeOrder);
 
+    function buildCollapsibleSection(titleText, contentEl, defaultOpen) {
+      const sec = document.createElement('div');
+      sec.className = 'detail-section';
+      const title = document.createElement('div');
+      title.className = 'detail-section-title is-collapsible';
+      const label = document.createElement('span');
+      label.textContent = titleText;
+      const chevron = document.createElement('span');
+      chevron.textContent = defaultOpen ? '▾' : '▸';
+      title.appendChild(label);
+      title.appendChild(chevron);
+      if (!defaultOpen) contentEl.style.display = 'none';
+      title.addEventListener('click', function() {
+        const isOpen = contentEl.style.display !== 'none';
+        contentEl.style.display = isOpen ? 'none' : '';
+        chevron.textContent = isOpen ? '▸' : '▾';
+      });
+      sec.appendChild(title);
+      sec.appendChild(contentEl);
+      return sec;
+    }
+
     function renderDetailBody(order) {
       const body = document.getElementById('detailBody');
       body.innerHTML = '';
@@ -1563,7 +1597,14 @@
       };
 
       addRouteRow('Pickup', pickup);
-      stops.forEach(function(stop, i) { addRouteRow('Stop ' + (i + 1), stop && stop.address); });
+      // Multi-stop orders (stops carry a server-assigned id) get per-stop
+      // completion controls elsewhere (buildStopCompletionSection) instead of
+      // a plain address line, once the route is actually running.
+      var multiStopActive = order.riderName === RIDER_NAME && order.status === 'In transit' &&
+        stops.length > 0 && stops.every(function(s){ return s && s.id; });
+      if (!multiStopActive) {
+        stops.forEach(function(stop, i) { addRouteRow('Stop ' + (i + 1), stop && stop.address); });
+      }
       addRouteRow('Dropoff', dropoff);
 
       // Full route link
@@ -1578,20 +1619,23 @@
 
       body.appendChild(routeSec);
 
-      // Scan label section — only for rider's own active orders
-      var activeStatuses = ['Assigned', 'OMW', 'Picked up', 'In transit'];
-      if (order.riderName === RIDER_NAME && activeStatuses.indexOf(order.status) >= 0) {
-        body.appendChild(buildScanSection(order));
-      }
-
-      // Schedule + order info
+      // Schedule + order info — placed right after Route so the rider sees
+      // the operational details up front, before any secondary tools/history.
       const infoSec = document.createElement('div');
       infoSec.className = 'detail-section';
       infoSec.innerHTML = '<div class="detail-section-title">Order</div>';
 
+      const dateLabel = schedule.date ? formatDateLabel(new Date(schedule.date + 'T00:00:00')) : null;
       const rows = [
+        ['Date', dateLabel],
         ['Time', schedule.time],
         ['ETA', quote.etaMins ? quote.etaMins + ' min' : null],
+        ['Cargo', quote.cargoType],
+        ['Load type', quote.loadType],
+        ['Vehicle', quote.vehicleType],
+        ['Packages', quote.packageCount ? String(quote.packageCount) : null],
+        ['Weight', quote.weightKg ? (quote.weightKg + ' kg') : null],
+        ['Volume', quote.volumeM3 ? (quote.volumeM3 + ' m³') : null],
         ['Customer', customer.name],
         ['Phone', customer.phone],
         ['Notes', order.notes]
@@ -1607,20 +1651,67 @@
       });
       body.appendChild(infoSec);
 
-      // POD section — only for In transit on my orders (must come before notes for context)
-      if (order.riderName === RIDER_NAME && order.status === 'In transit') {
-        body.appendChild(buildPodSection());
+      // Account details — only for B2B account orders (e.g. flowerproject),
+      // where the rider needs to know who to ask for / what window applies.
+      if (order.accountToken) {
+        const acctSec = document.createElement('div');
+        acctSec.className = 'detail-section';
+        acctSec.innerHTML = '<div class="detail-section-title">Account</div>';
+        const acctRows = [
+          ['Account', order.accountName],
+          ['Staff', order.staffName],
+          ['Pickup time', order.pickupTime],
+          ['Dropoff time', order.dropoffTime],
+          ['Attention', order.attName],
+          ['Att. contact', order.attContact]
+        ];
+        acctRows.forEach(function(r) {
+          if (!r[1]) return;
+          const row = document.createElement('div');
+          row.className = 'detail-row';
+          row.innerHTML =
+            '<div class="detail-row-label">' + r[0] + '</div>' +
+            '<div class="detail-row-value">' + r[1] + '</div>';
+          acctSec.appendChild(row);
+        });
+        body.appendChild(acctSec);
       }
 
-      // Notes section — for all active statuses on my orders
+      // Route start time — elapsed-billing multi-stop routes only. Lets the
+      // rider start (or backdate/correct) the billing clock independently of
+      // the implicit "On My Way" stamp, in case OMW was never tapped or was
+      // tapped late.
+      var activeStatuses = ['Assigned', 'OMW', 'Picked up', 'In transit'];
+      if (order.riderName === RIDER_NAME && activeStatuses.indexOf(order.status) >= 0 &&
+          quote.billingMode === 'elapsed' && stops.length > 0) {
+        body.appendChild(buildRouteStartSection(order));
+      }
+
+      // POD section — only for In transit on my orders (must come before notes for context)
+      // Multi-stop orders get per-stop completion + POD instead of one whole-order POD.
+      if (order.riderName === RIDER_NAME && order.status === 'In transit') {
+        if (multiStopActive) {
+          body.appendChild(buildStopCompletionSection(order, stops));
+        } else if (!stops.length) {
+          body.appendChild(buildPodSection());
+        }
+      }
+
+      // Scan label section — only for rider's own active orders. Placed after
+      // the primary action area (Order info / POD / stop completion) since
+      // it's an occasional-use tool, not the main flow.
+      if (order.riderName === RIDER_NAME && activeStatuses.indexOf(order.status) >= 0) {
+        body.appendChild(buildScanSection(order));
+      }
+
+      // Notes section — for all active statuses on my orders. Collapsed by
+      // default so the note composer doesn't compete for space with the
+      // action area above it.
       buildNotesSection(order, body);
 
-      // Timeline
+      // Timeline — collapsed by default, same reasoning as Notes.
       const timeline = order.timeline || [];
       if (timeline.length) {
-        const tlSec = document.createElement('div');
-        tlSec.className = 'detail-section';
-        tlSec.innerHTML = '<div class="detail-section-title">Timeline</div>';
         const tlList = document.createElement('div');
         tlList.className = 'timeline-list';
         const sorted = timeline.slice().sort(function(a, b) { return String(a.ts) < String(b.ts) ? 1 : -1; });
@@ -1635,8 +1726,7 @@
             '</div>';
           tlList.appendChild(entry);
         });
-        tlSec.appendChild(tlList);
-        body.appendChild(tlSec);
+        body.appendChild(buildCollapsibleSection('Timeline (' + timeline.length + ')', tlList, false));
       }
     }
 
@@ -1684,6 +1774,180 @@
       return podSec;
     }
 
+    // ── Elapsed-billing route timer ──────────────────────────────────────────
+
+    function buildRouteStartSection(order) {
+      const sec = document.createElement('div');
+      sec.className = 'detail-section';
+      sec.innerHTML = '<div class="detail-section-title">Route Timer</div>';
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+
+      if (!order.routeStartedAt) {
+        const startBtn = document.createElement('button');
+        startBtn.className = 'btn btn-primary';
+        startBtn.textContent = '▶ Start route';
+        startBtn.addEventListener('click', function() { doSetRouteStart(order.eventId, null); });
+        wrap.appendChild(startBtn);
+
+        const laterBtn = document.createElement('button');
+        laterBtn.className = 'btn btn-ghost';
+        laterBtn.textContent = 'Started earlier?';
+        laterBtn.addEventListener('click', function() { showRouteStartPicker(order, wrap); });
+        wrap.appendChild(laterBtn);
+      } else {
+        const info = document.createElement('div');
+        info.style.cssText = 'font-size:0.82rem;color:var(--text-muted);';
+        info.textContent = 'Route started ' + formatIso(order.routeStartedAt);
+        wrap.appendChild(info);
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-ghost';
+        editBtn.textContent = '✎ Edit start time';
+        editBtn.addEventListener('click', function() { showRouteStartPicker(order, wrap); });
+        wrap.appendChild(editBtn);
+      }
+
+      sec.appendChild(wrap);
+      return sec;
+    }
+
+    function showRouteStartPicker(order, wrap) {
+      const pickerWrap = document.createElement('div');
+      pickerWrap.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;';
+      [5, 10, 15, 30, 60].forEach(function(mins) {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-ghost';
+        btn.textContent = mins + ' min ago';
+        btn.addEventListener('click', function() {
+          doSetRouteStart(order.eventId, new Date(Date.now() - mins * 60000).toISOString());
+        });
+        pickerWrap.appendChild(btn);
+      });
+      const nowBtn = document.createElement('button');
+      nowBtn.className = 'btn btn-ghost';
+      nowBtn.textContent = 'Just now';
+      nowBtn.addEventListener('click', function() { doSetRouteStart(order.eventId, null); });
+      pickerWrap.appendChild(nowBtn);
+      wrap.appendChild(pickerWrap);
+    }
+
+    async function doSetRouteStart(eventId, startedAt) {
+      setFooterLoading(true);
+      const payload = { action: 'riderSetRouteStart', id: RIDER_ID, eventId: eventId };
+      if (startedAt) payload.startedAt = startedAt;
+      const res = await api('POST', payload);
+      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
+      toast('Route start set ✓', 'success');
+      updateAndRerender(res.order);
+    }
+
+    // ── Per-stop completion (multi-stop routes) ──────────────────────────────
+
+    function buildStopCompletionSection(order, stops) {
+      _stopPodMap = {};
+      const sec = document.createElement('div');
+      sec.className = 'detail-section';
+      sec.innerHTML = '<div class="detail-section-title">Stops</div>';
+
+      stops.forEach(function(stop, i) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--border,#333);';
+
+        const addrLine = document.createElement('div');
+        addrLine.innerHTML =
+          '<div class="detail-row-label">Stop ' + (i + 1) + '</div>' +
+          '<div class="detail-row-value">' + (stop.address || '') +
+          '<br><a class="maps-link" href="' + mapsUrl(stop.address) + '" target="_blank" rel="noopener">📍 Open maps</a></div>';
+        row.appendChild(addrLine);
+
+        if (stop.status && stop.status !== 'Pending') {
+          const doneInfo = document.createElement('div');
+          doneInfo.style.cssText = 'font-size:0.8rem;' + (stop.status === 'Delivered' ? 'color:var(--green);' : 'color:var(--danger,#d33);');
+          doneInfo.textContent = (stop.status === 'Delivered' ? '✓ Delivered' : ('✗ Failed' + (stop.failureReason ? (': ' + stop.failureReason) : ''))) +
+            (stop.completedAt ? (' — ' + formatIso(stop.completedAt)) : '');
+          row.appendChild(doneInfo);
+          if (stop.podUrl) {
+            const podLink = document.createElement('a');
+            podLink.href = stop.podUrl;
+            podLink.target = '_blank';
+            podLink.rel = 'noopener';
+            podLink.textContent = '📷 View POD';
+            podLink.style.fontSize = '0.8rem';
+            row.appendChild(podLink);
+          }
+          sec.appendChild(row);
+          return;
+        }
+
+        // Pending — POD capture + Delivered/Failed
+        const podBtn = document.createElement('div');
+        podBtn.className = 'pod-btn';
+        podBtn.innerHTML = '<span class="pod-btn-icon">📷</span> Tap to add photo (optional)';
+        const podInput = document.createElement('input');
+        podInput.type = 'file';
+        podInput.accept = 'image/*';
+        podInput.capture = 'environment';
+        const podPreview = document.createElement('img');
+        podPreview.className = 'pod-preview';
+        podBtn.addEventListener('click', function() { podInput.click(); });
+        podInput.addEventListener('change', function() {
+          if (podInput.files && podInput.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+              _stopPodMap[stop.id] = e.target.result;
+              podPreview.src = e.target.result;
+              podPreview.classList.add('visible');
+              podBtn.classList.add('has-file');
+              podBtn.innerHTML = '<span class="pod-btn-icon">✓</span> Photo added — tap to change';
+            };
+            reader.readAsDataURL(podInput.files[0]);
+          }
+        });
+        row.appendChild(podBtn);
+        row.appendChild(podInput);
+        row.appendChild(podPreview);
+
+        const btnRow = document.createElement('div');
+        btnRow.className = 'btn-row';
+        const failBtn = document.createElement('button');
+        failBtn.className = 'btn btn-danger';
+        failBtn.textContent = 'Failed';
+        failBtn.addEventListener('click', function() { doCompleteStop(order.eventId, stop.id, 'Failed'); });
+        const deliveredBtn = document.createElement('button');
+        deliveredBtn.className = 'btn btn-success';
+        deliveredBtn.textContent = '✓ Delivered';
+        deliveredBtn.addEventListener('click', function() { doCompleteStop(order.eventId, stop.id, 'Delivered'); });
+        btnRow.appendChild(failBtn);
+        btnRow.appendChild(deliveredBtn);
+        row.appendChild(btnRow);
+
+        sec.appendChild(row);
+      });
+
+      return sec;
+    }
+
+    async function doCompleteStop(eventId, stopId, status) {
+      let reason = '';
+      if (status === 'Failed') {
+        reason = window.prompt('Reason the stop failed:') || '';
+        if (!reason.trim()) return;
+      }
+      setFooterLoading(true);
+      const payload = { action: 'riderCompleteStop', id: RIDER_ID, eventId: eventId, stopId: stopId, status: status, reason: reason };
+      const podDataUrlForStop = _stopPodMap[stopId];
+      if (podDataUrlForStop) {
+        payload.podData = podDataUrlForStop;
+        payload.podFileName = 'pod-' + stopId + '-' + Date.now() + '.jpg';
+        payload.podContentType = 'image/jpeg';
+      }
+      const res = await api('POST', payload);
+      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
+      toast('Stop marked ' + status + ' ✓', 'success');
+      updateAndRerender(res.order);
+    }
+
     function buildNotesSection(order, body) {
       const finalStatuses = ['Delivered', 'Failed', 'Canceled', 'Delivery rejected'];
       if (order.riderName !== RIDER_NAME) return;
@@ -1705,12 +1969,8 @@
         en: 'e.g. Left at door, notified doorman…'
       };
 
-      const noteWrap = document.createElement('div');
-      noteWrap.className = 'detail-section';
-      noteWrap.innerHTML = '<div class="detail-section-title">Notes</div>';
       const nw = document.createElement('div');
       nw.className = 'note-wrap';
-      nw.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
 
       const clientLabel = document.createElement('div');
       clientLabel.style.cssText = 'font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--green);';
@@ -1736,8 +1996,7 @@
       nw.appendChild(textarea);
       nw.appendChild(dispatchLabel);
       nw.appendChild(dispatchTextarea);
-      noteWrap.appendChild(nw);
-      body.appendChild(noteWrap);
+      body.appendChild(buildCollapsibleSection('Notes', nw, false));
     }
 
     // ── Scan Label ────────────────────────────────────────────────────────────
@@ -1850,7 +2109,7 @@
           action: 'visionExtract',
           id: RIDER_ID,
           image: b64,
-          mime: mime
+          mimeType: mime
         });
 
         if (res.error) {
@@ -2970,20 +3229,31 @@
       }
 
       if (status === 'In transit') {
-        const deliveredBtn = document.createElement('button');
-        deliveredBtn.className = 'btn btn-success';
-        deliveredBtn.textContent = '✓ Delivered';
-        deliveredBtn.addEventListener('click', function() { doDeliver(order.eventId); });
+        const orderStops = Array.isArray(order.route && order.route.stops) ? order.route.stops : [];
+        const isMultiStop = orderStops.length > 0 && orderStops.every(function(s){ return s && s.id; });
+        if (isMultiStop) {
+          // Completion happens per-stop (see buildStopCompletionSection above the
+          // footer) — the route auto-completes once every stop is terminal.
+          const info = document.createElement('div');
+          info.style.cssText = 'text-align:center;color:var(--text-muted);font-size:0.82rem;padding:8px;';
+          info.textContent = 'Mark each stop above as Delivered/Failed — the route completes automatically once all stops are done.';
+          footer.appendChild(info);
+        } else {
+          const deliveredBtn = document.createElement('button');
+          deliveredBtn.className = 'btn btn-success';
+          deliveredBtn.textContent = '✓ Delivered';
+          deliveredBtn.addEventListener('click', function() { doDeliver(order.eventId); });
 
-        const row = document.createElement('div');
-        row.className = 'btn-row';
-        const failBtn = document.createElement('button');
-        failBtn.className = 'btn btn-danger';
-        failBtn.textContent = 'Failed';
-        failBtn.addEventListener('click', function() { doStatusUpdate(order.eventId, 'Failed'); });
-        row.appendChild(failBtn);
-        row.appendChild(deliveredBtn);
-        footer.appendChild(row);
+          const row = document.createElement('div');
+          row.className = 'btn-row';
+          const failBtn = document.createElement('button');
+          failBtn.className = 'btn btn-danger';
+          failBtn.textContent = 'Failed';
+          failBtn.addEventListener('click', function() { doStatusUpdate(order.eventId, 'Failed'); });
+          row.appendChild(failBtn);
+          row.appendChild(deliveredBtn);
+          footer.appendChild(row);
+        }
       }
     }
 

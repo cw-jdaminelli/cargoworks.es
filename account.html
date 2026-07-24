@@ -40,7 +40,11 @@
     .acct-badge--transit   { background: #fff3e0; color: #8b5000; }
     .acct-badge--canceled  { background: #fdecea; color: #8b0000; }
     .acct-badge--default   { background: #f0edf8; color: #6c3fc5; }
-    .acct-badge--stops     { background: #f0edf8; color: #6c3fc5; font-size: 0.7rem; margin-left: 0.3rem; }
+    .acct-badge--stops     { background: #f0edf8; color: #6c3fc5; font-size: 0.7rem; margin-left: 0.3rem; cursor: pointer; border: none; font-family: inherit; }
+    .acct-stops-detail-row td { padding: 0.4rem 0.6rem 0.8rem; background: rgba(108, 63, 197, 0.03); }
+    table.acct-stops-detail { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    table.acct-stops-detail th { text-align: left; font-size: 0.68rem; text-transform: uppercase; color: var(--acct-muted); padding: 0.2rem 0.5rem; }
+    table.acct-stops-detail td { padding: 0.25rem 0.5rem; border-top: 1px solid var(--acct-border); }
     .acct-route { font-size: 0.85rem; color: var(--acct-ink); }
     .acct-route-arrow { color: var(--acct-muted); margin: 0 0.3em; }
     .acct-track-link { color: var(--acct-accent); text-decoration: none; font-weight: 600; font-size: 0.85rem; white-space: nowrap; }
@@ -168,10 +172,19 @@
       ].filter(function(c) { return c.show !== false; });
     }
 
+    function stopStatusBadgeClass(status) {
+      var s = String(status || '').toLowerCase();
+      if (s === 'delivered') return 'acct-badge--delivered';
+      if (s === 'failed') return 'acct-badge--canceled';
+      return 'acct-badge--default';
+    }
+
     function cellHtml(col, o) {
       switch (col.key) {
         case 'ref':
-          var stopsHtml = o.stops > 0 ? ' <span class="acct-badge acct-badge--stops">+' + o.stops + ' stops</span>' : '';
+          var stopsHtml = (o.stopsDetail && o.stopsDetail.length)
+            ? ' <button type="button" class="acct-badge acct-badge--stops" data-ref="' + escHtml(o.reference) + '">+' + o.stops + ' stops ▾</button>'
+            : (o.stops > 0 ? ' <span class="acct-badge acct-badge--stops">+' + o.stops + ' stops</span>' : '');
           return escHtml(o.reference || '—') + stopsHtml;
         case 'date':
           return escHtml(o.date || '—');
@@ -230,6 +243,31 @@
           return '<td data-label="' + escHtml(c.label) + '">' + cellHtml(c, o) + '</td>';
         }).join('');
         elBody.appendChild(tr);
+
+        if (o.stopsDetail && o.stopsDetail.length) {
+          var detailTr = document.createElement('tr');
+          detailTr.className = 'acct-stops-detail-row';
+          detailTr.setAttribute('data-detail-for', o.reference || '');
+          detailTr.style.display = 'none';
+          var td = document.createElement('td');
+          td.colSpan = columns.length;
+          var rowsHtml = o.stopsDetail.map(function(s, i) {
+            var statusHtml = '<span class="acct-badge ' + stopStatusBadgeClass(s.status) + '">' + escHtml(s.status || 'Pending') + '</span>' +
+              (s.status === 'Failed' && s.failureReason ? ' <span style="color:#8b0000;">' + escHtml(s.failureReason) + '</span>' : '');
+            var podHtml = s.podUrl ? '<a class="acct-track-link" href="' + escHtml(s.podUrl) + '" target="_blank">POD →</a>' : '—';
+            var trackHtml = s.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(s.trackingUrl) + '" target="_blank">Track →</a>' : '—';
+            return '<tr>' +
+              '<td>' + (i + 1) + '</td>' +
+              '<td>' + escHtml(s.address || '—') + '</td>' +
+              '<td>' + statusHtml + '</td>' +
+              '<td>' + podHtml + '</td>' +
+              '<td>' + trackHtml + '</td>' +
+            '</tr>';
+          }).join('');
+          td.innerHTML = '<table class="acct-stops-detail"><thead><tr><th>#</th><th>Address</th><th>Status</th><th>POD</th><th>Track</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+          detailTr.appendChild(td);
+          elBody.appendChild(detailTr);
+        }
       });
     }
 
@@ -255,7 +293,11 @@
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (data.error) { setStatus(data.error, true); return; }
-          allOrders = data.orders || [];
+          allOrders = (data.orders || []).slice().sort(function(a, b) {
+            var da = a.date || '', db = b.date || '';
+            if (da !== db) return da < db ? -1 : 1;
+            return (a.createdAt || '') < (b.createdAt || '') ? -1 : 1;
+          });
           currentRequires = data.requires || {};
           var name = data.accountName || token;
           elSubtitle.textContent = 'Account: ' + name;
@@ -282,6 +324,15 @@
 
     elSearch.addEventListener('input', function() {
       renderRows(filterOrders(elSearch.value));
+    });
+
+    elBody.addEventListener('click', function(e) {
+      var btn = e.target.closest && e.target.closest('.acct-badge--stops[data-ref]');
+      if (!btn) return;
+      var ref = btn.getAttribute('data-ref');
+      var detailRow = elBody.querySelector('tr.acct-stops-detail-row[data-detail-for="' + CSS.escape(ref) + '"]');
+      if (!detailRow) return;
+      detailRow.style.display = detailRow.style.display === 'none' ? '' : 'none';
     });
 
     // Load from URL param ?token=X

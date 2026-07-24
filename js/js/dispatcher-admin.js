@@ -93,7 +93,8 @@
   const editAccountAttName = document.getElementById('editAccountAttName');
   const editAccountAttContact = document.getElementById('editAccountAttContact');
   const editPickupAddress = document.getElementById('editPickupAddress');
-  const editRouteStops = document.getElementById('editRouteStops');
+  const editStopsList = document.getElementById('editStopsList');
+  const addStopBtn = document.getElementById('addStopBtn');
   const editDropoffAddress = document.getElementById('editDropoffAddress');
   const editNotes = document.getElementById('editNotes');
   const editScheduleDate = document.getElementById('editScheduleDate');
@@ -174,6 +175,16 @@
   const editPriceBreakdownFields = document.getElementById('editPriceBreakdownFields');
   const editPriceManualHint      = document.getElementById('editPriceManualHint');
 
+  // Elapsed-time billing (multi-stop B2B accounts)
+  const editBillingMode       = document.getElementById('editBillingMode');
+  const editElapsedFields     = document.getElementById('editElapsedFields');
+  const editHourlyRate        = document.getElementById('editHourlyRate');
+  const editRouteStartedAt    = document.getElementById('editRouteStartedAt');
+  const editRouteCompletedAt  = document.getElementById('editRouteCompletedAt');
+  const editElapsedMinutes    = document.getElementById('editElapsedMinutes');
+  const editElapsedOverride   = document.getElementById('editElapsedOverride');
+  const editElapsedManualHint = document.getElementById('editElapsedManualHint');
+
   // Payment link button
   const editCreatePaymentBtn    = document.getElementById('editCreatePaymentBtn');
   const editCreatePaymentStatus = document.getElementById('editCreatePaymentStatus');
@@ -185,15 +196,12 @@
   let importImageBase64  = null;
   let importImageMime    = null;
 
-  // Stop quick-add state
-  let _stopsQList = []; // confirmed stop addresses
-
   // Maps route link debounce
   let _mapsLinkTimer = null;
 
   const editorInputs = [
     editCustomerName, editCustomerEmail, editCustomerPhone, editUpdatesPreference,
-    editPickupAddress, editRouteStops, editDropoffAddress, editNotes,
+    editPickupAddress, editDropoffAddress, editNotes,
     editScheduleDate, editScheduleTime, editEtaMins, editTotalKm,
     editCargoType, editLoadType, editVehicleType, editPackageCount,
     editWeightKg, editVolumeM3,
@@ -215,7 +223,8 @@
     order: null,
     sourceEventId: '',
     dirty: false,
-    snapshot: ''
+    snapshot: '',
+    stopsModel: []
   };
   let cancelTargetOrder = null;
 
@@ -408,6 +417,16 @@
 
   function normalizeText(value){
     return String(value || '').trim();
+  }
+
+  // ISO instant -> <input type="datetime-local"> value, in the browser's own
+  // local timezone (native datetime-local semantics — no zone suffix).
+  function isoToDatetimeLocal(iso){
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const pad = function(n){ return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
 
   function normalizeStops(stops){
@@ -899,7 +918,7 @@
       accountAttName: normalizeText(editAccountAttName && editAccountAttName.value),
       accountAttContact: normalizeText(editAccountAttContact && editAccountAttContact.value),
       pickup: normalizeText(editPickupAddress && editPickupAddress.value),
-      stops: normalizeText(editRouteStops && editRouteStops.value),
+      stops: JSON.stringify(editorState.stopsModel.map(function(s){ return [s.id, s.address, s.tier]; })),
       dropoff: normalizeText(editDropoffAddress && editDropoffAddress.value),
       notes: normalizeText(editNotes && editNotes.value),
       date: normalizeText(editScheduleDate && editScheduleDate.value),
@@ -919,6 +938,11 @@
       priceDiscount: normalizeText(editPriceDiscount && editPriceDiscount.value),
       priceAdjustment: normalizeText(editPriceAdjustment && editPriceAdjustment.value),
       priceTotal: normalizeText(editPriceTotal && editPriceTotal.value),
+      billingMode: normalizeText(editBillingMode && editBillingMode.value),
+      hourlyRate: normalizeText(editHourlyRate && editHourlyRate.value),
+      routeStartedAt: normalizeText(editRouteStartedAt && editRouteStartedAt.value),
+      routeCompletedAt: normalizeText(editRouteCompletedAt && editRouteCompletedAt.value),
+      elapsedMinutes: normalizeText(editElapsedMinutes && editElapsedMinutes.value),
       status: normalizeText(editStatus && editStatus.value),
       paymentStatus: normalizeText(editPaymentStatus && editPaymentStatus.value),
       paymentUrl: normalizeText(editPaymentUrl && editPaymentUrl.value),
@@ -960,6 +984,14 @@
 
   function recalculatePriceTotal(){
     if (editPriceOverride && editPriceOverride.checked) return; // manual override — don't clobber
+    if (editBillingMode && editBillingMode.value === 'elapsed') {
+      const rate = safeNumber(editHourlyRate && editHourlyRate.value, 0);
+      const mins = safeNumber(editElapsedMinutes && editElapsedMinutes.value, 0);
+      const total = Math.round(rate * (mins / 60) * 100) / 100;
+      if (editPriceTotal) editPriceTotal.value = total.toFixed(2);
+      togglePriceNotice(true, 'Elapsed billing: ' + mins + ' min @ ' + rate.toFixed(2) + '/h = ' + total.toFixed(2) + '.');
+      return;
+    }
     const base = safeNumber(editPriceBase && editPriceBase.value, 0);
     const distance = safeNumber(editPriceDistance && editPriceDistance.value, 0);
     const stops = safeNumber(editPriceStops && editPriceStops.value, 0);
@@ -969,6 +1001,27 @@
     const total = base + distance + stops + surcharge - discount + adjustment;
     if (editPriceTotal) editPriceTotal.value = total.toFixed(2);
     togglePriceNotice(true, 'Pricing breakdown changed. Final total recalculated to ' + total.toFixed(2) + '.');
+  }
+
+  function recalculateElapsedMinutes(){
+    if (editElapsedOverride && editElapsedOverride.checked) return; // manual override — don't clobber
+    if (!editRouteStartedAt || !editRouteCompletedAt || !editElapsedMinutes) return;
+    const startMs = editRouteStartedAt.value ? Date.parse(editRouteStartedAt.value) : NaN;
+    const endMs = editRouteCompletedAt.value ? Date.parse(editRouteCompletedAt.value) : NaN;
+    if (isNaN(startMs) || isNaN(endMs) || endMs <= startMs) return; // leave field as-is
+    editElapsedMinutes.value = String(Math.round((endMs - startMs) / 60000));
+  }
+
+  function applyBillingModeVisibility(){
+    if (!editBillingMode) return;
+    const elapsed = editBillingMode.value === 'elapsed';
+    if (editElapsedFields) editElapsedFields.style.display = elapsed ? '' : 'none';
+    applyPriceOverride(); // re-derive breakdown-fields/get-system-pricing visibility for the new mode
+  }
+
+  function applyElapsedOverride(){
+    if (!editElapsedOverride) return;
+    if (editElapsedManualHint) editElapsedManualHint.style.display = editElapsedOverride.checked ? 'inline' : 'none';
   }
 
   function closeEditor(force){
@@ -1029,7 +1082,6 @@
     if (editAccountToken && editAccountToken.value) verifyAccountToken(true);
 
     if (editPickupAddress) editPickupAddress.value = modeCreate ? '' : normalizeText(route && route.pickup && route.pickup.address);
-    if (editRouteStops) editRouteStops.value = modeCreate ? '' : stopTextFromRoute(route);
     if (editDropoffAddress) editDropoffAddress.value = modeCreate ? '' : normalizeText(route && route.dropoff && route.dropoff.address);
     if (editNotes) editNotes.value = modeCreate ? '' : normalizeText(source && source.notes);
 
@@ -1052,6 +1104,13 @@
     if (editPriceDiscount) editPriceDiscount.value = String(safeNumber(breakdown.discount, 0));
     if (editPriceAdjustment) editPriceAdjustment.value = String(safeNumber(breakdown.adjustment, 0));
     if (editPriceTotal) editPriceTotal.value = String(safeNumber(quote && quote.total, 0));
+
+    if (editBillingMode) editBillingMode.value = (quote && quote.billingMode === 'elapsed') ? 'elapsed' : 'flat';
+    if (editHourlyRate) editHourlyRate.value = String(safeNumber(quote && quote.hourlyRate, 0));
+    if (editRouteStartedAt) editRouteStartedAt.value = isoToDatetimeLocal(source && source.routeStartedAt);
+    if (editRouteCompletedAt) editRouteCompletedAt.value = isoToDatetimeLocal(source && source.routeCompletedAt);
+    if (editElapsedMinutes) editElapsedMinutes.value = String(safeNumber(quote && quote.elapsedMinutes, 0));
+    applyBillingModeVisibility();
 
     if (editStatus) editStatus.value = modeCreate || modeDuplicate ? 'Confirmed' : normalizeText(source && source.status || 'Confirmed');
     if (editPaymentStatus) editPaymentStatus.value = modeCreate || modeDuplicate ? 'Pending' : normalizeText(source && source.paymentStatus || 'Pending');
@@ -1080,14 +1139,11 @@
     }
 
     // Reset stops quick-add
-    _stopsQList = [];
     if (stopsQuickPanel) stopsQuickPanel.style.display = 'none';
     if (stopsQuickAddToggle) stopsQuickAddToggle.textContent = '⚡ Quick add';
     if (stopsQTypeWrap) stopsQTypeWrap.style.display = 'none';
     if (stopsQConfirmWrap) stopsQConfirmWrap.style.display = 'none';
     if (stopsQStatus) stopsQStatus.textContent = '';
-    if (stopsQListWrap) stopsQListWrap.style.display = 'none';
-    if (stopsQListItems) stopsQListItems.innerHTML = '';
 
     // Reset payment link status
     if (editCreatePaymentStatus) { editCreatePaymentStatus.textContent = ''; editCreatePaymentStatus.style.display = 'none'; }
@@ -1103,6 +1159,8 @@
     editorState.mode = normalizedMode;
     editorState.order = source;
     editorState.sourceEventId = normalizeText(source && source.eventId);
+    editorState.stopsModel = modeCreate ? [] : (Array.isArray(route.stops) ? route.stops.map(function(s){ return Object.assign({}, s); }) : []);
+    renderStopsList();
     editorState.snapshot = editorModelSnapshot();
     setEditorDirty(false);
 
@@ -1135,10 +1193,15 @@
         },
         route: {
           pickup: { address: normalizeText(editPickupAddress && editPickupAddress.value) },
-          stops: routeStopsFromText(editRouteStops && editRouteStops.value),
+          stops: editorState.stopsModel.filter(function(s){ return normalizeText(s.address); }).map(function(s){
+            return { id: s.id || '', address: normalizeText(s.address), tier: normalizeText(s.tier), priority: !!s.priority, outlier: !!s.outlier };
+          }),
           dropoff: { address: normalizeText(editDropoffAddress && editDropoffAddress.value) }
         },
         total: total,
+        billingMode: normalizeText(editBillingMode && editBillingMode.value) || 'flat',
+        hourlyRate: safeNumber(editHourlyRate && editHourlyRate.value, 0),
+        elapsedMinutes: safeNumber(editElapsedMinutes && editElapsedMinutes.value, 0),
         etaMins: Math.max(15, safeNumber(editEtaMins && editEtaMins.value, 60)),
         totalKm: safeNumber(editTotalKm && editTotalKm.value, 0),
         currency: 'EUR',
@@ -1194,7 +1257,9 @@
       riderName: normalizeText(editRiderName && editRiderName.value),
       riderPhone: normalizeText(editRiderPhone && editRiderPhone.value),
       internalNotes: normalizeText(editInternalNotes && editInternalNotes.value),
-      message: normalizeText(editSaveNote && editSaveNote.value)
+      message: normalizeText(editSaveNote && editSaveNote.value),
+      routeStartedAt: (editRouteStartedAt && editRouteStartedAt.value) ? new Date(editRouteStartedAt.value).toISOString() : '',
+      routeCompletedAt: (editRouteCompletedAt && editRouteCompletedAt.value) ? new Date(editRouteCompletedAt.value).toISOString() : ''
     };
 
     try {
@@ -1887,7 +1952,12 @@
     fill(editCustomerEmail,  d.customerEmail);
     fill(editPickupAddress,  d.pickupAddress);
     fill(editDropoffAddress, d.dropoffAddress);
-    fill(editRouteStops,     d.stops);
+    if (d.stops) {
+      const stopLines = Array.isArray(d.stops)
+        ? d.stops.map(function(s){ return String(s || '').trim(); }).filter(Boolean)
+        : String(d.stops).split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+      stopLines.forEach(function(addr){ addStopToModel(addr); });
+    }
     fill(editNotes,          d.notes);
     fill(editScheduleDate,   d.scheduleDate);
     fill(editScheduleTime,   d.scheduleTime);
@@ -1895,6 +1965,185 @@
     fill(editInternalNotes,  d.internalNotes);
     if (editPackageCount && d.packageCount != null) editPackageCount.value = String(d.packageCount);
     if (editWeightKg     && d.weightKg     != null) editWeightKg.value     = String(d.weightKg);
+  }
+
+  // ── Structured stops list ────────────────────────────────────────────────
+  // Replaces the old plain textarea. Each stop is a row bound to an object in
+  // editorState.stopsModel carrying id/status/podUrl/trackingToken/
+  // completedAt/failureReason — this editor only ever edits address/tier here;
+  // completion fields are read-only display, changed only via the
+  // Delivered/Failed buttons (which call adminUpdateStop immediately, not part
+  // of the main Save flow) so a stale re-save of this form can never clobber a
+  // rider's already-recorded delivery.
+
+  function stopStatusBadgeHtml(status) {
+    if (status === 'Delivered') return '<span class="stop-badge stop-badge--ok">✓ Delivered</span>';
+    if (status === 'Failed') return '<span class="stop-badge stop-badge--fail">✗ Failed</span>';
+    return '<span class="stop-badge">Pending</span>';
+  }
+
+  function buildStopTrackingLink(stop) {
+    const ref = normalizeText(editorState.order && editorState.order.reference);
+    if (!ref || !stop.id || !stop.trackingToken) return '';
+    return window.location.origin + '/tracking.html?ref=' + encodeURIComponent(ref) +
+      '&stop=' + encodeURIComponent(stop.id) + '&t=' + encodeURIComponent(stop.trackingToken);
+  }
+
+  function renderStopsList() {
+    if (!editStopsList) return;
+    editStopsList.innerHTML = '';
+    editorState.stopsModel.forEach(function(stop, idx) {
+      const row = document.createElement('div');
+      row.className = 'stop-row';
+      row.style.cssText = 'border:1px solid var(--dispatch-border,#ddd);border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.35rem;';
+
+      const topRow = document.createElement('div');
+      topRow.style.cssText = 'display:flex;gap:0.35rem;align-items:center;';
+
+      const addrInput = document.createElement('input');
+      addrInput.type = 'text';
+      addrInput.placeholder = 'Stop address';
+      addrInput.value = stop.address || '';
+      addrInput.style.cssText = 'flex:1 1 auto;min-width:0;';
+      addrInput.addEventListener('input', function(){
+        stop.address = addrInput.value;
+        updateEditorDirtyFromForm();
+        updateMapsRouteLink();
+        autoCalcStopsFee();
+      });
+
+      const tierInput = document.createElement('input');
+      tierInput.type = 'text';
+      tierInput.placeholder = 'Tier';
+      tierInput.value = stop.tier || '';
+      tierInput.style.cssText = 'flex:0 0 64px;';
+      tierInput.addEventListener('input', function(){
+        stop.tier = tierInput.value;
+        updateEditorDirtyFromForm();
+      });
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn btn--ghost';
+      removeBtn.title = 'Remove stop';
+      removeBtn.textContent = '✗';
+      removeBtn.style.cssText = 'flex:0 0 auto;padding:0.15rem 0.4rem;';
+      removeBtn.addEventListener('click', function(){
+        if (stop.status && stop.status !== 'Pending') {
+          const ok = window.confirm('This stop is already ' + stop.status + '. Removing it will break its public tracking link and unlink its POD photo. Continue?');
+          if (!ok) return;
+        }
+        editorState.stopsModel.splice(idx, 1);
+        renderStopsList();
+        updateEditorDirtyFromForm();
+        updateMapsRouteLink();
+        autoCalcStopsFee();
+      });
+
+      topRow.appendChild(addrInput);
+      topRow.appendChild(tierInput);
+      topRow.appendChild(removeBtn);
+      row.appendChild(topRow);
+
+      const metaRow = document.createElement('div');
+      metaRow.style.cssText = 'display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.3rem;font-size:0.72rem;';
+
+      const badge = document.createElement('span');
+      badge.innerHTML = stopStatusBadgeHtml(stop.status);
+      metaRow.appendChild(badge);
+
+      if (stop.status === 'Failed' && stop.failureReason) {
+        const reasonEl = document.createElement('span');
+        reasonEl.style.color = '#b00020';
+        reasonEl.textContent = stop.failureReason;
+        metaRow.appendChild(reasonEl);
+      }
+
+      if (stop.podUrl) {
+        const podLink = document.createElement('a');
+        podLink.href = stop.podUrl;
+        podLink.target = '_blank';
+        podLink.rel = 'noopener';
+        podLink.textContent = '📷 POD';
+        metaRow.appendChild(podLink);
+      }
+
+      if (stop.id && stop.trackingToken && editorState.order) {
+        const trackBtn = document.createElement('button');
+        trackBtn.type = 'button';
+        trackBtn.className = 'btn btn--ghost';
+        trackBtn.style.cssText = 'padding:0.1rem 0.35rem;font-size:0.68rem;';
+        trackBtn.textContent = '🔗 Copy tracking link';
+        trackBtn.addEventListener('click', function(){
+          const url = buildStopTrackingLink(stop);
+          if (!url) return;
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url);
+          trackBtn.textContent = '✓ Copied';
+          setTimeout(function(){ trackBtn.textContent = '🔗 Copy tracking link'; }, 1500);
+        });
+        metaRow.appendChild(trackBtn);
+      }
+
+      if ((!stop.status || stop.status === 'Pending') && stop.id && editorState.sourceEventId) {
+        const deliveredBtn = document.createElement('button');
+        deliveredBtn.type = 'button';
+        deliveredBtn.className = 'btn btn--ghost';
+        deliveredBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
+        deliveredBtn.textContent = '✓ Delivered';
+        deliveredBtn.addEventListener('click', function(){ completeStopFromDispatcher(stop, idx, 'Delivered'); });
+
+        const failedBtn = document.createElement('button');
+        failedBtn.type = 'button';
+        failedBtn.className = 'btn btn--ghost';
+        failedBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
+        failedBtn.textContent = '✗ Failed';
+        failedBtn.addEventListener('click', function(){ completeStopFromDispatcher(stop, idx, 'Failed'); });
+
+        metaRow.appendChild(deliveredBtn);
+        metaRow.appendChild(failedBtn);
+      } else if ((!stop.status || stop.status === 'Pending') && !stop.id) {
+        const hint = document.createElement('span');
+        hint.style.color = 'var(--dispatch-muted)';
+        hint.textContent = '(save order to enable Delivered/Failed)';
+        metaRow.appendChild(hint);
+      }
+
+      row.appendChild(metaRow);
+      editStopsList.appendChild(row);
+    });
+  }
+
+  async function completeStopFromDispatcher(stop, idx, status) {
+    if (!editorState.sourceEventId || !stop.id) {
+      setEditorFeedback('Save the order first before marking stops.', true);
+      return;
+    }
+    let reason = '';
+    if (status === 'Failed') {
+      reason = window.prompt('Reason the stop failed:') || '';
+      if (!reason.trim()) return;
+    }
+    try {
+      const res = await postAdmin({
+        action: 'adminUpdateStop',
+        eventId: editorState.sourceEventId,
+        stopId: stop.id,
+        status: status,
+        reason: reason,
+        operator: currentOperator()
+      });
+      if (res && res.stop) {
+        Object.assign(editorState.stopsModel[idx], res.stop);
+      }
+      if (res && res.order) {
+        editorState.order = res.order;
+        if (editStatus) editStatus.value = res.order.status || editStatus.value;
+      }
+      renderStopsList();
+      setEditorFeedback('✓ Stop updated.');
+    } catch (err) {
+      setEditorFeedback('Stop update failed: ' + ((err && err.message) || err), true);
+    }
   }
 
   // ── Stop Quick-add ───────────────────────────────────────────────────────
@@ -1916,10 +2165,6 @@
       const open = stopsQuickPanel.style.display === 'none' || !stopsQuickPanel.style.display;
       stopsQuickPanel.style.display = open ? '' : 'none';
       stopsQuickAddToggle.textContent = open ? '⚡ Close' : '⚡ Quick add';
-      if (open) {
-        _stopsQList = editRouteStops ? editRouteStops.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean) : [];
-        renderStopsQList();
-      }
     });
 
     // ── 📷 Camera — getUserMedia, no OS handoff ──
@@ -1952,9 +2197,7 @@
     if (stopsQConfirmBtn) stopsQConfirmBtn.addEventListener('click', function() {
       const addr = stopsQConfirmInput ? stopsQConfirmInput.value.trim() : '';
       if (!addr) return;
-      _stopsQList.push(addr);
-      syncStopsTextarea();
-      renderStopsQList();
+      addStopToModel(addr);
       if (stopsQConfirmWrap) stopsQConfirmWrap.style.display = 'none';
       setStopsQStatus('✓ Stop added. Tap Camera for next stop.');
     });
@@ -2032,101 +2275,53 @@
     reader.readAsDataURL(file);
   }
 
+  // Server-side vision extraction — the same handleVisionExtract endpoint the
+  // rider's route-sheet scanner already uses, now callable with the admin
+  // token instead of a rider id. Returns a validated, deduped, tiered list of
+  // ALL addresses found in one shot, so (unlike the old direct-to-Anthropic,
+  // one-address-at-a-time version this replaced) there's no per-address
+  // confirm step — every extracted stop is added straight to the list.
   async function extractAddressFromB64(b64, mime) {
-    let apiKey = sessionStorage.getItem(importApiKey) || '';
-    if (!apiKey) {
-      apiKey = (window.prompt('Enter your Anthropic API key to enable AI address extraction.\nStored for this browser session only.') || '').trim();
-      if (!apiKey) { setStopsQStatus('API key required.', true); return; }
-      sessionStorage.setItem(importApiKey, apiKey);
-    }
-
-    setStopsQStatus('Extracting address…');
+    setStopsQStatus('Extracting addresses…');
     if (stopsQConfirmWrap) stopsQConfirmWrap.style.display = 'none';
     if (stopsQTypeWrap)    stopsQTypeWrap.style.display    = 'none';
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 200,
-          system: 'You are a logistics dispatcher. Extract the delivery address from the image. Return ONLY the street address as plain text — no explanation, no JSON, no labels. If you cannot find an address, return the word NONE.',
-          messages: [{ role: 'user', content: [
-            { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-            { type: 'text', text: 'Extract the delivery address from this image.' }
-          ]}]
-        })
-      });
-
-      if (!res.ok) {
-        if (res.status === 401) sessionStorage.removeItem(importApiKey);
-        const err = await res.json().catch(function(){ return {}; });
-        setStopsQStatus('API error ' + res.status + (err.error ? ': ' + err.error.message : ''), true);
+      const res = await postAdmin({ action: 'visionExtract', image: b64, mimeType: mime });
+      if (!res.stops || !res.stops.length) {
+        setStopsQStatus('No addresses found — try again or use ✎ Type.', true);
         return;
       }
-
-      const data = await res.json();
-      const raw = (data.content || []).map(function(b){ return b.type === 'text' ? b.text : ''; }).join('').trim();
-
-      if (!raw || raw.toUpperCase() === 'NONE') {
-        setStopsQStatus('No address found — try again or use ✎ Type.', true);
-        return;
-      }
-
-      if (stopsQConfirmInput) stopsQConfirmInput.value = raw;
-      if (stopsQConfirmWrap) stopsQConfirmWrap.style.display = '';
-      setStopsQStatus('');
-      if (stopsQConfirmInput) stopsQConfirmInput.focus();
-
+      res.stops.forEach(function(s){ addStopToModel(s.address, s.tier || ''); });
+      setStopsQStatus('✓ ' + res.stops.length + ' stop(s) extracted and added.');
     } catch(err) {
-      setStopsQStatus('Request failed: ' + (err.message || err), true);
+      setStopsQStatus('Request failed: ' + ((err && err.message) || err), true);
     }
   }
 
   function commitStopFromType() {
     const addr = stopsQTypeInput ? stopsQTypeInput.value.trim() : '';
     if (!addr) return;
-    _stopsQList.push(addr);
-    syncStopsTextarea();
-    renderStopsQList();
+    addStopToModel(addr);
     if (stopsQTypeInput) stopsQTypeInput.value = '';
     if (stopsQTypeWrap) stopsQTypeWrap.style.display = 'none';
     if (stopsQStatus) { stopsQStatus.textContent = '✓ Stop added.'; stopsQStatus.className = 'dispatcher-status'; }
   }
 
-  function syncStopsTextarea() {
-    if (editRouteStops) editRouteStops.value = _stopsQList.join('\n');
+  // Appends a new blank-state stop to the structured stops model (used by the
+  // Quick-add camera/file/type flows and manual "+ Add stop"). id/podUrl/
+  // trackingToken/completedAt/failureReason are always left blank here — the
+  // server assigns a real id + tracking token the first time this order is
+  // saved (normalizeStopsForOrder); status defaults to Pending.
+  function addStopToModel(address, tier) {
+    editorState.stopsModel.push({
+      id: '', address: address || '', tier: tier || '', priority: false, outlier: false,
+      status: 'Pending', podUrl: '', trackingToken: '', completedAt: '', failureReason: ''
+    });
+    renderStopsList();
     updateEditorDirtyFromForm();
     updateMapsRouteLink();
     autoCalcStopsFee();
-  }
-
-  function renderStopsQList() {
-    if (!stopsQListItems || !stopsQListWrap) return;
-    stopsQListItems.innerHTML = '';
-    _stopsQList.forEach(function(addr, idx) {
-      const li = document.createElement('li');
-      const text = document.createTextNode(addr);
-      const removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.textContent = '✕';
-      removeBtn.title = 'Remove';
-      removeBtn.addEventListener('click', function() {
-        _stopsQList.splice(idx, 1);
-        syncStopsTextarea();
-        renderStopsQList();
-      });
-      li.appendChild(text);
-      li.appendChild(removeBtn);
-      stopsQListItems.appendChild(li);
-    });
-    stopsQListWrap.style.display = _stopsQList.length ? '' : 'none';
   }
 
   // ── Pickup — My Location ─────────────────────────────────────────────────
@@ -2178,10 +2373,9 @@
   // Mirrors map.js logic: addressFeeCount = stops + 1 (dropoff), fee = €1.25 × count if count >= 3
 
   function autoCalcStopsFee() {
-    if (!editRouteStops || !editPriceStops) return;
+    if (!editPriceStops) return;
     if (editPriceOverride && editPriceOverride.checked) return; // manual override — leave it alone
-    const stopLines = editRouteStops.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
-    const stopCount = stopLines.length;
+    const stopCount = editorState.stopsModel.filter(function(s){ return normalizeText(s.address); }).length;
     const addressFeeCount = stopCount + 1; // stops + dropoff
     const addressFeePer = addressFeeCount >= 3 ? 1.25 : 0;
     const addressFee = Math.round(addressFeePer * addressFeeCount * 100) / 100;
@@ -2199,9 +2393,7 @@
       editMapsRouteLink.style.display = 'none';
       return;
     }
-    const stops = editRouteStops
-      ? editRouteStops.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean)
-      : [];
+    const stops = editorState.stopsModel.map(function(s){ return normalizeText(s.address); }).filter(Boolean);
     const parts = [pickup].concat(stops).concat([dropoff]);
     const encoded = parts.map(function(p){ return encodeURIComponent(p); }).join('/');
     editMapsRouteLink.href = 'https://www.google.com/maps/dir/' + encoded;
@@ -2260,16 +2452,19 @@
   function applyPriceOverride() {
     if (!editPriceOverride) return;
     const manual = editPriceOverride.checked;
-    if (editPriceBreakdownFields) editPriceBreakdownFields.style.display = manual ? 'none' : '';
+    const elapsed = !!(editBillingMode && editBillingMode.value === 'elapsed');
+    if (editPriceBreakdownFields) editPriceBreakdownFields.style.display = (manual || elapsed) ? 'none' : '';
     if (editPriceManualHint) editPriceManualHint.style.display = manual ? 'inline' : 'none';
-    if (editGetSystemPricing) editGetSystemPricing.style.display = manual ? 'none' : '';
+    if (editGetSystemPricing) editGetSystemPricing.style.display = (manual || elapsed) ? 'none' : '';
     if (manual && systemPricingStatus) { systemPricingStatus.style.display = 'none'; systemPricingStatus.textContent = ''; }
   }
 
   function resetPriceOverride() {
     if (editPriceOverride) editPriceOverride.checked = false;
+    if (editElapsedOverride) editElapsedOverride.checked = false;
     if (systemPricingStatus) { systemPricingStatus.style.display = 'none'; systemPricingStatus.textContent = ''; }
     applyPriceOverride();
+    applyElapsedOverride();
   }
 
   // ── Create payment link ──────────────────────────────────────────────────
@@ -2496,9 +2691,7 @@
       const parsedZones = _spParseZones(zones);
 
       // Geocode all addresses
-      const stopLines = editRouteStops
-        ? editRouteStops.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean)
-        : [];
+      const stopLines = editorState.stopsModel.map(function(s){ return normalizeText(s.address); }).filter(Boolean);
 
       _spSetSystemPricingStatus('Geocoding ' + (2 + stopLines.length) + ' address(es)…');
 
@@ -2721,68 +2914,11 @@
 
     attachTo(editPickupAddress);
     attachTo(editDropoffAddress);
-
-    // Stops textarea: resolve each line on blur and show corrections below
-    if (editRouteStops && editRouteStops.parentNode) {
-      var stopsSug = document.createElement('div');
-      stopsSug.className = 'address-suggestion';
-      stopsSug.style.flexDirection = 'column';
-      stopsSug.style.gap = '0.25rem';
-      editRouteStops.parentNode.insertBefore(stopsSug, editRouteStops.nextSibling);
-
-      editRouteStops.addEventListener('blur', async function() {
-        if (!currentToken()) return;
-        var lines = editRouteStops.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
-        if (!lines.length) { stopsSug.className = 'address-suggestion'; stopsSug.innerHTML = ''; return; }
-
-        var corrections = []; // { idx, original, resolved }
-        for (var i = 0; i < lines.length; i++) {
-          if (lines[i].length < 3) continue;
-          try {
-            var res = await postAdmin({ action: 'adminGeocode', query: lines[i] });
-            if (res && res.result && res.result.label && res.result.label !== lines[i]) {
-              corrections.push({ idx: i, original: lines[i], resolved: res.result.label });
-            }
-          } catch(_) {}
-        }
-
-        stopsSug.innerHTML = '';
-        if (!corrections.length) { stopsSug.className = 'address-suggestion'; return; }
-
-        corrections.forEach(function(c) {
-          var row = document.createElement('div');
-          row.style.cssText = 'display:flex;align-items:baseline;gap:0.3rem;flex-wrap:wrap;';
-
-          var t = document.createElement('span');
-          t.className = 'address-suggestion-text';
-          t.textContent = 'Stop ' + (c.idx + 1) + ' → ' + c.resolved;
-
-          var btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'address-suggestion-use';
-          btn.textContent = '✓ Use';
-          btn.addEventListener('click', function() {
-            lines[c.idx] = c.resolved;
-            editRouteStops.value = lines.join('\n');
-            _stopsQList = lines.filter(Boolean);
-            renderStopsQList();
-            updateMapsRouteLink();
-            autoCalcStopsFee();
-            updateEditorDirtyFromForm();
-            // Remove this row
-            row.remove();
-            if (!stopsSug.children.length) stopsSug.className = 'address-suggestion';
-          });
-
-          row.appendChild(t);
-          row.appendChild(btn);
-          stopsSug.appendChild(row);
-        });
-        stopsSug.className = 'address-suggestion is-visible';
-        stopsSug.style.flexDirection = 'column';
-        stopsSug.style.gap = '0.25rem';
-      });
-    }
+    // Note: the per-line "resolve address on blur" suggestion feature that used
+    // to live here for the stops textarea was removed along with the textarea
+    // itself (see renderStopsList) — each stop is now its own input row, and
+    // the AI scanner (Quick-add) already returns validated/geocoded-quality
+    // addresses, so this wasn't re-implemented per-row for the initial version.
   }
 
   // ── End system pricing ────────────────────────────────────────────────────
@@ -2906,18 +3042,35 @@
   if (editPickupLocBtn) editPickupLocBtn.addEventListener('click', handlePickupMyLocation);
 
   // Maps route link — live update on any route field change
-  [editPickupAddress, editRouteStops, editDropoffAddress].forEach(function(el){
+  // (stops list rows wire their own input/tier listeners in renderStopsList)
+  [editPickupAddress, editDropoffAddress].forEach(function(el){
     if (!el) return;
     el.addEventListener('input', updateMapsRouteLink);
   });
 
-  // Auto-calc stops fee when textarea is edited manually
-  if (editRouteStops) editRouteStops.addEventListener('input', autoCalcStopsFee);
+  if (addStopBtn) addStopBtn.addEventListener('click', function(){ addStopToModel(''); });
 
   if (editGetSystemPricing) editGetSystemPricing.addEventListener('click', handleGetSystemPricing);
 
   // Pricing override toggle
-  if (editPriceOverride) editPriceOverride.addEventListener('change', applyPriceOverride);
+  if (editPriceOverride) editPriceOverride.addEventListener('change', function(){ applyPriceOverride(); recalculatePriceTotal(); });
+
+  // Elapsed-time billing
+  if (editBillingMode) editBillingMode.addEventListener('change', function(){
+    applyBillingModeVisibility();
+    recalculateElapsedMinutes();
+    recalculatePriceTotal();
+    updateEditorDirtyFromForm();
+  });
+  if (editElapsedOverride) editElapsedOverride.addEventListener('change', function(){ applyElapsedOverride(); recalculatePriceTotal(); });
+  [editHourlyRate, editRouteStartedAt, editRouteCompletedAt, editElapsedMinutes].forEach(function(el){
+    if (!el) return;
+    el.addEventListener('input', function(){
+      if (el === editRouteStartedAt || el === editRouteCompletedAt) recalculateElapsedMinutes();
+      recalculatePriceTotal();
+      updateEditorDirtyFromForm();
+    });
+  });
 
   // Account token verification
   if (editAccountVerifyBtn) editAccountVerifyBtn.addEventListener('click', function(){ verifyAccountToken(false); });

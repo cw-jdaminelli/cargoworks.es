@@ -75,6 +75,15 @@
     }
   }
 
+  function qsStop(){
+    try {
+      const params = new URLSearchParams(location.search);
+      return String(params.get('stop') || '').trim();
+    } catch(_) {
+      return '';
+    }
+  }
+
   function normalizeRef(value){
     return String(value || '').trim().toUpperCase();
   }
@@ -406,6 +415,74 @@
     detailsEl.appendChild(renderTimeline(order.timeline || []));
   }
 
+  // Per-stop tracking view — a trimmed subset of renderDetails: no payment
+  // section (multi-stop routes are always B2B account orders, never Stripe),
+  // no full timeline (the stop payload is intentionally minimal), no rider
+  // ETA banner (that's a whole-route concept, not meaningful per-stop).
+  function renderStopDetails(stop){
+    if (!detailsEl) return;
+    detailsEl.innerHTML = '';
+    if (!stop) return;
+
+    const summary = document.createElement('div');
+    summary.className = 'tracking-summary';
+    summary.appendChild(summaryItem(i18n('trackingLabelReference') || 'Reference', String(stop.reference || '-')));
+    summary.appendChild(summaryItem(i18n('trackingLabelStop') || 'Stop', (stop.stopIndex || '-') + ' / ' + (stop.stopCount || '-')));
+    summary.appendChild(summaryItem(i18n('trackingLabelStatus') || 'Status', localizeOrderStatus(stop.status || '-')));
+    const when = stop.schedule && stop.schedule.time ? stop.schedule.time : '-';
+    summary.appendChild(summaryItem(i18n('trackingLabelPickupTime') || 'Scheduled', when));
+    detailsEl.appendChild(summary);
+
+    const addrRow = document.createElement('div');
+    addrRow.className = 'tracking-summary-item';
+    const addrLabel = document.createElement('span');
+    addrLabel.className = 'tracking-summary-label';
+    addrLabel.textContent = i18n('trackingLabelAddress') || 'Address';
+    const addrValue = document.createElement('span');
+    addrValue.className = 'tracking-summary-value';
+    addrValue.textContent = stop.address || '-';
+    addrRow.appendChild(addrLabel);
+    addrRow.appendChild(addrValue);
+    detailsEl.appendChild(addrRow);
+
+    if (stop.podUrl) {
+      const links = document.createElement('div');
+      links.className = 'tracking-links';
+      links.appendChild(linkRow(
+        i18n('trackingLabelPod') || 'POD',
+        stop.podUrl,
+        i18n('trackingLinkPod') || 'Open proof of delivery',
+        { includeLink: true, includeShare: false }
+      ));
+      detailsEl.appendChild(links);
+    }
+  }
+
+  async function loadStopTracking(ref, stopId, trackingToken){
+    if (!API_BASE) {
+      setStatus(i18n('trackingNotConfigured') || 'Tracking is not configured.', true);
+      return;
+    }
+    if (!ref || !stopId) {
+      setStatus(i18n('trackingEnterReference') || 'Enter your reference.', true);
+      return;
+    }
+    try {
+      setStatus(i18n('trackingLoading') || 'Loading...', false);
+      const token = String(trackingToken || '').trim();
+      const tokenParam = token ? ('&t=' + encodeURIComponent(token)) : '';
+      const url = API_BASE + '?action=trackStop&ref=' + encodeURIComponent(ref) + '&stop=' + encodeURIComponent(stopId) + tokenParam;
+      const res = await fetch(url);
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || 'Request failed');
+      renderStopDetails(json.stop || null);
+      setStatus('', false);
+    } catch(err) {
+      renderStopDetails(null);
+      setStatus(err && err.message ? err.message : (i18n('trackingUnavailable') || 'Tracking not available.'), true);
+    }
+  }
+
   async function loadTracking(ref, trackingToken){
     if (!API_BASE) {
       setStatus(i18n('trackingNotConfigured') || 'Tracking is not configured.', true);
@@ -452,7 +529,12 @@
     applyStaticCopy();
     const ref = queryRef;
     const token = queryToken;
+    const stopId = qsStop();
     if (refInput && ref) refInput.value = ref;
-    if (ref) loadTracking(ref, token);
+    if (ref && stopId) {
+      loadStopTracking(ref, stopId, token);
+    } else if (ref) {
+      loadTracking(ref, token);
+    }
   })();
 })();
