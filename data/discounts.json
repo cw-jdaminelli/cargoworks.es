@@ -67,7 +67,7 @@
       "amount": 30,
       "minOrder": 0,
       "start": "2026-06-01",
-      "end": "2026-06-30",
+      "end": "2026-10-30",
       "maxUses": 100,
       "maxUsesPerEmail": 100,
       "active": true,
