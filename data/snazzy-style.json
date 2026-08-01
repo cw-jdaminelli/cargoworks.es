@@ -99,8 +99,8 @@
         "elementType": "geometry.stroke",
         "stylers": [
             { "visibility": "on" },
-            { "color": "#d6d6d6" },
-            { "weight": 0.8 }
+            { "color": "#b5b5b5" },
+            { "weight": 0.9 }
         ]
     },
     {
@@ -130,8 +130,8 @@
         "featureType": "road.highway",
         "elementType": "geometry.stroke",
         "stylers": [
-            { "color": "#c4c4c4" },
-            { "weight": 1.0 }
+            { "color": "#a8a8a8" },
+            { "weight": 1.1 }
         ]
     },
     {
@@ -139,6 +139,24 @@
         "elementType": "geometry.fill",
         "stylers": [
             { "color": "#fbfbfb" }
+        ]
+    },
+    {
+        "featureType": "road.arterial",
+        "elementType": "geometry.stroke",
+        "stylers": [
+            { "visibility": "on" },
+            { "color": "#adadad" },
+            { "weight": 1.0 }
+        ]
+    },
+    {
+        "featureType": "road.local",
+        "elementType": "geometry.stroke",
+        "stylers": [
+            { "visibility": "on" },
+            { "color": "#c2c2c2" },
+            { "weight": 0.7 }
         ]
     },
     {
