@@ -2,7 +2,7 @@
 window.initZonesMap = function initZonesMap(){
   if (window._zonesMapInitialized) { try { console.log('[Maps] initZonesMap: already initialized'); } catch(_) {} return; }
   try { console.log('[Maps] initZonesMap start'); } catch(e) {}
-  const STYLE_VERSION = '2026-01-24-1';
+  const STYLE_VERSION = '2026-08-01-1';
   const ZONES_VERSION = '2026-01-24-1';
   const PRICES_VERSION = '2026-01-24-1';
   const HOLIDAYS_VERSION = '2026-03-18-1';
@@ -1173,8 +1173,9 @@ window.initZonesMap = function initZonesMap(){
     return '';
   }
   function getDateTimeValidationError(){
-    if (hasDateTimeSelection()) return '';
-    return i18n('quoteDateTimeRequired') || 'Please choose a date and time.';
+    if (!hasDateTimeSelection()) return i18n('quoteDateTimeRequired') || 'Please choose a date and time.';
+    if (isSelectedDateTimeInPast()) return i18n('quoteDateTimePast') || 'Please choose a future date and time.';
+    return '';
   }
   function getCargoValidationError(){
     const cargoValue = String((qCargo && qCargo.value) || '').trim();
@@ -1601,6 +1602,7 @@ window.initZonesMap = function initZonesMap(){
     if (!isValidPhone(phone)) return { error: i18n('bookingPhoneInvalid') || 'Please enter a valid phone number with country code.', section: 'booking' };
     if (!consent) return { error: i18n('bookingConsentRequired') || 'Please confirm you agree to be contacted.', section: 'booking' };
     if (!dateVal || !timeVal) return { error: i18n('quoteDateTimeRequired') || 'Please choose a date and time.', section: 'datetime' };
+    if (isSelectedDateTimeInPast()) return { error: i18n('quoteDateTimePast') || 'Please choose a future date and time.', section: 'datetime' };
     if (cwAccountToken) {
       var acctFields = [
         { row: 'accountField_staffName',   el: 'accountStaffName',   msgKey: 'accountFieldStaffNameRequired' },
@@ -1755,7 +1757,7 @@ window.initZonesMap = function initZonesMap(){
 
       if (dateTimeError && cargoTop != null && cargoTop <= threshold) {
         setSectionValidationState('datetime', dateTimeError);
-        setAvailabilityStatus(i18n('quoteDateTimeRequired') || 'Please choose a date and time.', true);
+        setAvailabilityStatus(dateTimeError, true);
       } else if (!dateTimeError) {
         setSectionValidationState('datetime', '');
       }
@@ -1809,6 +1811,10 @@ window.initZonesMap = function initZonesMap(){
       const m = minutes != null ? (minutes % 60) : now.getMinutes();
       return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m, 0, 0);
     } catch(_) { return new Date(); }
+  }
+  function isSelectedDateTimeInPast(){
+    if (!hasDateTimeSelection()) return false;
+    return getSelectedDateTime().getTime() < Date.now();
   }
   function getBusinessHours(isWeekendHoliday){
     const bh = window._businessHours || {};
