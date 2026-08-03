@@ -208,7 +208,8 @@ function handleAccountOrders(params) {
           address: String(s.address || ''),
           status: String(s.status || 'Pending'),
           failureReason: String(s.failureReason || ''),
-          podUrl: s.status === 'Delivered' ? String(s.podUrl || '') : '',
+          podUrl: String(s.podUrl || ''),
+          podAt: String(s.podAt || ''),
           completedAt: String(s.completedAt || ''),
           trackingUrl: (s.id && s.trackingToken) ? buildStopTrackingUrl(payload, reference, s.id, s.trackingToken) : ''
         };
@@ -216,6 +217,9 @@ function handleAccountOrders(params) {
       total:         Number(quote.total || 0),
       trackingUrl:   String(payload.trackingUrl || adminData.trackingUrl || ''),
       podUrl:        String(adminData.podUrl || ''),
+      podAt:         String(adminData.podAt || ''),
+      pickupPodUrl:  String(adminData.pickupPodUrl || ''),
+      pickupPodAt:   String(adminData.pickupPodAt || ''),
       staffName:     String(payload.staffName   || ''),
       pickupTime:    String(payload.pickupTime  || ''),
       dropoffTime:   String(payload.dropoffTime || ''),
@@ -381,6 +385,9 @@ function doPost(e){
 
     const start = dateTimeFromKey(dateKey, timeLabel, TIMEZONE);
     if (!start) return jsonResponse({ error: 'Invalid date or time' }, 400);
+    if (start.getTime() < Date.now()) {
+      return jsonResponse({ error: 'Pickup date/time must be in the future.' }, 400);
+    }
 
     const etaMins = Number(quote.etaMins || 0) || DEFAULT_DURATION_MIN;
     const end = new Date(start.getTime() + (etaMins * 60000));
@@ -685,6 +692,9 @@ function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference,
     createdBy: 'system',
     lastEditedBy: 'system',
     podUrl: '',
+    podAt: '',
+    pickupPodUrl: '',
+    pickupPodAt: '',
     timeline: [{
       ts: new Date().toISOString(),
       status: DEFAULT_STATUS_LABEL,
@@ -1268,7 +1278,8 @@ function buildStopTrackingPayload(stop, allStops, summary){
     stopCount: allStops.length,
     address: stop.address || '',
     status: stop.status || 'Pending',
-    podUrl: stop.status === 'Delivered' ? (stop.podUrl || '') : '',
+    podUrl: stop.podUrl || '',
+    podAt: stop.podAt || '',
     completedAt: stop.completedAt || '',
     schedule: summary.schedule,
     orderStatus: summary.status
@@ -1941,7 +1952,7 @@ function cleanOrderText(value){
 
 // Reconciles the route editor's incoming stop list against the previously-stored
 // stops by `id`. Composition fields (address/tier/priority/outlier) always come
-// from the incoming list; completion fields (status/podUrl/trackingToken/
+// from the incoming list; completion fields (status/podUrl/podAt/trackingToken/
 // completedAt/failureReason) are ALWAYS carried over verbatim from the prior
 // stop with the same id, never taken from `incoming` — the route editor (used by
 // dispatcher saves and rider route re-sequencing) must never be able to clobber
@@ -1967,6 +1978,7 @@ function normalizeStopsForOrder(incomingStops, existingStops){
       outlier: !!(stop && stop.outlier),
       status: (prior && prior.status) || 'Pending',
       podUrl: (prior && prior.podUrl) || '',
+      podAt: (prior && prior.podAt) || '',
       trackingToken: (prior && prior.trackingToken) || generatePublicToken(16),
       completedAt: (prior && prior.completedAt) || '',
       failureReason: (prior && prior.failureReason) || ''
@@ -2660,30 +2672,32 @@ function handleAdminPod(payload){
     const desc = String(event.getDescription() || '');
     const payloadData = extractPayloadFromDescription(desc) || {};
     const adminData = ensureAdminData(desc, payloadData);
-    const fileName = String(payload.fileName || 'pod-photo.jpg').trim();
-    const contentType = String(payload.contentType || 'image/jpeg').trim();
-    const base64 = data.indexOf('base64,') >= 0 ? data.split('base64,').pop() : data;
-    const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
-    const folder = ensurePodFolder();
-    const file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    const podUrl = file.getUrl();
-    adminData.podUrl = podUrl;
+    const podKind = String(payload.podKind || 'dropoff').trim().toLowerCase() === 'pickup' ? 'pickup' : 'dropoff';
+    const podUrl = uploadPodPhoto({ podData: data, podFileName: payload.fileName, podContentType: payload.contentType }, 'pod-photo.jpg');
+    const nowIso = new Date().toISOString();
     adminData.timeline = Array.isArray(adminData.timeline) ? adminData.timeline : [];
-    adminData.timeline.push({ ts: new Date().toISOString(), status: adminData.status || '', message: 'POD uploaded', via: 'system' });
+    if (podKind === 'pickup') {
+      adminData.pickupPodUrl = podUrl;
+      adminData.pickupPodAt = nowIso;
+      adminData.timeline.push({ ts: nowIso, status: adminData.status || '', message: 'Pickup POD uploaded', via: 'system' });
+    } else {
+      adminData.podUrl = podUrl;
+      adminData.podAt = nowIso;
+      adminData.timeline.push({ ts: nowIso, status: adminData.status || '', message: 'POD uploaded', via: 'system' });
+    }
     const updatedDesc = upsertAdminData(desc, adminData);
     event.setDescription(updatedDesc);
     appendOrderLogEntry({
-      action: 'pod_uploaded',
+      action: podKind === 'pickup' ? 'pickup_pod_uploaded' : 'pod_uploaded',
       eventId: event.getId(),
       payload: payloadData,
       adminData: adminData,
       status: adminData.status,
       paymentStatus: adminData.paymentStatus,
-      message: 'POD uploaded',
+      message: podKind === 'pickup' ? 'Pickup POD uploaded' : 'POD uploaded',
       build: BUILD_ID
     });
-    return jsonResponse({ ok: true, podUrl: podUrl, adminData: adminData }, 200);
+    return jsonResponse({ ok: true, podUrl: podUrl, podKind: podKind, adminData: adminData }, 200);
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
@@ -2828,6 +2842,19 @@ function handleAdminCreatePayment(payload){
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
   }
+}
+
+function uploadPodPhoto(payload, defaultFileName){
+  const fileName = String(payload.podFileName || defaultFileName).trim();
+  const contentType = String(payload.podContentType || 'image/jpeg').trim();
+  const base64 = payload.podData.indexOf('base64,') >= 0
+    ? payload.podData.split('base64,').pop()
+    : payload.podData;
+  const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
+  const folder = ensurePodFolder();
+  const file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return file.getUrl();
 }
 
 function ensurePodFolder(){
@@ -2986,6 +3013,9 @@ function buildOrderSummary(event){
       createdBy: cleanOrderText(adminData.createdBy || ''),
       lastEditedBy: cleanOrderText(adminData.lastEditedBy || ''),
       podUrl: adminData.podUrl || '',
+      podAt: cleanOrderText(adminData.podAt || ''),
+      pickupPodUrl: adminData.pickupPodUrl || '',
+      pickupPodAt: cleanOrderText(adminData.pickupPodAt || ''),
       timeline: timeline,
       dispatcherNotes: dispatcherNotes,
       deliveryNote: latestDispatcherNoteText(dispatcherNotes),
@@ -3019,9 +3049,8 @@ function buildTrackingPayload(summary){
   const paymentUrl = (paymentStatus === 'Pending' || paymentStatus === 'Failed')
     ? String(summary && summary.paymentUrl || '')
     : '';
-  const podUrl = String(summary && summary.status || '') === 'Delivered'
-    ? String(summary && summary.podUrl || '')
-    : '';
+  const podUrl = String(summary && summary.podUrl || '');
+  const pickupPodUrl = String(summary && summary.pickupPodUrl || '');
   return {
     reference: summary.reference,
     status: summary.status,
@@ -3029,6 +3058,9 @@ function buildTrackingPayload(summary){
     paymentUrl: paymentUrl,
     trackingUrl: summary.trackingUrl,
     podUrl: podUrl,
+    podAt: String(summary && summary.podAt || ''),
+    pickupPodUrl: pickupPodUrl,
+    pickupPodAt: String(summary && summary.pickupPodAt || ''),
     schedule: summary.schedule,
     timeline: summary.timeline || [],
     notes: summary.notes || '',
@@ -4037,17 +4069,17 @@ function handleRiderUpdateStatus(payload){
 
   if (payload.podData && status === 'Delivered'){
     try {
-      const fileName = String(payload.podFileName || 'pod-rider.jpg').trim();
-      const contentType = String(payload.podContentType || 'image/jpeg').trim();
-      const base64 = payload.podData.indexOf('base64,') >= 0
-        ? payload.podData.split('base64,').pop()
-        : payload.podData;
-      const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
-      const folder = ensurePodFolder();
-      const file = folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      adminData.podUrl = file.getUrl();
+      adminData.podUrl = uploadPodPhoto(payload, 'pod-rider.jpg');
+      adminData.podAt = new Date().toISOString();
       pushAdminTimeline(adminData, status, 'POD uploaded by rider', 'rider');
+    } catch(_){}
+  }
+
+  if (payload.podData && status === 'Picked up'){
+    try {
+      adminData.pickupPodUrl = uploadPodPhoto(payload, 'pod-pickup.jpg');
+      adminData.pickupPodAt = new Date().toISOString();
+      pushAdminTimeline(adminData, status, 'Pickup POD uploaded by rider', 'rider');
     } catch(_){}
   }
 
@@ -4237,16 +4269,8 @@ function handleRiderCompleteStop(payload){
 
   if (payload.podData && statusInput === 'Delivered'){
     try {
-      const fileName = String(payload.podFileName || 'pod-stop.jpg').trim();
-      const contentType = String(payload.podContentType || 'image/jpeg').trim();
-      const base64 = payload.podData.indexOf('base64,') >= 0
-        ? payload.podData.split('base64,').pop()
-        : payload.podData;
-      const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
-      const folder = ensurePodFolder();
-      const file = folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      stops[idx].podUrl = file.getUrl();
+      stops[idx].podUrl = uploadPodPhoto(payload, 'pod-stop.jpg');
+      stops[idx].podAt = new Date().toISOString();
     } catch(_){}
   }
 
@@ -4309,16 +4333,8 @@ function handleAdminUpdateStop(payload){
 
   if (payload.podData){
     try {
-      const fileName = String(payload.podFileName || 'pod-stop.jpg').trim();
-      const contentType = String(payload.podContentType || 'image/jpeg').trim();
-      const base64 = payload.podData.indexOf('base64,') >= 0
-        ? payload.podData.split('base64,').pop()
-        : payload.podData;
-      const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
-      const folder = ensurePodFolder();
-      const file = folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      stops[idx].podUrl = file.getUrl();
+      stops[idx].podUrl = uploadPodPhoto(payload, 'pod-stop.jpg');
+      stops[idx].podAt = new Date().toISOString();
       pushAdminTimeline(adminData, adminData.status, 'POD uploaded by dispatcher for stop ' + (idx + 1), 'dispatcher');
     } catch(_){}
   }

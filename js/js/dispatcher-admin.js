@@ -1380,7 +1380,8 @@
     }
   }
 
-  function bindPodUpload(order, controls){
+  function bindPodUpload(order, controls, podKind){
+    const kind = podKind === 'pickup' ? 'pickup' : 'dropoff';
     const podInput = controls.podInput;
     const podUpload = controls.podUpload;
     const podName = controls.podName;
@@ -1413,6 +1414,7 @@
           const res = await postAdmin({
             action: 'adminPod',
             eventId: order.eventId,
+            podKind: kind,
             fileName: file.name,
             contentType: file.type,
             data: String(reader.result || '')
@@ -1684,11 +1686,47 @@
         try { podInput.click(); } catch(_) {}
       });
 
+      const pickupPodLink = document.createElement('a');
+      pickupPodLink.className = 'btn btn--ghost';
+      pickupPodLink.target = '_blank';
+      pickupPodLink.rel = 'noopener';
+      pickupPodLink.textContent = 'Pickup POD';
+      setLink(pickupPodLink, normalizeText(order.pickupPodUrl));
+
+      const pickupPodChoose = document.createElement('button');
+      pickupPodChoose.type = 'button';
+      pickupPodChoose.className = 'btn btn--ghost';
+      pickupPodChoose.textContent = 'Choose Pickup POD';
+
+      const pickupPodUpload = document.createElement('button');
+      pickupPodUpload.type = 'button';
+      pickupPodUpload.className = 'btn btn--ghost';
+      pickupPodUpload.textContent = 'Upload Pickup POD';
+      pickupPodUpload.disabled = true;
+
+      const pickupPodName = document.createElement('span');
+      pickupPodName.className = 'dispatcher-status';
+      pickupPodName.textContent = 'No file selected';
+
+      const pickupPodInput = document.createElement('input');
+      pickupPodInput.type = 'file';
+      pickupPodInput.accept = 'image/*';
+      pickupPodInput.style.display = 'none';
+
+      pickupPodChoose.addEventListener('click', function(){
+        try { pickupPodInput.click(); } catch(_) {}
+      });
+
       actionsWrap.appendChild(podLink);
       actionsWrap.appendChild(podChoose);
       actionsWrap.appendChild(podUpload);
       actionsWrap.appendChild(podName);
       actionsWrap.appendChild(podInput);
+      actionsWrap.appendChild(pickupPodLink);
+      actionsWrap.appendChild(pickupPodChoose);
+      actionsWrap.appendChild(pickupPodUpload);
+      actionsWrap.appendChild(pickupPodName);
+      actionsWrap.appendChild(pickupPodInput);
       quick.appendChild(actionsWrap);
 
       const quickControls = {
@@ -1706,13 +1744,20 @@
         podName: podName,
         podLink: podLink
       };
+      const pickupPodControls = {
+        podInput: pickupPodInput,
+        podUpload: pickupPodUpload,
+        podName: pickupPodName,
+        podLink: pickupPodLink
+      };
 
       quickSaveBtn.addEventListener('click', function(){ quickUpdate(order, quickControls, false); });
       quickSendBtn.addEventListener('click', function(){ quickUpdate(order, quickControls, true); });
       fullEditBtn.addEventListener('click',  function(){ openEditor('edit', order); });
       duplicateBtn.addEventListener('click', function(){ openEditor('duplicate', order); });
       cancelBtn.addEventListener('click',    function(){ openCancelModal(order); });
-      bindPodUpload(order, quickControls);
+      bindPodUpload(order, quickControls, 'dropoff');
+      bindPodUpload(order, pickupPodControls, 'pickup');
 
       card.appendChild(quick);
       card.appendChild(renderPricing(order));

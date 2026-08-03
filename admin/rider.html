@@ -1273,6 +1273,8 @@
     let activeOrder = null;
     let podFile = null;
     let podDataUrl = null;
+    let pickupPodFile = null;
+    let pickupPodDataUrl = null;
     let _stopPodMap = {}; // stopId -> photo data URL, for the active order's per-stop POD capture
 
     // ── Utilities ──────────────────────────────────────────────────────────────
@@ -1522,6 +1524,8 @@
       activeOrder = order;
       podFile = null;
       podDataUrl = null;
+      pickupPodFile = null;
+      pickupPodDataUrl = null;
 
       document.getElementById('detailRef').textContent = order.reference || '—';
       const chipEl = document.getElementById('detailStatusChip');
@@ -1687,6 +1691,13 @@
         body.appendChild(buildRouteStartSection(order));
       }
 
+      // Pickup POD section — shown right before the rider taps "Picked up",
+      // mirroring the dropoff POD section below. Applies regardless of
+      // single-stop vs multi-stop since pickup is always one leg per route.
+      if (order.riderName === RIDER_NAME && order.status === 'OMW') {
+        body.appendChild(buildPickupPodSection());
+      }
+
       // POD section — only for In transit on my orders (must come before notes for context)
       // Multi-stop orders get per-stop completion + POD instead of one whole-order POD.
       if (order.riderName === RIDER_NAME && order.status === 'In transit') {
@@ -1728,6 +1739,50 @@
         });
         body.appendChild(buildCollapsibleSection('Timeline (' + timeline.length + ')', tlList, false));
       }
+    }
+
+    function buildPickupPodSection() {
+      const podSec = document.createElement('div');
+      podSec.className = 'detail-section';
+      podSec.innerHTML = '<div class="detail-section-title">Proof of Pickup</div>';
+      const podW = document.createElement('div');
+      podW.className = 'pod-wrap';
+
+      const podBtn = document.createElement('div');
+      podBtn.className = 'pod-btn';
+      podBtn.id = 'pickupPodBtn';
+      podBtn.innerHTML = '<span class="pod-btn-icon">📷</span> Tap to add photo (optional)';
+      podBtn.addEventListener('click', function() { document.getElementById('pickupPodFileInput').click(); });
+
+      const podInput = document.createElement('input');
+      podInput.type = 'file';
+      podInput.accept = 'image/*';
+      podInput.capture = 'environment';
+      podInput.id = 'pickupPodFileInput';
+      podInput.addEventListener('change', function() {
+        if (podInput.files && podInput.files[0]) {
+          pickupPodFile = podInput.files[0];
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            pickupPodDataUrl = e.target.result;
+            const preview = document.getElementById('pickupPodPreview');
+            preview.src = pickupPodDataUrl;
+            preview.classList.add('visible');
+            podBtn.classList.add('has-file');
+            podBtn.innerHTML = '<span class="pod-btn-icon">✓</span> Photo added — tap to change';
+          };
+          reader.readAsDataURL(pickupPodFile);
+        }
+      });
+
+      const podPreview = document.createElement('img');
+      podPreview.id = 'pickupPodPreview';
+      podPreview.className = 'pod-preview';
+      podW.appendChild(podBtn);
+      podW.appendChild(podInput);
+      podW.appendChild(podPreview);
+      podSec.appendChild(podW);
+      return podSec;
     }
 
     function buildPodSection() {
@@ -3216,7 +3271,7 @@
         const btn = document.createElement('button');
         btn.className = 'btn btn-primary';
         btn.textContent = '📦 Picked Up';
-        btn.addEventListener('click', function() { doStatusUpdate(order.eventId, 'Picked up'); });
+        btn.addEventListener('click', function() { doPickedUp(order.eventId); });
         footer.appendChild(btn);
       }
 
@@ -3331,6 +3386,31 @@
       });
       if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
       toast(status + ' ✓', 'success');
+      updateAndRerender(res.order);
+    }
+
+    async function doPickedUp(eventId) {
+      setFooterLoading(true);
+      const note = (document.getElementById('noteInput') || {}).value || '';
+      const dispatchNote = (document.getElementById('dispatchNoteInput') || {}).value || '';
+      const payload = {
+        action: 'riderUpdateStatus',
+        id: RIDER_ID,
+        eventId: eventId,
+        status: 'Picked up',
+        note: note,
+        dispatchNote: dispatchNote
+      };
+
+      if (pickupPodDataUrl) {
+        payload.podData = pickupPodDataUrl;
+        payload.podFileName = 'pickup-pod-' + Date.now() + '.jpg';
+        payload.podContentType = 'image/jpeg';
+      }
+
+      const res = await api('POST', payload);
+      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
+      toast('Picked up ✓', 'success');
       updateAndRerender(res.order);
     }
 
