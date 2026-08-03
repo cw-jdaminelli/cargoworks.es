@@ -1436,6 +1436,127 @@
     });
   }
 
+  async function cardCompleteStop(order, stop, status){
+    if (!order.eventId || !stop.id) return;
+    let reason = '';
+    if (status === 'Failed') {
+      reason = window.prompt('Reason the stop failed:') || '';
+      if (!reason.trim()) return;
+    }
+    try {
+      await postAdmin({
+        action: 'adminUpdateStop',
+        eventId: order.eventId,
+        stopId: stop.id,
+        status: status,
+        reason: reason,
+        operator: currentOperator()
+      });
+      await refreshCurrentLoad();
+      setStatus('Stop updated.');
+    } catch (err) {
+      setStatus(err && err.message ? err.message : 'Stop update failed.', true);
+    }
+  }
+
+  function buildCardStopRow(order, stop, stopIdx){
+    const row = document.createElement('div');
+    row.style.cssText = 'border:1px solid var(--dispatch-border,#ddd);border-radius:8px;padding:0.35rem 0.5rem;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;font-size:0.75rem;';
+
+    const addr = document.createElement('span');
+    addr.style.cssText = 'flex:1 1 auto;min-width:120px;';
+    addr.textContent = (stopIdx + 1) + '. ' + (stop.address || '');
+    row.appendChild(addr);
+
+    const badge = document.createElement('span');
+    badge.innerHTML = stopStatusBadgeHtml(stop.status);
+    row.appendChild(badge);
+
+    if (stop.status === 'Failed' && stop.failureReason) {
+      const reasonEl = document.createElement('span');
+      reasonEl.style.color = '#b00020';
+      reasonEl.textContent = stop.failureReason;
+      row.appendChild(reasonEl);
+    }
+
+    if (stop.podUrl) {
+      const podLink = document.createElement('a');
+      podLink.href = stop.podUrl;
+      podLink.target = '_blank';
+      podLink.rel = 'noopener';
+      podLink.textContent = '📷 POD';
+      row.appendChild(podLink);
+    }
+
+    if (stop.id && order.eventId) {
+      const podInput = document.createElement('input');
+      podInput.type = 'file';
+      podInput.accept = 'image/*';
+      podInput.style.display = 'none';
+
+      const podBtn = document.createElement('button');
+      podBtn.type = 'button';
+      podBtn.className = 'btn btn--ghost';
+      podBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
+      podBtn.textContent = stop.podUrl ? '📷 Replace POD' : '📷 Upload POD';
+      podBtn.addEventListener('click', function(){ podInput.click(); });
+
+      podInput.addEventListener('change', function(){
+        const file = podInput.files && podInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async function(){
+          podBtn.disabled = true;
+          podBtn.textContent = 'Uploading...';
+          try {
+            await postAdmin({
+              action: 'adminUpdateStop',
+              eventId: order.eventId,
+              stopId: stop.id,
+              podData: String(reader.result || ''),
+              podFileName: file.name,
+              podContentType: file.type,
+              operator: currentOperator()
+            });
+            await refreshCurrentLoad();
+            setStatus('POD uploaded.');
+          } catch (err) {
+            setStatus(err && err.message ? err.message : 'POD upload failed.', true);
+            podBtn.disabled = false;
+            podBtn.textContent = stop.podUrl ? '📷 Replace POD' : '📷 Upload POD';
+          } finally {
+            podInput.value = '';
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+
+      row.appendChild(podBtn);
+      row.appendChild(podInput);
+    }
+
+    if ((!stop.status || stop.status === 'Pending') && stop.id && order.eventId) {
+      const deliveredBtn = document.createElement('button');
+      deliveredBtn.type = 'button';
+      deliveredBtn.className = 'btn btn--ghost';
+      deliveredBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
+      deliveredBtn.textContent = '✓ Delivered';
+      deliveredBtn.addEventListener('click', function(){ cardCompleteStop(order, stop, 'Delivered'); });
+
+      const failedBtn = document.createElement('button');
+      failedBtn.type = 'button';
+      failedBtn.className = 'btn btn--ghost';
+      failedBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
+      failedBtn.textContent = '✗ Failed';
+      failedBtn.addEventListener('click', function(){ cardCompleteStop(order, stop, 'Failed'); });
+
+      row.appendChild(deliveredBtn);
+      row.appendChild(failedBtn);
+    }
+
+    return row;
+  }
+
   function renderOrders(orders){
     if (!ordersWrap) return;
     ordersWrap.innerHTML = '';
@@ -1493,6 +1614,23 @@
       if (normalizeText(order && order.attName))    meta.innerHTML += '<span><strong>Att name:</strong> '     + normalizeText(order.attName)     + '</span>';
       if (normalizeText(order && order.attContact)) meta.innerHTML += '<span><strong>Att contact:</strong> '  + normalizeText(order.attContact)  + '</span>';
       card.appendChild(meta);
+
+      if (order && order.route && Array.isArray(order.route.stops) && order.route.stops.length) {
+        const stopsWrap = document.createElement('div');
+        stopsWrap.className = 'dispatcher-stops';
+        stopsWrap.style.cssText = 'margin:0.4rem 0;display:flex;flex-direction:column;gap:0.3rem;';
+
+        const stopsTitle = document.createElement('div');
+        stopsTitle.style.cssText = 'font-size:0.72rem;font-weight:600;color:var(--dispatch-muted);';
+        stopsTitle.textContent = 'Stops (' + order.route.stops.length + ')';
+        stopsWrap.appendChild(stopsTitle);
+
+        order.route.stops.forEach(function(stop, stopIdx){
+          stopsWrap.appendChild(buildCardStopRow(order, stop, stopIdx));
+        });
+
+        card.appendChild(stopsWrap);
+      }
 
       const quick = document.createElement('div');
       quick.className = 'dispatcher-quick';
@@ -2111,6 +2249,59 @@
         podLink.rel = 'noopener';
         podLink.textContent = '📷 POD';
         metaRow.appendChild(podLink);
+      }
+
+      if (stop.id && editorState.sourceEventId) {
+        const podInput = document.createElement('input');
+        podInput.type = 'file';
+        podInput.accept = 'image/*';
+        podInput.style.display = 'none';
+
+        const podBtn = document.createElement('button');
+        podBtn.type = 'button';
+        podBtn.className = 'btn btn--ghost';
+        podBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
+        podBtn.textContent = stop.podUrl ? '📷 Replace POD' : '📷 Upload POD';
+        podBtn.addEventListener('click', function(){ podInput.click(); });
+
+        podInput.addEventListener('change', function(){
+          const file = podInput.files && podInput.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = async function(){
+            podBtn.disabled = true;
+            podBtn.textContent = 'Uploading...';
+            try {
+              const res = await postAdmin({
+                action: 'adminUpdateStop',
+                eventId: editorState.sourceEventId,
+                stopId: stop.id,
+                podData: String(reader.result || ''),
+                podFileName: file.name,
+                podContentType: file.type,
+                operator: currentOperator()
+              });
+              if (res && res.stop) {
+                Object.assign(editorState.stopsModel[idx], res.stop);
+              }
+              if (res && res.order) {
+                editorState.order = res.order;
+              }
+              renderStopsList();
+              setEditorFeedback('✓ POD uploaded.');
+            } catch (err) {
+              setEditorFeedback('POD upload failed: ' + ((err && err.message) || err), true);
+              podBtn.disabled = false;
+              podBtn.textContent = stop.podUrl ? '📷 Replace POD' : '📷 Upload POD';
+            } finally {
+              podInput.value = '';
+            }
+          };
+          reader.readAsDataURL(file);
+        });
+
+        metaRow.appendChild(podBtn);
+        metaRow.appendChild(podInput);
       }
 
       if (stop.id && stop.trackingToken && editorState.order) {
