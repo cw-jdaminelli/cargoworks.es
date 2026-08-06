@@ -396,15 +396,14 @@
         { includeLink: true, includeShare: false }
       ));
     }
-    if (order.podUrl) {
-      links.appendChild(linkRow(
-        i18n('trackingLabelPod') || 'POD',
-        order.podUrl,
-        i18n('trackingLinkPod') || 'Open proof of delivery',
-        { includeLink: true, includeShare: false }
-      ));
-    }
     detailsEl.appendChild(links);
+
+    // Every leg of the route — pickup first, dropoff last, any intermediate
+    // stops between — each with its own status and POD link if uploaded.
+    // Replaces the old single order.podUrl link, which only ever showed the
+    // dropoff photo and never the pickup one.
+    const stopsBlock = renderRouteStops(order.stops || []);
+    if (stopsBlock) detailsEl.appendChild(stopsBlock);
 
     const deliveryNote = renderDeliveryNote(order.deliveryNote || '');
     if (deliveryNote) detailsEl.appendChild(deliveryNote);
@@ -413,6 +412,37 @@
     if (notesBlock) detailsEl.appendChild(notesBlock);
 
     detailsEl.appendChild(renderTimeline(order.timeline || []));
+  }
+
+  // Renders every leg of the route inline on the aggregate tracking view —
+  // pickup first, dropoff last, any intermediate stops between. Never shows
+  // failureReason (matches the standalone per-stop view's convention of
+  // keeping failure detail internal/dispatcher-only).
+  function renderRouteStops(stops){
+    if (!Array.isArray(stops) || !stops.length) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'tracking-stops';
+    stops.forEach(function(stop, idx){
+      const isFirst = idx === 0;
+      const isLast = idx === stops.length - 1;
+      const label = isFirst
+        ? (i18n('trackingLabelPickup') || 'Pickup')
+        : (isLast ? (i18n('trackingLabelDropoff') || 'Dropoff') : ((i18n('trackingLabelStop') || 'Stop') + ' ' + idx));
+      const row = document.createElement('div');
+      row.className = 'tracking-stop-row';
+      row.appendChild(summaryItem(label, stop && stop.address));
+      row.appendChild(summaryItem(i18n('trackingLabelStatus') || 'Status', localizeOrderStatus((stop && stop.status) || 'Pending')));
+      if (stop && stop.podUrl) {
+        row.appendChild(linkRow(
+          i18n('trackingLabelPod') || 'POD',
+          stop.podUrl,
+          i18n('trackingLinkPod') || 'Open proof of delivery',
+          { includeLink: true, includeShare: false }
+        ));
+      }
+      wrap.appendChild(row);
+    });
+    return wrap;
   }
 
   // Per-stop tracking view — a trimmed subset of renderDetails: no payment

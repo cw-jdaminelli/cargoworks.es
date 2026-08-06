@@ -167,8 +167,7 @@
         { key: 'notes', label: 'Notes' },
         { key: 'status', label: 'Status' },
         { key: 'total', label: 'Total' },
-        { key: 'track', label: 'Track' },
-        { key: 'pod', label: 'POD' }
+        { key: 'track', label: 'Track' }
       ].filter(function(c) { return c.show !== false; });
     }
 
@@ -182,9 +181,11 @@
     function cellHtml(col, o) {
       switch (col.key) {
         case 'ref':
+          // Every order's stopsDetail always includes at least pickup+dropoff
+          // now, so the expandable badge always applies.
           var stopsHtml = (o.stopsDetail && o.stopsDetail.length)
             ? ' <button type="button" class="acct-badge acct-badge--stops" data-ref="' + escHtml(o.reference) + '">+' + o.stops + ' stops ▾</button>'
-            : (o.stops > 0 ? ' <span class="acct-badge acct-badge--stops">+' + o.stops + ' stops</span>' : '');
+            : '';
           return escHtml(o.reference || '—') + stopsHtml;
         case 'date':
           return escHtml(o.date || '—');
@@ -206,8 +207,6 @@
           return escHtml(o.total ? 'EUR ' + Number(o.total).toFixed(2) : '—');
         case 'track':
           return o.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(o.trackingUrl) + '" target="_blank">Track →</a>' : '—';
-        case 'pod':
-          return o.podUrl ? '<a class="acct-track-link" href="' + escHtml(o.podUrl) + '" target="_blank">POD →</a>' : '—';
         default:
           return '';
       }
@@ -252,19 +251,23 @@
           var td = document.createElement('td');
           td.colSpan = columns.length;
           var rowsHtml = o.stopsDetail.map(function(s, i) {
+            var isFirst = i === 0;
+            var isLast = i === o.stopsDetail.length - 1;
+            var label = isFirst ? 'Pickup' : (isLast ? 'Dropoff' : String(i));
             var statusHtml = '<span class="acct-badge ' + stopStatusBadgeClass(s.status) + '">' + escHtml(s.status || 'Pending') + '</span>' +
               (s.status === 'Failed' && s.failureReason ? ' <span style="color:#8b0000;">' + escHtml(s.failureReason) + '</span>' : '');
             var podHtml = s.podUrl ? '<a class="acct-track-link" href="' + escHtml(s.podUrl) + '" target="_blank">POD →</a>' : '—';
             var trackHtml = s.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(s.trackingUrl) + '" target="_blank">Track →</a>' : '—';
             return '<tr>' +
-              '<td>' + (i + 1) + '</td>' +
+              '<td>' + escHtml(label) + '</td>' +
               '<td>' + escHtml(s.address || '—') + '</td>' +
               '<td>' + statusHtml + '</td>' +
+              '<td>' + escHtml(s.notes || '—') + '</td>' +
               '<td>' + podHtml + '</td>' +
               '<td>' + trackHtml + '</td>' +
             '</tr>';
           }).join('');
-          td.innerHTML = '<table class="acct-stops-detail"><thead><tr><th>#</th><th>Address</th><th>Status</th><th>POD</th><th>Track</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+          td.innerHTML = '<table class="acct-stops-detail"><thead><tr><th>#</th><th>Address</th><th>Status</th><th>Notes</th><th>POD</th><th>Track</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
           detailTr.appendChild(td);
           elBody.appendChild(detailTr);
         }

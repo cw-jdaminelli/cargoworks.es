@@ -1271,11 +1271,7 @@
     let currentFilter = 'all';
     let allOrders = [];
     let activeOrder = null;
-    let podFile = null;
-    let podDataUrl = null;
-    let pickupPodFile = null;
-    let pickupPodDataUrl = null;
-    let _stopPodMap = {}; // stopId -> photo data URL, for the active order's per-stop POD capture
+    let _stopPodMap = {}; // stopId -> photo data URL, for the active order's per-stop POD capture (every leg, including pickup/dropoff)
 
     // ── Utilities ──────────────────────────────────────────────────────────────
 
@@ -1332,12 +1328,9 @@
 
     function routeMapsUrl(order) {
       const route = order.route || {};
-      const pickup = (route.pickup && route.pickup.address) || '';
-      const dropoff = (route.dropoff && route.dropoff.address) || '';
       const stops = Array.isArray(route.stops) ? route.stops : [];
-      const waypoints = stops.map(function(s) { return s && s.address || ''; }).filter(Boolean);
+      const parts = stops.map(function(s) { return s && s.address || ''; }).filter(Boolean);
       const base = 'https://maps.google.com/maps/dir/';
-      const parts = [pickup].concat(waypoints).concat([dropoff]);
       return base + parts.map(encodeURIComponent).join('/');
     }
 
@@ -1492,8 +1485,9 @@
       card.className = 'order-card' + (order.riderName === RIDER_NAME ? ' is-mine' : '');
 
       const route = order.route || {};
-      const pickup = (route.pickup && route.pickup.address) || '—';
-      const dropoff = (route.dropoff && route.dropoff.address) || '—';
+      const routeStops = Array.isArray(route.stops) ? route.stops : [];
+      const pickup = (routeStops[0] && routeStops[0].address) || '—';
+      const dropoff = (routeStops.length && routeStops[routeStops.length - 1].address) || '—';
       const time = (order.schedule && order.schedule.time) || '—';
 
       card.innerHTML =
@@ -1522,10 +1516,7 @@
 
     function openOrder(order) {
       activeOrder = order;
-      podFile = null;
-      podDataUrl = null;
-      pickupPodFile = null;
-      pickupPodDataUrl = null;
+      _stopPodMap = {};
 
       document.getElementById('detailRef').textContent = order.reference || '—';
       const chipEl = document.getElementById('detailStatusChip');
@@ -1577,51 +1568,10 @@
       const quote = order.quote || {};
       const schedule = order.schedule || {};
       const customer = order.customer || {};
-
-      // Route section
-      const routeSec = document.createElement('div');
-      routeSec.className = 'detail-section';
-      routeSec.innerHTML = '<div class="detail-section-title">Route</div>';
-
-      const pickup = (route.pickup && route.pickup.address) || '';
-      const dropoff = (route.dropoff && route.dropoff.address) || '';
       const stops = Array.isArray(route.stops) ? route.stops : [];
 
-      const addRouteRow = function(label, addr) {
-        if (!addr) return;
-        const row = document.createElement('div');
-        row.className = 'detail-row';
-        row.innerHTML =
-          '<div class="detail-row-label">' + label + '</div>' +
-          '<div class="detail-row-value">' +
-            addr +
-            '<br><a class="maps-link" href="' + mapsUrl(addr) + '" target="_blank" rel="noopener">📍 Open maps</a>' +
-          '</div>';
-        routeSec.appendChild(row);
-      };
-
-      addRouteRow('Pickup', pickup);
-      // Multi-stop orders (stops carry a server-assigned id) get per-stop
-      // completion controls elsewhere (buildStopCompletionSection) instead of
-      // a plain address line, once the route is actually running.
-      var multiStopActive = order.riderName === RIDER_NAME && order.status === 'In transit' &&
-        stops.length > 0 && stops.every(function(s){ return s && s.id; });
-      if (!multiStopActive) {
-        stops.forEach(function(stop, i) { addRouteRow('Stop ' + (i + 1), stop && stop.address); });
-      }
-      addRouteRow('Dropoff', dropoff);
-
-      // Full route link
-      if (pickup && dropoff) {
-        const linkRow = document.createElement('div');
-        linkRow.className = 'detail-row';
-        linkRow.innerHTML =
-          '<div class="detail-row-label">Full</div>' +
-          '<div class="detail-row-value"><a class="maps-link" href="' + routeMapsUrl(order) + '" target="_blank" rel="noopener">🗺 Full route in Maps</a></div>';
-        routeSec.appendChild(linkRow);
-      }
-
-      body.appendChild(routeSec);
+      // Route section — one ordered list of stops, pickup first, dropoff last.
+      if (stops.length) body.appendChild(buildRouteStopsSection(order, stops));
 
       // Schedule + order info — placed right after Route so the rider sees
       // the operational details up front, before any secondary tools/history.
@@ -1681,31 +1631,16 @@
         body.appendChild(acctSec);
       }
 
-      // Route start time — elapsed-billing multi-stop routes only. Lets the
-      // rider start (or backdate/correct) the billing clock independently of
-      // the implicit "On My Way" stamp, in case OMW was never tapped or was
-      // tapped late.
+      // Route start time — elapsed-billing routes. Lets the rider start (or
+      // backdate/correct) the billing clock independently of the implicit
+      // "On My Way" stamp, in case OMW was never tapped or was tapped late.
+      // Every order has >=2 stops now (pickup+dropoff at minimum), so this is
+      // no longer gated on having intermediate stops — a plain point-to-point
+      // elapsed order gets the timer too (it didn't before).
       var activeStatuses = ['Assigned', 'OMW', 'Picked up', 'In transit'];
       if (order.riderName === RIDER_NAME && activeStatuses.indexOf(order.status) >= 0 &&
-          quote.billingMode === 'elapsed' && stops.length > 0) {
+          quote.billingMode === 'elapsed') {
         body.appendChild(buildRouteStartSection(order));
-      }
-
-      // Pickup POD section — shown right before the rider taps "Picked up",
-      // mirroring the dropoff POD section below. Applies regardless of
-      // single-stop vs multi-stop since pickup is always one leg per route.
-      if (order.riderName === RIDER_NAME && order.status === 'OMW') {
-        body.appendChild(buildPickupPodSection());
-      }
-
-      // POD section — only for In transit on my orders (must come before notes for context)
-      // Multi-stop orders get per-stop completion + POD instead of one whole-order POD.
-      if (order.riderName === RIDER_NAME && order.status === 'In transit') {
-        if (multiStopActive) {
-          body.appendChild(buildStopCompletionSection(order, stops));
-        } else if (!stops.length) {
-          body.appendChild(buildPodSection());
-        }
       }
 
       // Scan label section — only for rider's own active orders. Placed after
@@ -1739,94 +1674,6 @@
         });
         body.appendChild(buildCollapsibleSection('Timeline (' + timeline.length + ')', tlList, false));
       }
-    }
-
-    function buildPickupPodSection() {
-      const podSec = document.createElement('div');
-      podSec.className = 'detail-section';
-      podSec.innerHTML = '<div class="detail-section-title">Proof of Pickup</div>';
-      const podW = document.createElement('div');
-      podW.className = 'pod-wrap';
-
-      const podBtn = document.createElement('div');
-      podBtn.className = 'pod-btn';
-      podBtn.id = 'pickupPodBtn';
-      podBtn.innerHTML = '<span class="pod-btn-icon">📷</span> Tap to add photo (optional)';
-      podBtn.addEventListener('click', function() { document.getElementById('pickupPodFileInput').click(); });
-
-      const podInput = document.createElement('input');
-      podInput.type = 'file';
-      podInput.accept = 'image/*';
-      podInput.capture = 'environment';
-      podInput.id = 'pickupPodFileInput';
-      podInput.addEventListener('change', function() {
-        if (podInput.files && podInput.files[0]) {
-          pickupPodFile = podInput.files[0];
-          const reader = new FileReader();
-          reader.onload = function(e) {
-            pickupPodDataUrl = e.target.result;
-            const preview = document.getElementById('pickupPodPreview');
-            preview.src = pickupPodDataUrl;
-            preview.classList.add('visible');
-            podBtn.classList.add('has-file');
-            podBtn.innerHTML = '<span class="pod-btn-icon">✓</span> Photo added — tap to change';
-          };
-          reader.readAsDataURL(pickupPodFile);
-        }
-      });
-
-      const podPreview = document.createElement('img');
-      podPreview.id = 'pickupPodPreview';
-      podPreview.className = 'pod-preview';
-      podW.appendChild(podBtn);
-      podW.appendChild(podInput);
-      podW.appendChild(podPreview);
-      podSec.appendChild(podW);
-      return podSec;
-    }
-
-    function buildPodSection() {
-      const podSec = document.createElement('div');
-      podSec.className = 'detail-section';
-      podSec.innerHTML = '<div class="detail-section-title">Proof of Delivery</div>';
-      const podW = document.createElement('div');
-      podW.className = 'pod-wrap';
-
-      const podBtn = document.createElement('div');
-      podBtn.className = 'pod-btn';
-      podBtn.id = 'podBtn';
-      podBtn.innerHTML = '<span class="pod-btn-icon">📷</span> Tap to add photo (optional)';
-      podBtn.addEventListener('click', function() { document.getElementById('podFileInput').click(); });
-
-      const podInput = document.createElement('input');
-      podInput.type = 'file';
-      podInput.accept = 'image/*';
-      podInput.capture = 'environment';
-      podInput.id = 'podFileInput';
-      podInput.addEventListener('change', function() {
-        if (podInput.files && podInput.files[0]) {
-          podFile = podInput.files[0];
-          const reader = new FileReader();
-          reader.onload = function(e) {
-            podDataUrl = e.target.result;
-            const preview = document.getElementById('podPreview');
-            preview.src = podDataUrl;
-            preview.classList.add('visible');
-            podBtn.classList.add('has-file');
-            podBtn.innerHTML = '<span class="pod-btn-icon">✓</span> Photo added — tap to change';
-          };
-          reader.readAsDataURL(podFile);
-        }
-      });
-
-      const podPreview = document.createElement('img');
-      podPreview.id = 'podPreview';
-      podPreview.className = 'pod-preview';
-      podW.appendChild(podBtn);
-      podW.appendChild(podInput);
-      podW.appendChild(podPreview);
-      podSec.appendChild(podW);
-      return podSec;
     }
 
     // ── Elapsed-billing route timer ──────────────────────────────────────────
@@ -1897,24 +1744,47 @@
       updateAndRerender(res.order);
     }
 
-    // ── Per-stop completion (multi-stop routes) ──────────────────────────────
-
-    function buildStopCompletionSection(order, stops) {
+    // ── Route: one ordered list of stops, pickup first, dropoff last ────────
+    // Replaces the old three-way split (buildPickupPodSection/buildPodSection
+    // for the whole-order pickup/dropoff legs, buildStopCompletionSection for
+    // intermediate stops only) — every leg is rendered and completed the same
+    // way. A stop is actionable (camera capture + Delivered/Failed) once its
+    // turn comes: pickup (index 0) unlocks at "OMW", every other leg
+    // (intermediate stops and dropoff) unlocks at "In transit" — matching the
+    // real-world flow (rider picks up, then works through the rest of the
+    // route in any order). Already-terminal stops are always shown read-only
+    // with their status/POD/notes, regardless of the order's current status,
+    // so a rider can review a completed leg later in the same visit.
+    function buildRouteStopsSection(order, stops) {
       _stopPodMap = {};
       const sec = document.createElement('div');
       sec.className = 'detail-section';
-      sec.innerHTML = '<div class="detail-section-title">Stops</div>';
+      sec.innerHTML = '<div class="detail-section-title">Route</div>';
 
-      stops.forEach(function(stop, i) {
+      const isMine = order.riderName === RIDER_NAME;
+
+      stops.forEach(function(stop, idx) {
+        const isFirst = idx === 0;
+        const isLast = idx === stops.length - 1;
+        const label = isFirst ? 'Pickup' : (isLast ? 'Dropoff' : ('Stop ' + idx));
+        const actionable = isMine && (isFirst ? order.status === 'OMW' : order.status === 'In transit');
+
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--border,#333);';
 
         const addrLine = document.createElement('div');
         addrLine.innerHTML =
-          '<div class="detail-row-label">Stop ' + (i + 1) + '</div>' +
+          '<div class="detail-row-label">' + label + '</div>' +
           '<div class="detail-row-value">' + (stop.address || '') +
           '<br><a class="maps-link" href="' + mapsUrl(stop.address) + '" target="_blank" rel="noopener">📍 Open maps</a></div>';
         row.appendChild(addrLine);
+
+        if (stop.notes) {
+          const notesLine = document.createElement('div');
+          notesLine.style.cssText = 'font-size:0.8rem;color:var(--text-muted);font-style:italic;';
+          notesLine.textContent = '📝 ' + stop.notes;
+          row.appendChild(notesLine);
+        }
 
         if (stop.status && stop.status !== 'Pending') {
           const doneInfo = document.createElement('div');
@@ -1935,7 +1805,12 @@
           return;
         }
 
-        // Pending — POD capture + Delivered/Failed
+        if (!actionable) {
+          sec.appendChild(row);
+          return;
+        }
+
+        // Pending + this leg's turn — POD capture + Delivered/Failed
         const podBtn = document.createElement('div');
         podBtn.className = 'pod-btn';
         podBtn.innerHTML = '<span class="pod-btn-icon">📷</span> Tap to add photo (optional)';
@@ -1979,6 +1854,15 @@
 
         sec.appendChild(row);
       });
+
+      if (stops.length >= 2) {
+        const linkRow = document.createElement('div');
+        linkRow.className = 'detail-row';
+        linkRow.innerHTML =
+          '<div class="detail-row-label">Full</div>' +
+          '<div class="detail-row-value"><a class="maps-link" href="' + routeMapsUrl(order) + '" target="_blank" rel="noopener">🗺 Full route in Maps</a></div>';
+        sec.appendChild(linkRow);
+      }
 
       return sec;
     }
@@ -3268,11 +3152,13 @@
       }
 
       if (status === 'OMW') {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-primary';
-        btn.textContent = '📦 Picked Up';
-        btn.addEventListener('click', function() { doPickedUp(order.eventId); });
-        footer.appendChild(btn);
+        // Pickup completion happens on the Pickup row itself (see
+        // buildRouteStopsSection above) — the order auto-advances to "Picked
+        // up" the moment that stop is marked Delivered.
+        const info = document.createElement('div');
+        info.style.cssText = 'text-align:center;color:var(--text-muted);font-size:0.82rem;padding:8px;';
+        info.textContent = 'Mark the Pickup stop above as Delivered/Failed once you have the cargo.';
+        footer.appendChild(info);
       }
 
       if (status === 'Picked up') {
@@ -3284,31 +3170,12 @@
       }
 
       if (status === 'In transit') {
-        const orderStops = Array.isArray(order.route && order.route.stops) ? order.route.stops : [];
-        const isMultiStop = orderStops.length > 0 && orderStops.every(function(s){ return s && s.id; });
-        if (isMultiStop) {
-          // Completion happens per-stop (see buildStopCompletionSection above the
-          // footer) — the route auto-completes once every stop is terminal.
-          const info = document.createElement('div');
-          info.style.cssText = 'text-align:center;color:var(--text-muted);font-size:0.82rem;padding:8px;';
-          info.textContent = 'Mark each stop above as Delivered/Failed — the route completes automatically once all stops are done.';
-          footer.appendChild(info);
-        } else {
-          const deliveredBtn = document.createElement('button');
-          deliveredBtn.className = 'btn btn-success';
-          deliveredBtn.textContent = '✓ Delivered';
-          deliveredBtn.addEventListener('click', function() { doDeliver(order.eventId); });
-
-          const row = document.createElement('div');
-          row.className = 'btn-row';
-          const failBtn = document.createElement('button');
-          failBtn.className = 'btn btn-danger';
-          failBtn.textContent = 'Failed';
-          failBtn.addEventListener('click', function() { doStatusUpdate(order.eventId, 'Failed'); });
-          row.appendChild(failBtn);
-          row.appendChild(deliveredBtn);
-          footer.appendChild(row);
-        }
+        // Completion happens per-stop (see buildRouteStopsSection above the
+        // footer) — the route auto-completes once every stop is terminal.
+        const info = document.createElement('div');
+        info.style.cssText = 'text-align:center;color:var(--text-muted);font-size:0.82rem;padding:8px;';
+        info.textContent = 'Mark each stop above as Delivered/Failed — the route completes automatically once all stops are done.';
+        footer.appendChild(info);
       }
     }
 
@@ -3389,55 +3256,9 @@
       updateAndRerender(res.order);
     }
 
-    async function doPickedUp(eventId) {
-      setFooterLoading(true);
-      const note = (document.getElementById('noteInput') || {}).value || '';
-      const dispatchNote = (document.getElementById('dispatchNoteInput') || {}).value || '';
-      const payload = {
-        action: 'riderUpdateStatus',
-        id: RIDER_ID,
-        eventId: eventId,
-        status: 'Picked up',
-        note: note,
-        dispatchNote: dispatchNote
-      };
-
-      if (pickupPodDataUrl) {
-        payload.podData = pickupPodDataUrl;
-        payload.podFileName = 'pickup-pod-' + Date.now() + '.jpg';
-        payload.podContentType = 'image/jpeg';
-      }
-
-      const res = await api('POST', payload);
-      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
-      toast('Picked up ✓', 'success');
-      updateAndRerender(res.order);
-    }
-
-    async function doDeliver(eventId) {
-      setFooterLoading(true);
-      const note = (document.getElementById('noteInput') || {}).value || '';
-      const dispatchNote = (document.getElementById('dispatchNoteInput') || {}).value || '';
-      const payload = {
-        action: 'riderUpdateStatus',
-        id: RIDER_ID,
-        eventId: eventId,
-        status: 'Delivered',
-        note: note,
-        dispatchNote: dispatchNote
-      };
-
-      if (podDataUrl) {
-        payload.podData = podDataUrl;
-        payload.podFileName = 'pod-' + Date.now() + '.jpg';
-        payload.podContentType = 'image/jpeg';
-      }
-
-      const res = await api('POST', payload);
-      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
-      toast('Delivered ✓', 'success');
-      updateAndRerender(res.order);
-    }
+    // doPickedUp/doDeliver removed — pickup and dropoff completion (including
+    // POD capture) now go through doCompleteStop, exactly like every other
+    // stop, since they're just the first/last entries in the unified route.
 
     function updateAndRerender(updatedOrder) {
       if (!updatedOrder) { loadOrders(); closeOrder(); return; }

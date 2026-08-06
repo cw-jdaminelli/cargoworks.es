@@ -92,10 +92,8 @@
   const editAccountDropoffTime = document.getElementById('editAccountDropoffTime');
   const editAccountAttName = document.getElementById('editAccountAttName');
   const editAccountAttContact = document.getElementById('editAccountAttContact');
-  const editPickupAddress = document.getElementById('editPickupAddress');
   const editStopsList = document.getElementById('editStopsList');
   const addStopBtn = document.getElementById('addStopBtn');
-  const editDropoffAddress = document.getElementById('editDropoffAddress');
   const editNotes = document.getElementById('editNotes');
   const editScheduleDate = document.getElementById('editScheduleDate');
   const editScheduleTime = document.getElementById('editScheduleTime');
@@ -117,7 +115,6 @@
   const editStatus = document.getElementById('editStatus');
   const editPaymentStatus = document.getElementById('editPaymentStatus');
   const editPaymentUrl = document.getElementById('editPaymentUrl');
-  const editPodUrl = document.getElementById('editPodUrl');
   const editRiderName = document.getElementById('editRiderName');
   const editRiderPhone = document.getElementById('editRiderPhone');
   const editInternalNotes = document.getElementById('editInternalNotes');
@@ -164,9 +161,6 @@
 
   var _cameraStream = null; // active MediaStream, if any
 
-  // Pickup geolocation
-  const editPickupLocBtn  = document.getElementById('editPickupLocBtn');
-
   // Maps route link
   const editMapsRouteLink = document.getElementById('editMapsRouteLink');
 
@@ -201,7 +195,7 @@
 
   const editorInputs = [
     editCustomerName, editCustomerEmail, editCustomerPhone, editUpdatesPreference,
-    editPickupAddress, editDropoffAddress, editNotes,
+    editNotes,
     editScheduleDate, editScheduleTime, editEtaMins, editTotalKm,
     editCargoType, editLoadType, editVehicleType, editPackageCount,
     editWeightKg, editVolumeM3,
@@ -555,8 +549,6 @@
     bits.push(customer.phone || '');
 
     const route = order.route || {};
-    if (route.pickup && route.pickup.address) bits.push(route.pickup.address);
-    if (route.dropoff && route.dropoff.address) bits.push(route.dropoff.address);
     if (Array.isArray(route.stops)) {
       route.stops.forEach(function(stop){
         if (stop && stop.address) bits.push(stop.address);
@@ -733,20 +725,6 @@
     return a;
   }
 
-  function setLink(anchor, url){
-    if (!anchor) return;
-    const clean = normalizeText(url);
-    if (!clean) {
-      anchor.href = '#';
-      anchor.style.pointerEvents = 'none';
-      anchor.style.opacity = '0.5';
-      return;
-    }
-    anchor.href = clean;
-    anchor.style.pointerEvents = 'auto';
-    anchor.style.opacity = '1';
-  }
-
   function applyFilters(){
     const visible = filterOrders();
     renderOrders(visible);
@@ -917,9 +895,7 @@
       accountDropoffTime: normalizeText(editAccountDropoffTime && editAccountDropoffTime.value),
       accountAttName: normalizeText(editAccountAttName && editAccountAttName.value),
       accountAttContact: normalizeText(editAccountAttContact && editAccountAttContact.value),
-      pickup: normalizeText(editPickupAddress && editPickupAddress.value),
-      stops: JSON.stringify(editorState.stopsModel.map(function(s){ return [s.id, s.address, s.tier]; })),
-      dropoff: normalizeText(editDropoffAddress && editDropoffAddress.value),
+      stops: JSON.stringify(editorState.stopsModel.map(function(s){ return [s.id, s.address, s.tier, s.notes]; })),
       notes: normalizeText(editNotes && editNotes.value),
       date: normalizeText(editScheduleDate && editScheduleDate.value),
       time: normalizeText(editScheduleTime && editScheduleTime.value),
@@ -1081,8 +1057,6 @@
     resetAccountStatus();
     if (editAccountToken && editAccountToken.value) verifyAccountToken(true);
 
-    if (editPickupAddress) editPickupAddress.value = modeCreate ? '' : normalizeText(route && route.pickup && route.pickup.address);
-    if (editDropoffAddress) editDropoffAddress.value = modeCreate ? '' : normalizeText(route && route.dropoff && route.dropoff.address);
     if (editNotes) editNotes.value = modeCreate ? '' : normalizeText(source && source.notes);
 
     if (editScheduleDate) editScheduleDate.value = modeCreate ? (dateInput && dateInput.value ? dateInput.value : formatDateKey(new Date())) : normalizeText(source && source.schedule && source.schedule.date);
@@ -1115,7 +1089,6 @@
     if (editStatus) editStatus.value = modeCreate || modeDuplicate ? 'Confirmed' : normalizeText(source && source.status || 'Confirmed');
     if (editPaymentStatus) editPaymentStatus.value = modeCreate || modeDuplicate ? 'Pending' : normalizeText(source && source.paymentStatus || 'Pending');
     if (editPaymentUrl) editPaymentUrl.value = modeCreate || modeDuplicate ? '' : normalizeText(source && source.paymentUrl);
-    if (editPodUrl) editPodUrl.value = modeCreate || modeDuplicate ? '' : normalizeText(source && source.podUrl);
 
     if (editRiderName) editRiderName.value = modeCreate ? '' : normalizeText(source && source.riderName);
     if (editRiderPhone) editRiderPhone.value = modeCreate ? '' : normalizeText(source && source.riderPhone);
@@ -1159,7 +1132,9 @@
     editorState.mode = normalizedMode;
     editorState.order = source;
     editorState.sourceEventId = normalizeText(source && source.eventId);
-    editorState.stopsModel = modeCreate ? [] : (Array.isArray(route.stops) ? route.stops.map(function(s){ return Object.assign({}, s); }) : []);
+    editorState.stopsModel = modeCreate
+      ? [blankStopEntry(), blankStopEntry()]
+      : (Array.isArray(route.stops) ? route.stops.map(function(s){ return Object.assign({}, s); }) : []);
     renderStopsList();
     editorState.snapshot = editorModelSnapshot();
     setEditorDirty(false);
@@ -1192,11 +1167,11 @@
           time: normalizeText(editScheduleTime && editScheduleTime.value)
         },
         route: {
-          pickup: { address: normalizeText(editPickupAddress && editPickupAddress.value) },
+          // The unified list: index 0 is pickup, the last index is dropoff,
+          // everything between is an intermediate stop — all saved the same way.
           stops: editorState.stopsModel.filter(function(s){ return normalizeText(s.address); }).map(function(s){
             return { id: s.id || '', address: normalizeText(s.address), tier: normalizeText(s.tier), priority: !!s.priority, outlier: !!s.outlier };
-          }),
-          dropoff: { address: normalizeText(editDropoffAddress && editDropoffAddress.value) }
+          })
         },
         total: total,
         billingMode: normalizeText(editBillingMode && editBillingMode.value) || 'flat',
@@ -1228,13 +1203,14 @@
 
   function validateEditorData(orderData){
     const customerName = normalizeText(orderData && orderData.customer && orderData.customer.name);
-    const pickup = normalizeText(orderData && orderData.quote && orderData.quote.route && orderData.quote.route.pickup && orderData.quote.route.pickup.address);
-    const dropoff = normalizeText(orderData && orderData.quote && orderData.quote.route && orderData.quote.route.dropoff && orderData.quote.route.dropoff.address);
+    const stops = (orderData && orderData.quote && orderData.quote.route && orderData.quote.route.stops) || [];
+    const pickup = normalizeText(stops[0] && stops[0].address);
+    const dropoff = normalizeText(stops.length > 1 && stops[stops.length - 1].address);
     const date = normalizeDateKey(orderData && orderData.quote && orderData.quote.schedule && orderData.quote.schedule.date);
     const time = normalizeText(orderData && orderData.quote && orderData.quote.schedule && orderData.quote.schedule.time);
 
     if (!customerName) return 'Customer name is required.';
-    if (!pickup || !dropoff) return 'Pickup and dropoff are required.';
+    if (stops.length < 2 || !pickup || !dropoff) return 'Pickup and dropoff are required.';
     if (!date || !time) return 'Date and time are required.';
     return '';
   }
@@ -1380,62 +1356,6 @@
     }
   }
 
-  function bindPodUpload(order, controls, podKind){
-    const kind = podKind === 'pickup' ? 'pickup' : 'dropoff';
-    const podInput = controls.podInput;
-    const podUpload = controls.podUpload;
-    const podName = controls.podName;
-    const podLink = controls.podLink;
-
-    if (!podInput || !podUpload || !podName) return;
-
-    podInput.addEventListener('change', function(){
-      const file = podInput.files && podInput.files[0];
-      if (!file) {
-        podUpload.disabled = true;
-        podName.textContent = 'No file selected';
-        return;
-      }
-      podUpload.disabled = false;
-      podName.textContent = file.name;
-    });
-
-    podUpload.addEventListener('click', function(){
-      const file = podInput.files && podInput.files[0];
-      if (!file) {
-        setStatus('Choose a POD photo first.', true);
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = async function(){
-        try {
-          setStatus('Uploading POD...');
-          const res = await postAdmin({
-            action: 'adminPod',
-            eventId: order.eventId,
-            podKind: kind,
-            fileName: file.name,
-            contentType: file.type,
-            data: String(reader.result || '')
-          });
-          if (res && res.podUrl) {
-            setLink(podLink, res.podUrl);
-          }
-          await refreshCurrentLoad();
-          setStatus('POD uploaded.');
-        } catch (err) {
-          setStatus(err && err.message ? err.message : 'POD upload failed.', true);
-        } finally {
-          podInput.value = '';
-          podUpload.disabled = true;
-          podName.textContent = 'No file selected';
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
   async function cardCompleteStop(order, stop, status){
     if (!order.eventId || !stop.id) return;
     let reason = '';
@@ -1459,13 +1379,16 @@
     }
   }
 
-  function buildCardStopRow(order, stop, stopIdx){
+  function buildCardStopRow(order, stop, stopIdx, stopsLength){
+    const isFirst = stopIdx === 0;
+    const isLast = stopIdx === stopsLength - 1;
     const row = document.createElement('div');
     row.style.cssText = 'border:1px solid var(--dispatch-border,#ddd);border-radius:8px;padding:0.35rem 0.5rem;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;font-size:0.75rem;';
 
     const addr = document.createElement('span');
     addr.style.cssText = 'flex:1 1 auto;min-width:120px;';
-    addr.textContent = (stopIdx + 1) + '. ' + (stop.address || '');
+    const label = isFirst ? 'Pickup' : (isLast ? 'Dropoff' : String(stopIdx + 1));
+    addr.textContent = label + '. ' + (stop.address || '');
     row.appendChild(addr);
 
     const badge = document.createElement('span');
@@ -1477,6 +1400,13 @@
       reasonEl.style.color = '#b00020';
       reasonEl.textContent = stop.failureReason;
       row.appendChild(reasonEl);
+    }
+
+    if (stop.notes) {
+      const notesEl = document.createElement('span');
+      notesEl.style.cssText = 'color:var(--dispatch-muted);font-style:italic;';
+      notesEl.textContent = '📝 ' + stop.notes;
+      row.appendChild(notesEl);
     }
 
     if (stop.podUrl) {
@@ -1533,6 +1463,32 @@
 
       row.appendChild(podBtn);
       row.appendChild(podInput);
+    }
+
+    if (stop.id && order.eventId) {
+      const notesBtn = document.createElement('button');
+      notesBtn.type = 'button';
+      notesBtn.className = 'btn btn--ghost';
+      notesBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
+      notesBtn.textContent = stop.notes ? '✎ Edit note' : '✎ Add note';
+      notesBtn.addEventListener('click', async function(){
+        const next = window.prompt('Note for this stop:', stop.notes || '');
+        if (next == null) return;
+        try {
+          await postAdmin({
+            action: 'adminUpdateStop',
+            eventId: order.eventId,
+            stopId: stop.id,
+            notes: next,
+            operator: currentOperator()
+          });
+          await refreshCurrentLoad();
+          setStatus('Note saved.');
+        } catch (err) {
+          setStatus(err && err.message ? err.message : 'Note save failed.', true);
+        }
+      });
+      row.appendChild(notesBtn);
     }
 
     if ((!stop.status || stop.status === 'Pending') && stop.id && order.eventId) {
@@ -1605,8 +1561,6 @@
         '<span><strong>Customer:</strong> ' + (normalizeText(order && order.customer && order.customer.name) || '-') + '</span>' +
         '<span><strong>Email:</strong> ' + (normalizeText(order && order.customer && order.customer.email) || '-') + '</span>' +
         '<span><strong>Phone:</strong> ' + (normalizeText(order && order.customer && order.customer.phone) || '-') + '</span>' +
-        '<span><strong>Pickup:</strong> ' + (normalizeText(order && order.route && order.route.pickup && order.route.pickup.address) || '-') + '</span>' +
-        '<span><strong>Dropoff:</strong> ' + (normalizeText(order && order.route && order.route.dropoff && order.route.dropoff.address) || '-') + '</span>' +
         '<span><strong>Updates:</strong> ' + (normalizeText(order && order.updatesPreference) || 'Default') + '</span>';
       if (normalizeText(order && order.staffName))  meta.innerHTML += '<span><strong>Staff:</strong> '        + normalizeText(order.staffName)  + '</span>';
       if (normalizeText(order && order.pickupTime)) meta.innerHTML += '<span><strong>Pickup time:</strong> '  + normalizeText(order.pickupTime)  + '</span>';
@@ -1626,7 +1580,7 @@
         stopsWrap.appendChild(stopsTitle);
 
         order.route.stops.forEach(function(stop, stopIdx){
-          stopsWrap.appendChild(buildCardStopRow(order, stop, stopIdx));
+          stopsWrap.appendChild(buildCardStopRow(order, stop, stopIdx, order.route.stops.length));
         });
 
         card.appendChild(stopsWrap);
@@ -1793,80 +1747,11 @@
       actionsWrap.appendChild(duplicateBtn);
       actionsWrap.appendChild(cancelBtn);
 
-      const podLink = document.createElement('a');
-      podLink.className = 'btn btn--ghost';
-      podLink.target = '_blank';
-      podLink.rel = 'noopener';
-      podLink.textContent = 'POD';
-      setLink(podLink, normalizeText(order.podUrl));
-
-      const podChoose = document.createElement('button');
-      podChoose.type = 'button';
-      podChoose.className = 'btn btn--ghost';
-      podChoose.textContent = 'Choose POD';
-
-      const podUpload = document.createElement('button');
-      podUpload.type = 'button';
-      podUpload.className = 'btn btn--ghost';
-      podUpload.textContent = 'Upload POD';
-      podUpload.disabled = true;
-
-      const podName = document.createElement('span');
-      podName.className = 'dispatcher-status';
-      podName.textContent = 'No file selected';
-
-      const podInput = document.createElement('input');
-      podInput.type = 'file';
-      podInput.accept = 'image/*';
-      podInput.style.display = 'none';
-
-      podChoose.addEventListener('click', function(){
-        try { podInput.click(); } catch(_) {}
-      });
-
-      const pickupPodLink = document.createElement('a');
-      pickupPodLink.className = 'btn btn--ghost';
-      pickupPodLink.target = '_blank';
-      pickupPodLink.rel = 'noopener';
-      pickupPodLink.textContent = 'Pickup POD';
-      setLink(pickupPodLink, normalizeText(order.pickupPodUrl));
-
-      const pickupPodChoose = document.createElement('button');
-      pickupPodChoose.type = 'button';
-      pickupPodChoose.className = 'btn btn--ghost';
-      pickupPodChoose.textContent = 'Choose Pickup POD';
-
-      const pickupPodUpload = document.createElement('button');
-      pickupPodUpload.type = 'button';
-      pickupPodUpload.className = 'btn btn--ghost';
-      pickupPodUpload.textContent = 'Upload Pickup POD';
-      pickupPodUpload.disabled = true;
-
-      const pickupPodName = document.createElement('span');
-      pickupPodName.className = 'dispatcher-status';
-      pickupPodName.textContent = 'No file selected';
-
-      const pickupPodInput = document.createElement('input');
-      pickupPodInput.type = 'file';
-      pickupPodInput.accept = 'image/*';
-      pickupPodInput.style.display = 'none';
-
-      pickupPodChoose.addEventListener('click', function(){
-        try { pickupPodInput.click(); } catch(_) {}
-      });
-
-      actionsWrap.appendChild(podLink);
-      actionsWrap.appendChild(podChoose);
-      actionsWrap.appendChild(podUpload);
-      actionsWrap.appendChild(podName);
-      actionsWrap.appendChild(podInput);
-      actionsWrap.appendChild(pickupPodLink);
-      actionsWrap.appendChild(pickupPodChoose);
-      actionsWrap.appendChild(pickupPodUpload);
-      actionsWrap.appendChild(pickupPodName);
-      actionsWrap.appendChild(pickupPodInput);
       quick.appendChild(actionsWrap);
 
+      // Pickup/dropoff POD upload lives on their stop rows in the "Stops"
+      // section below (buildCardStopRow) — there's no separate whole-order
+      // POD control anymore, since pickup/dropoff are just the first/last stop.
       const quickControls = {
         status: quickStatus,
         payment: quickPayment,
@@ -1876,17 +1761,7 @@
         time: quickTime,
         eta: quickEta,
         internalNotes: quickInternalNotes,
-        note: quickNote,
-        podInput: podInput,
-        podUpload: podUpload,
-        podName: podName,
-        podLink: podLink
-      };
-      const pickupPodControls = {
-        podInput: pickupPodInput,
-        podUpload: pickupPodUpload,
-        podName: pickupPodName,
-        podLink: pickupPodLink
+        note: quickNote
       };
 
       quickSaveBtn.addEventListener('click', function(){ quickUpdate(order, quickControls, false); });
@@ -1894,8 +1769,6 @@
       fullEditBtn.addEventListener('click',  function(){ openEditor('edit', order); });
       duplicateBtn.addEventListener('click', function(){ openEditor('duplicate', order); });
       cancelBtn.addEventListener('click',    function(){ openCancelModal(order); });
-      bindPodUpload(order, quickControls, 'dropoff');
-      bindPodUpload(order, pickupPodControls, 'pickup');
 
       card.appendChild(quick);
       card.appendChild(renderPricing(order));
@@ -2133,14 +2006,18 @@
     fill(editCustomerName,   d.customerName);
     fill(editCustomerPhone,  d.customerPhone);
     fill(editCustomerEmail,  d.customerEmail);
-    fill(editPickupAddress,  d.pickupAddress);
-    fill(editDropoffAddress, d.dropoffAddress);
+    // Pickup/dropoff are stopsModel[0]/[last] (always present — openEditor
+    // seeds 2 blank entries in create mode) rather than standalone inputs.
+    if (!editorState.stopsModel.length) editorState.stopsModel.push(blankStopEntry(), blankStopEntry());
+    if (d.pickupAddress) editorState.stopsModel[0].address = String(d.pickupAddress);
+    if (d.dropoffAddress) editorState.stopsModel[editorState.stopsModel.length - 1].address = String(d.dropoffAddress);
     if (d.stops) {
       const stopLines = Array.isArray(d.stops)
         ? d.stops.map(function(s){ return String(s || '').trim(); }).filter(Boolean)
         : String(d.stops).split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
       stopLines.forEach(function(addr){ addStopToModel(addr); });
     }
+    renderStopsList();
     fill(editNotes,          d.notes);
     fill(editScheduleDate,   d.scheduleDate);
     fill(editScheduleTime,   d.scheduleTime);
@@ -2176,6 +2053,10 @@
     if (!editStopsList) return;
     editStopsList.innerHTML = '';
     editorState.stopsModel.forEach(function(stop, idx) {
+      const isFirst = idx === 0;
+      const isLast = idx === editorState.stopsModel.length - 1;
+      const isPinned = isFirst || isLast;
+
       const row = document.createElement('div');
       row.className = 'stop-row';
       row.style.cssText = 'border:1px solid var(--dispatch-border,#ddd);border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.35rem;';
@@ -2183,9 +2064,16 @@
       const topRow = document.createElement('div');
       topRow.style.cssText = 'display:flex;gap:0.35rem;align-items:center;';
 
+      if (isPinned) {
+        const roleLabel = document.createElement('span');
+        roleLabel.textContent = isFirst ? 'Pickup' : 'Dropoff';
+        roleLabel.style.cssText = 'flex:0 0 auto;font-size:0.7rem;font-weight:700;color:var(--dispatch-muted);';
+        topRow.appendChild(roleLabel);
+      }
+
       const addrInput = document.createElement('input');
       addrInput.type = 'text';
-      addrInput.placeholder = 'Stop address';
+      addrInput.placeholder = isFirst ? 'Pickup address' : (isLast ? 'Dropoff address' : 'Stop address');
       addrInput.value = stop.address || '';
       addrInput.style.cssText = 'flex:1 1 auto;min-width:0;';
       addrInput.addEventListener('input', function(){
@@ -2194,38 +2082,51 @@
         updateMapsRouteLink();
         autoCalcStopsFee();
       });
-
-      const tierInput = document.createElement('input');
-      tierInput.type = 'text';
-      tierInput.placeholder = 'Tier';
-      tierInput.value = stop.tier || '';
-      tierInput.style.cssText = 'flex:0 0 64px;';
-      tierInput.addEventListener('input', function(){
-        stop.tier = tierInput.value;
-        updateEditorDirtyFromForm();
-      });
-
-      const removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.className = 'btn btn--ghost';
-      removeBtn.title = 'Remove stop';
-      removeBtn.textContent = '✗';
-      removeBtn.style.cssText = 'flex:0 0 auto;padding:0.15rem 0.4rem;';
-      removeBtn.addEventListener('click', function(){
-        if (stop.status && stop.status !== 'Pending') {
-          const ok = window.confirm('This stop is already ' + stop.status + '. Removing it will break its public tracking link and unlink its POD photo. Continue?');
-          if (!ok) return;
-        }
-        editorState.stopsModel.splice(idx, 1);
-        renderStopsList();
-        updateEditorDirtyFromForm();
-        updateMapsRouteLink();
-        autoCalcStopsFee();
-      });
-
       topRow.appendChild(addrInput);
-      topRow.appendChild(tierInput);
-      topRow.appendChild(removeBtn);
+      if (isPinned) attachAddressLookup(addrInput);
+
+      if (isFirst) {
+        const locBtn = document.createElement('button');
+        locBtn.type = 'button';
+        locBtn.className = 'btn btn--ghost';
+        locBtn.textContent = '📍 My location';
+        locBtn.style.cssText = 'flex:0 0 auto;padding:0.15rem 0.4rem;font-size:0.7rem;';
+        locBtn.addEventListener('click', function(){ handlePickupMyLocation(locBtn, addrInput); });
+        topRow.appendChild(locBtn);
+      }
+
+      if (!isPinned) {
+        const tierInput = document.createElement('input');
+        tierInput.type = 'text';
+        tierInput.placeholder = 'Tier';
+        tierInput.value = stop.tier || '';
+        tierInput.style.cssText = 'flex:0 0 64px;';
+        tierInput.addEventListener('input', function(){
+          stop.tier = tierInput.value;
+          updateEditorDirtyFromForm();
+        });
+        topRow.appendChild(tierInput);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn--ghost';
+        removeBtn.title = 'Remove stop';
+        removeBtn.textContent = '✗';
+        removeBtn.style.cssText = 'flex:0 0 auto;padding:0.15rem 0.4rem;';
+        removeBtn.addEventListener('click', function(){
+          if (stop.status && stop.status !== 'Pending') {
+            const ok = window.confirm('This stop is already ' + stop.status + '. Removing it will break its public tracking link and unlink its POD photo. Continue?');
+            if (!ok) return;
+          }
+          editorState.stopsModel.splice(idx, 1);
+          renderStopsList();
+          updateEditorDirtyFromForm();
+          updateMapsRouteLink();
+          autoCalcStopsFee();
+        });
+        topRow.appendChild(removeBtn);
+      }
+
       row.appendChild(topRow);
 
       const metaRow = document.createElement('div');
@@ -2240,6 +2141,40 @@
         reasonEl.style.color = '#b00020';
         reasonEl.textContent = stop.failureReason;
         metaRow.appendChild(reasonEl);
+      }
+
+      if (stop.notes) {
+        const notesEl = document.createElement('span');
+        notesEl.style.cssText = 'color:var(--dispatch-muted);font-style:italic;';
+        notesEl.textContent = '📝 ' + stop.notes;
+        metaRow.appendChild(notesEl);
+      }
+
+      if (stop.id && editorState.sourceEventId) {
+        const notesBtn = document.createElement('button');
+        notesBtn.type = 'button';
+        notesBtn.className = 'btn btn--ghost';
+        notesBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
+        notesBtn.textContent = stop.notes ? '✎ Edit note' : '✎ Add note';
+        notesBtn.addEventListener('click', async function(){
+          const next = window.prompt('Note for this stop:', stop.notes || '');
+          if (next == null) return;
+          try {
+            const res = await postAdmin({
+              action: 'adminUpdateStop',
+              eventId: editorState.sourceEventId,
+              stopId: stop.id,
+              notes: next,
+              operator: currentOperator()
+            });
+            if (res && res.stop) Object.assign(editorState.stopsModel[idx], res.stop);
+            renderStopsList();
+            setEditorFeedback('✓ Note saved.');
+          } catch (err) {
+            setEditorFeedback('Note save failed: ' + ((err && err.message) || err), true);
+          }
+        });
+        metaRow.appendChild(notesBtn);
       }
 
       if (stop.podUrl) {
@@ -2549,11 +2484,20 @@
   // trackingToken/completedAt/failureReason are always left blank here — the
   // server assigns a real id + tracking token the first time this order is
   // saved (normalizeStopsForOrder); status defaults to Pending.
-  function addStopToModel(address, tier) {
-    editorState.stopsModel.push({
+  function blankStopEntry(address, tier) {
+    return {
       id: '', address: address || '', tier: tier || '', priority: false, outlier: false,
-      status: 'Pending', podUrl: '', trackingToken: '', completedAt: '', failureReason: ''
-    });
+      status: 'Pending', podUrl: '', podAt: '', notes: '', trackingToken: '', completedAt: '', failureReason: ''
+    };
+  }
+
+  // Inserts before the last entry — dropoff always occupies the last slot in
+  // editorState.stopsModel, so a plain push() would file new intermediate
+  // stops AFTER dropoff instead of between pickup and dropoff.
+  function addStopToModel(address, tier) {
+    const entry = blankStopEntry(address, tier);
+    const insertAt = editorState.stopsModel.length ? editorState.stopsModel.length - 1 : 0;
+    editorState.stopsModel.splice(insertAt, 0, entry);
     renderStopsList();
     updateEditorDirtyFromForm();
     updateMapsRouteLink();
@@ -2562,20 +2506,26 @@
 
   // ── Pickup — My Location ─────────────────────────────────────────────────
 
-  function handlePickupMyLocation() {
+  // btn/addrInput are the dynamically-rendered pickup row's controls (row 0
+  // in renderStopsList) — there's no static pickup input anymore.
+  function handlePickupMyLocation(btn, addrInput) {
     if (!navigator.geolocation) {
       setEditorFeedback('Geolocation not supported by this browser.', true);
       return;
     }
-    if (editPickupLocBtn) { editPickupLocBtn.disabled = true; editPickupLocBtn.textContent = '📍 Locating…'; }
+    function setAddress(value) {
+      editorState.stopsModel[0].address = value;
+      if (addrInput) addrInput.value = value;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = '📍 Locating…'; }
     navigator.geolocation.getCurrentPosition(
       async function(pos) {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         const mapsKey = window.CARGOWORKS_MAPS_KEY || '';
         if (!mapsKey) {
-          if (editPickupAddress) editPickupAddress.value = lat.toFixed(6) + ',' + lng.toFixed(6);
-          if (editPickupLocBtn) { editPickupLocBtn.disabled = false; editPickupLocBtn.textContent = '📍 My location'; }
+          setAddress(lat.toFixed(6) + ',' + lng.toFixed(6));
+          if (btn) { btn.disabled = false; btn.textContent = '📍 My location'; }
           updateMapsRouteLink();
           return;
         }
@@ -2587,19 +2537,19 @@
           if (data && data.results && data.results[0]) {
             address = data.results[0].formatted_address || '';
           }
-          if (editPickupAddress) editPickupAddress.value = address || (lat.toFixed(6) + ',' + lng.toFixed(6));
+          setAddress(address || (lat.toFixed(6) + ',' + lng.toFixed(6)));
           updateEditorDirtyFromForm();
           updateMapsRouteLink();
         } catch(err) {
-          if (editPickupAddress) editPickupAddress.value = lat.toFixed(6) + ',' + lng.toFixed(6);
+          setAddress(lat.toFixed(6) + ',' + lng.toFixed(6));
           updateMapsRouteLink();
         } finally {
-          if (editPickupLocBtn) { editPickupLocBtn.disabled = false; editPickupLocBtn.textContent = '📍 My location'; }
+          if (btn) { btn.disabled = false; btn.textContent = '📍 My location'; }
         }
       },
       function(err) {
         setEditorFeedback('Location error: ' + (err.message || 'denied.'), true);
-        if (editPickupLocBtn) { editPickupLocBtn.disabled = false; editPickupLocBtn.textContent = '📍 My location'; }
+        if (btn) { btn.disabled = false; btn.textContent = '📍 My location'; }
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
@@ -2611,7 +2561,10 @@
   function autoCalcStopsFee() {
     if (!editPriceStops) return;
     if (editPriceOverride && editPriceOverride.checked) return; // manual override — leave it alone
-    const stopCount = editorState.stopsModel.filter(function(s){ return normalizeText(s.address); }).length;
+    // stopsModel[0]/[last] are pickup/dropoff, not intermediate stops — slice
+    // them off before counting (dropoff is still added back via the +1 below,
+    // same as before pickup/dropoff joined this array).
+    const stopCount = editorState.stopsModel.slice(1, -1).filter(function(s){ return normalizeText(s.address); }).length;
     const addressFeeCount = stopCount + 1; // stops + dropoff
     const addressFeePer = addressFeeCount >= 3 ? 1.25 : 0;
     const addressFee = Math.round(addressFeePer * addressFeeCount * 100) / 100;
@@ -2623,14 +2576,11 @@
 
   function updateMapsRouteLink() {
     if (!editMapsRouteLink) return;
-    const pickup  = normalizeText(editPickupAddress  && editPickupAddress.value);
-    const dropoff = normalizeText(editDropoffAddress && editDropoffAddress.value);
-    if (!pickup || !dropoff) {
+    const parts = editorState.stopsModel.map(function(s){ return normalizeText(s.address); }).filter(Boolean);
+    if (parts.length < 2) {
       editMapsRouteLink.style.display = 'none';
       return;
     }
-    const stops = editorState.stopsModel.map(function(s){ return normalizeText(s.address); }).filter(Boolean);
-    const parts = [pickup].concat(stops).concat([dropoff]);
     const encoded = parts.map(function(p){ return encodeURIComponent(p); }).join('/');
     editMapsRouteLink.href = 'https://www.google.com/maps/dir/' + encoded;
     editMapsRouteLink.style.display = 'inline';
@@ -2730,10 +2680,7 @@
           },
           quote: {
             total: safeNumber(editPriceTotal && editPriceTotal.value, 0),
-            route: {
-              pickup:  { address: normalizeText(editPickupAddress  && editPickupAddress.value) },
-              dropoff: { address: normalizeText(editDropoffAddress && editDropoffAddress.value) }
-            },
+            route: { stops: editorState.stopsModel.filter(function(s){ return normalizeText(s.address); }).map(function(s){ return { address: normalizeText(s.address) }; }) },
             schedule: {
               date: normalizeText(editScheduleDate && editScheduleDate.value),
               time: normalizeText(editScheduleTime && editScheduleTime.value)
@@ -2912,8 +2859,8 @@
   }
 
   async function handleGetSystemPricing() {
-    const pickup  = normalizeText(editPickupAddress  && editPickupAddress.value);
-    const dropoff = normalizeText(editDropoffAddress && editDropoffAddress.value);
+    const pickup  = normalizeText(editorState.stopsModel[0] && editorState.stopsModel[0].address);
+    const dropoff = normalizeText(editorState.stopsModel.length > 1 && editorState.stopsModel[editorState.stopsModel.length - 1].address);
     if (!pickup || !dropoff) {
       _spSetSystemPricingStatus('⚠ Pickup and dropoff are required.');
       return;
@@ -2926,8 +2873,9 @@
       const { prices, zones, holidays } = await _spLoadData();
       const parsedZones = _spParseZones(zones);
 
-      // Geocode all addresses
-      const stopLines = editorState.stopsModel.map(function(s){ return normalizeText(s.address); }).filter(Boolean);
+      // Geocode all INTERMEDIATE addresses — stopsModel[0]/[last] (pickup/
+      // dropoff) are geocoded separately below.
+      const stopLines = editorState.stopsModel.slice(1, -1).map(function(s){ return normalizeText(s.address); }).filter(Boolean);
 
       _spSetSystemPricingStatus('Geocoding ' + (2 + stopLines.length) + ' address(es)…');
 
@@ -3066,95 +3014,94 @@
   // Debounced 700ms — calls adminGeocode and shows a suggestion pill the
   // dispatcher can accept with one tap. Never rewrites the field automatically.
 
-  function setupAddressLookup() {
+  // Attaches the debounced geocode-suggestion UI to a single address input.
+  // Called for the dynamically-rendered pickup/dropoff rows in renderStopsList
+  // (idx 0 and the last index) each time they're (re)created — intermediate
+  // stop rows and the AI scanner already return validated addresses, so this
+  // isn't attached per-row for those.
+  function attachAddressLookup(inputEl) {
     var DEBOUNCE_MS = 700;
     var MIN_CHARS   = 3;
+    if (!inputEl || !inputEl.parentNode) return;
 
-    function attachTo(inputEl) {
-      if (!inputEl || !inputEl.parentNode) return;
+    // Insert suggestion div after the input
+    var sug = document.createElement('div');
+    sug.className = 'address-suggestion';
+    // Insert after input (but before any existing siblings like the maps link)
+    inputEl.parentNode.insertBefore(sug, inputEl.nextSibling);
 
-      // Insert suggestion div after the input
-      var sug = document.createElement('div');
-      sug.className = 'address-suggestion';
-      // Insert after input (but before any existing siblings like the maps link)
-      inputEl.parentNode.insertBefore(sug, inputEl.nextSibling);
+    var timer = null;
+    var lastQuery = '';
+    var pendingAccept = false;
 
-      var timer = null;
-      var lastQuery = '';
-      var pendingAccept = false;
+    function hideSug() { sug.className = 'address-suggestion'; sug.innerHTML = ''; }
 
-      function hideSug() { sug.className = 'address-suggestion'; sug.innerHTML = ''; }
+    function showSuggestion(resolved, query) {
+      if (!resolved || resolved === query) { hideSug(); return; }
+      sug.innerHTML = '';
 
-      function showSuggestion(resolved, query) {
-        if (!resolved || resolved === query) { hideSug(); return; }
-        sug.innerHTML = '';
+      var textSpan = document.createElement('span');
+      textSpan.className = 'address-suggestion-text';
+      textSpan.textContent = '→ ' + resolved;
 
-        var textSpan = document.createElement('span');
-        textSpan.className = 'address-suggestion-text';
-        textSpan.textContent = '→ ' + resolved;
-
-        var useBtn = document.createElement('button');
-        useBtn.type = 'button';
-        useBtn.className = 'address-suggestion-use';
-        useBtn.textContent = '✓ Use';
-        useBtn.addEventListener('mousedown', function(e) {
-          // mousedown fires before blur so we can prevent the hide
-          e.preventDefault();
-          pendingAccept = true;
-        });
-        useBtn.addEventListener('click', function() {
-          inputEl.value = resolved;
-          pendingAccept = false;
-          hideSug();
-          updateEditorDirtyFromForm();
-          updateMapsRouteLink();
-          autoCalcStopsFee();
-        });
-
-        sug.appendChild(textSpan);
-        sug.appendChild(useBtn);
-        sug.className = 'address-suggestion is-visible';
-      }
-
-      async function lookup(query) {
-        if (!currentToken()) return; // not unlocked yet
-        try {
-          var res = await postAdmin({ action: 'adminGeocode', query: query });
-          if (query !== lastQuery) return; // stale
-          if (res && res.result && res.result.label) {
-            showSuggestion(res.result.label, query);
-          } else {
-            hideSug();
-          }
-        } catch(_) { hideSug(); }
-      }
-
-      inputEl.addEventListener('input', function() {
-        var val = inputEl.value.trim();
-        hideSug();
-        if (timer) clearTimeout(timer);
-        if (val.length < MIN_CHARS) return;
-        lastQuery = val;
-        timer = setTimeout(function() { lookup(val); }, DEBOUNCE_MS);
+      var useBtn = document.createElement('button');
+      useBtn.type = 'button';
+      useBtn.className = 'address-suggestion-use';
+      useBtn.textContent = '✓ Use';
+      useBtn.addEventListener('mousedown', function(e) {
+        // mousedown fires before blur so we can prevent the hide
+        e.preventDefault();
+        pendingAccept = true;
       });
-
-      inputEl.addEventListener('blur', function() {
-        if (pendingAccept) return; // user is clicking Use button
-        setTimeout(hideSug, 150);
-      });
-
-      inputEl.addEventListener('focus', function() {
+      useBtn.addEventListener('click', function() {
+        inputEl.value = resolved;
         pendingAccept = false;
+        hideSug();
+        updateEditorDirtyFromForm();
+        updateMapsRouteLink();
+        autoCalcStopsFee();
       });
+
+      sug.appendChild(textSpan);
+      sug.appendChild(useBtn);
+      sug.className = 'address-suggestion is-visible';
     }
 
-    attachTo(editPickupAddress);
-    attachTo(editDropoffAddress);
+    async function lookup(query) {
+      if (!currentToken()) return; // not unlocked yet
+      try {
+        var res = await postAdmin({ action: 'adminGeocode', query: query });
+        if (query !== lastQuery) return; // stale
+        if (res && res.result && res.result.label) {
+          showSuggestion(res.result.label, query);
+        } else {
+          hideSug();
+        }
+      } catch(_) { hideSug(); }
+    }
+
+    inputEl.addEventListener('input', function() {
+      var val = inputEl.value.trim();
+      hideSug();
+      if (timer) clearTimeout(timer);
+      if (val.length < MIN_CHARS) return;
+      lastQuery = val;
+      timer = setTimeout(function() { lookup(val); }, DEBOUNCE_MS);
+    });
+
+    inputEl.addEventListener('blur', function() {
+      if (pendingAccept) return; // user is clicking Use button
+      setTimeout(hideSug, 150);
+    });
+
+    inputEl.addEventListener('focus', function() {
+      pendingAccept = false;
+    });
     // Note: the per-line "resolve address on blur" suggestion feature that used
     // to live here for the stops textarea was removed along with the textarea
     // itself (see renderStopsList) — each stop is now its own input row, and
     // the AI scanner (Quick-add) already returns validated/geocoded-quality
-    // addresses, so this wasn't re-implemented per-row for the initial version.
+    // addresses, so this isn't attached per-row for intermediate stops.
   }
 
   // ── End system pricing ────────────────────────────────────────────────────
@@ -3274,15 +3221,9 @@
 
   if (editCreatePaymentBtn) editCreatePaymentBtn.addEventListener('click', handleCreatePaymentLink);
 
-  // Pickup geolocation
-  if (editPickupLocBtn) editPickupLocBtn.addEventListener('click', handlePickupMyLocation);
-
-  // Maps route link — live update on any route field change
-  // (stops list rows wire their own input/tier listeners in renderStopsList)
-  [editPickupAddress, editDropoffAddress].forEach(function(el){
-    if (!el) return;
-    el.addEventListener('input', updateMapsRouteLink);
-  });
+  // Pickup geolocation button and maps-route-link live updates are wired
+  // per-row inside renderStopsList (pickup/dropoff are now dynamically
+  // rendered rows, not static inputs).
 
   if (addStopBtn) addStopBtn.addEventListener('click', function(){ addStopToModel(''); });
 
@@ -3323,7 +3264,6 @@
     if (dateInput) dateInput.value = today;
     setupImportPanel();
     setupStopsQuickAdd();
-    setupAddressLookup();
   })();
 
 })();

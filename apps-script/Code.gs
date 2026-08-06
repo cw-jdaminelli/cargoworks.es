@@ -192,17 +192,19 @@ function handleAccountOrders(params) {
     const adminData = extractAdminData(desc) || {};
     const quote = payload.quote || {};
     const route = quote.route || {};
-    const stopsArr = Array.isArray(route.stops) ? route.stops : [];
+    const stopsArr = getUnifiedStops(route, adminData);
     const reference = String(payload.reference || adminData.reference || '');
     orders.push({
       reference:     reference,
       status:        String(adminData.status || DEFAULT_STATUS_LABEL),
       paymentStatus: String(adminData.paymentStatus || 'Account'),
       date:          String((quote.schedule || {}).date || ''),
-      pickup:        String((route.pickup   || {}).address || ''),
-      dropoff:       String((route.dropoff  || {}).address || ''),
-      stops:         stopsArr.length,
-      stopsDetail:   stopsArr.length ? stopsArr.map(function(s){
+      pickup:        String((stopsArr[0] && stopsArr[0].address) || ''),
+      dropoff:       String((stopsArr.length && stopsArr[stopsArr.length - 1].address) || ''),
+      // "pickup + N stops" — N excludes only the pickup leg; dropoff counts as
+      // the final stop (matches how customers already talk about a route).
+      stops:         Math.max(0, stopsArr.length - 1),
+      stopsDetail:   stopsArr.map(function(s){
         return {
           id: String(s.id || ''),
           address: String(s.address || ''),
@@ -210,16 +212,13 @@ function handleAccountOrders(params) {
           failureReason: String(s.failureReason || ''),
           podUrl: String(s.podUrl || ''),
           podAt: String(s.podAt || ''),
+          notes: String(s.notes || ''),
           completedAt: String(s.completedAt || ''),
           trackingUrl: (s.id && s.trackingToken) ? buildStopTrackingUrl(payload, reference, s.id, s.trackingToken) : ''
         };
-      }) : [],
+      }),
       total:         Number(quote.total || 0),
       trackingUrl:   String(payload.trackingUrl || adminData.trackingUrl || ''),
-      podUrl:        String(adminData.podUrl || ''),
-      podAt:         String(adminData.podAt || ''),
-      pickupPodUrl:  String(adminData.pickupPodUrl || ''),
-      pickupPodAt:   String(adminData.pickupPodAt || ''),
       staffName:     String(payload.staffName   || ''),
       pickupTime:    String(payload.pickupTime  || ''),
       dropoffTime:   String(payload.dropoffTime || ''),
@@ -378,6 +377,12 @@ function doPost(e){
       }
     }
     const quote = payload.quote || {};
+    // Public bookings (this branch) previously stored route.pickup/route.stops/
+    // route.dropoff verbatim from the client, with no ids/tokens assigned until
+    // an admin/rider first touched the order. Fold it into the unified
+    // pickup-first...dropoff-last stops array right at creation time instead,
+    // same shape every admin-created order already gets via mergeAdminOrderPayload.
+    quote.route = { stops: normalizeStopsForOrder(getUnifiedStops(quote.route || {}, null), []) };
     const schedule = quote.schedule || {};
     const dateKey = String(schedule.date || '').trim();
     const timeLabel = String(schedule.time || '').trim();
@@ -630,13 +635,12 @@ function buildEventDescription(payload, adminData){
     lines.push('Time: ' + String((quote.schedule && quote.schedule.time) || ''));
     lines.push('');
     lines.push('Route');
-    lines.push('Pickup: ' + String((route.pickup && route.pickup.address) || ''));
-    if (Array.isArray(route.stops) && route.stops.length) {
-      route.stops.forEach(function(stop, idx){
-        lines.push('Stop ' + (idx + 1) + ': ' + String((stop && stop.address) || ''));
-      });
-    }
-    lines.push('Dropoff: ' + String((route.dropoff && route.dropoff.address) || ''));
+    const descStops = getUnifiedStops(route, adminData);
+    lines.push('Pickup: ' + String((descStops[0] && descStops[0].address) || ''));
+    descStops.slice(1, -1).forEach(function(stop, idx){
+      lines.push('Stop ' + (idx + 1) + ': ' + String((stop && stop.address) || ''));
+    });
+    lines.push('Dropoff: ' + String((descStops.length && descStops[descStops.length - 1].address) || ''));
     lines.push('');
     lines.push('Quote');
     lines.push('Total: ' + String(quote.total || ''));
@@ -691,10 +695,6 @@ function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference,
     internalNotes: '',
     createdBy: 'system',
     lastEditedBy: 'system',
-    podUrl: '',
-    podAt: '',
-    pickupPodUrl: '',
-    pickupPodAt: '',
     timeline: [{
       ts: new Date().toISOString(),
       status: DEFAULT_STATUS_LABEL,
@@ -1001,6 +1001,7 @@ function sendAccountOrderEmail(payload, shortRef, trackingUrl, accountConfig) {
     const quote = payload.quote || {};
     const total = Number(quote.total || 0);
     const route = quote.route || {};
+    const emailStops = getUnifiedStops(route, null);
     const accountName = String(accountConfig.name || '');
     const subject = '[Cargoworks] New account order: ' + accountName + ' — ' + shortRef;
     const opsEmail = String(accountConfig.operationsEmail || '').trim();
@@ -1017,8 +1018,8 @@ function sendAccountOrderEmail(payload, shortRef, trackingUrl, accountConfig) {
       'Attention: ' + String(payload.attName     || '—'),
       'Att contact: ' + String(payload.attContact  || '—'),
       '',
-      'Pickup: '  + String((route.pickup  || {}).address || ''),
-      'Dropoff: ' + String((route.dropoff || {}).address || ''),
+      'Pickup: '  + String((emailStops[0] && emailStops[0].address) || ''),
+      'Dropoff: ' + String((emailStops.length && emailStops[emailStops.length - 1].address) || ''),
       'Total: EUR ' + total.toFixed(2),
       '',
       'Track: ' + trackingUrl,
@@ -1137,8 +1138,9 @@ function sendClientConfirmationEmail(payload, adminData){
     const trackingUrl = String((adminData && adminData.trackingUrl) || data.trackingUrl || '').trim();
     const route = (data.quote && data.quote.route) ? data.quote.route : {};
     const schedule = (data.quote && data.quote.schedule) ? data.quote.schedule : {};
-    const pickup = String((route.pickup && route.pickup.address) || '').trim();
-    const dropoff = String((route.dropoff && route.dropoff.address) || '').trim();
+    const confirmStops = getUnifiedStops(route, adminData);
+    const pickup = String((confirmStops[0] && confirmStops[0].address) || '').trim();
+    const dropoff = String((confirmStops.length && confirmStops[confirmStops.length - 1].address) || '').trim();
     const pickupDate = formatScheduleDateForEmail(schedule.date || '');
     const pickupTime = String(schedule.time || '').trim();
     const whatsappUrl = buildWhatsAppUrl(reference);
@@ -1209,7 +1211,9 @@ function sendClientConfirmationEmail(payload, adminData){
 function getPickupAddress(quote){
   try {
     const route = quote && quote.route ? quote.route : {};
-    return String((route.pickup && route.pickup.address) || '');
+    if (route.pickup && route.pickup.address) return String(route.pickup.address);
+    const stops = Array.isArray(route.stops) ? route.stops : [];
+    return String((stops[0] && stops[0].address) || '');
   } catch (err) {
     return '';
   }
@@ -1571,14 +1575,25 @@ function handleRiderCommitStops(payload) {
       return jsonResponse({ error: 'You are not assigned to this order' }, 403);
     }
 
+    // `stops` here is the rider's reordered/optimized INTERMEDIATE stops only
+    // (pickup/dropoff aren't part of the route-optimize UI) — re-thread them
+    // between the existing pickup (first) and dropoff (last) entries of the
+    // unified array rather than reconciling against the whole thing, or
+    // pickup/dropoff would be lost.
     var quote = existingPayload.quote || {};
     var route = quote.route || {};
-    var newStops = normalizeStopsForOrder(stops, route.stops || []);
+    var existingUnified = getUnifiedStops(route, adminData);
+    var pickupExisting = existingUnified.length ? [existingUnified[0]] : [];
+    var dropoffExisting = existingUnified.length > 1 ? [existingUnified[existingUnified.length - 1]] : [];
+    var incomingCombined = pickupExisting.concat(stops).concat(dropoffExisting);
+    var newStops = normalizeStopsForOrder(incomingCombined, existingUnified);
     route.stops = newStops;
+    delete route.pickup;
+    delete route.dropoff;
     quote.route = route;
     existingPayload.quote = quote;
 
-    var stopCount = newStops.length;
+    var stopCount = stops.length;
     var msg = 'Rider committed ' + stopCount + ' optimized stop' + (stopCount === 1 ? '' : 's') + ' to route';
     pushAdminTimeline(adminData, adminData.status, msg, 'rider:' + rider.name);
     event.setDescription(buildEventDescription(existingPayload, adminData));
@@ -1934,7 +1949,6 @@ function handleAdminPost(payload){
   if (action === 'adminDuplicateOrder') return handleAdminDuplicateOrder(payload);
   if (action === 'adminCancelOrder') return handleAdminCancelOrder(payload);
   if (action === 'adminUpdate') return handleAdminUpdate(payload);
-  if (action === 'adminPod') return handleAdminPod(payload);
   if (action === 'adminUpdateStop') return handleAdminUpdateStop(payload);
   if (action === 'adminCreatePayment') return handleAdminCreatePayment(payload);
   if (action === 'adminGeocode') return handleAdminGeocode(payload);
@@ -1952,24 +1966,40 @@ function cleanOrderText(value){
 
 // Reconciles the route editor's incoming stop list against the previously-stored
 // stops by `id`. Composition fields (address/tier/priority/outlier) always come
-// from the incoming list; completion fields (status/podUrl/podAt/trackingToken/
-// completedAt/failureReason) are ALWAYS carried over verbatim from the prior
-// stop with the same id, never taken from `incoming` — the route editor (used by
-// dispatcher saves and rider route re-sequencing) must never be able to clobber
-// a rider's already-recorded delivery. Stops with no matching prior id (new
-// stops, or first-ever save of a legacy address-only stop) get a fresh id and
-// tracking token.
+// from the incoming list; completion fields (status/podUrl/podAt/notes/
+// trackingToken/completedAt/failureReason) are ALWAYS carried over verbatim
+// from the prior stop with the same id, never taken from `incoming` — the route
+// editor (used by dispatcher saves and rider route re-sequencing) must never be
+// able to clobber a rider's already-recorded delivery or notes. Stops with no
+// matching prior id (new stops, or first-ever save of a legacy address-only
+// stop) get a fresh id and tracking token.
+//
+// Positional fallback for index 0 (pickup) and the last index (dropoff): these
+// two slots are always the route endpoints by construction (validateAdminOrderPayload
+// guarantees every saved route has >=2 stops), so when NEITHER side has a
+// stable id yet at that position — i.e. an order created before pickup/dropoff
+// joined the unified stops array, being saved for the first time since — we
+// reconcile by position instead of treating the endpoint as a brand-new stop
+// and losing whatever completion state getUnifiedStops() synthesized for it.
 function normalizeStopsForOrder(incomingStops, existingStops){
+  const existingArr = Array.isArray(existingStops) ? existingStops : [];
   const existingById = {};
-  (Array.isArray(existingStops) ? existingStops : []).forEach(function(s){
+  existingArr.forEach(function(s){
     if (s && s.id) existingById[String(s.id)] = s;
   });
   const items = Array.isArray(incomingStops) ? incomingStops : [];
-  return items.map(function(stop){
+  return items.map(function(stop, idx){
     const address = cleanOrderText(stop && stop.address);
     if (!address) return null;
     const incomingId = cleanOrderText(stop && stop.id);
-    const prior = incomingId ? existingById[incomingId] : null;
+    let prior = incomingId ? existingById[incomingId] : null;
+    if (!prior && !incomingId) {
+      if (idx === 0 && existingArr[0] && !existingArr[0].id) {
+        prior = existingArr[0];
+      } else if (idx === items.length - 1 && existingArr.length && !existingArr[existingArr.length - 1].id) {
+        prior = existingArr[existingArr.length - 1];
+      }
+    }
     return {
       id: prior ? prior.id : Utilities.getUuid(),
       address: address,
@@ -1979,11 +2009,68 @@ function normalizeStopsForOrder(incomingStops, existingStops){
       status: (prior && prior.status) || 'Pending',
       podUrl: (prior && prior.podUrl) || '',
       podAt: (prior && prior.podAt) || '',
+      notes: (prior && prior.notes) || '',
       trackingToken: (prior && prior.trackingToken) || generatePublicToken(16),
       completedAt: (prior && prior.completedAt) || '',
       failureReason: (prior && prior.failureReason) || ''
     };
   }).filter(Boolean);
+}
+
+// Assigns a fresh id/trackingToken to any stop missing one (e.g. a
+// getUnifiedStops()-synthesized legacy pickup/dropoff entry), without
+// disturbing any other field. Used where a stop needs an addressable id right
+// now but going through the full normalizeStopsForOrder reconciliation isn't
+// appropriate (no separate "incoming" list is being reconciled).
+function ensureStopIds(stops){
+  return (Array.isArray(stops) ? stops : []).map(function(s){
+    if (s && s.id) return s;
+    return Object.assign({}, s, {
+      id: Utilities.getUuid(),
+      trackingToken: generatePublicToken(16)
+    });
+  });
+}
+
+// Returns the single ordered list of every leg of the route — pickup first,
+// then intermediate stops, then dropoff last — regardless of whether this
+// order was stored in the old shape (separate route.pickup/route.dropoff
+// scalars, pickup/dropoff completion on adminData.pickupPodUrl/podUrl) or the
+// unified shape (pickup/dropoff already living as route.stops[0]/[last]). Old
+// events are never bulk-migrated; this synthesizes the unified view on read,
+// and the real storage shape only updates the next time the order is actually
+// saved (mergeAdminOrderPayload/normalizeStopsForOrder). adminData may be
+// omitted when synthesizing from freshly-incoming client data, which never
+// carries legacy POD scalars of its own.
+function getUnifiedStops(route, adminData){
+  const r = route && typeof route === 'object' ? route : {};
+  const middle = Array.isArray(r.stops) ? r.stops : [];
+  const legacyPickupAddr = cleanOrderText(r.pickup && r.pickup.address);
+  const legacyDropoffAddr = cleanOrderText(r.dropoff && r.dropoff.address);
+  if (!legacyPickupAddr && !legacyDropoffAddr) return middle;
+
+  const ad = adminData && typeof adminData === 'object' ? adminData : {};
+  const statusIdx = ORDER_STATUS_VALUES.indexOf(ad.status || '');
+  const pickedUpIdx = ORDER_STATUS_VALUES.indexOf('Picked up');
+  const pastPickup = statusIdx >= 0 && pickedUpIdx >= 0 && statusIdx >= pickedUpIdx;
+  const pickupStop = {
+    id: '', address: legacyPickupAddr, tier: '', priority: false, outlier: false,
+    status: pastPickup ? 'Delivered' : 'Pending',
+    podUrl: ad.pickupPodUrl || '', podAt: ad.pickupPodAt || '', notes: '',
+    trackingToken: '',
+    completedAt: pastPickup ? (ad.pickupPodAt || '') : '',
+    failureReason: ''
+  };
+  const dropoffFailed = ad.status === 'Failed' || ad.status === 'Delivery rejected';
+  const dropoffStop = {
+    id: '', address: legacyDropoffAddr, tier: '', priority: false, outlier: false,
+    status: ad.status === 'Delivered' ? 'Delivered' : (dropoffFailed ? 'Failed' : 'Pending'),
+    podUrl: ad.podUrl || '', podAt: ad.podAt || '', notes: '',
+    trackingToken: '',
+    completedAt: ad.status === 'Delivered' ? (ad.podAt || ad.routeCompletedAt || '') : '',
+    failureReason: dropoffFailed ? (ad.canceledReason || '') : ''
+  };
+  return [pickupStop].concat(middle).concat([dropoffStop]);
 }
 
 function normalizePricingBreakdown(input, currentTotal){
@@ -2007,7 +2094,7 @@ function normalizePricingBreakdown(input, currentTotal){
   };
 }
 
-function mergeAdminOrderPayload(orderInput, existingPayload){
+function mergeAdminOrderPayload(orderInput, existingPayload, existingAdminData){
   const base = existingPayload && typeof existingPayload === 'object' ? existingPayload : {};
   const incoming = orderInput && typeof orderInput === 'object' ? orderInput : {};
   const baseQuote = base.quote && typeof base.quote === 'object' ? base.quote : {};
@@ -2025,12 +2112,16 @@ function mergeAdminOrderPayload(orderInput, existingPayload){
     phone: cleanOrderText(incomingCustomer.phone || baseCustomer.phone || '')
   };
 
-  const pickupAddress = cleanOrderText((incomingRoute.pickup && incomingRoute.pickup.address) || (baseRoute.pickup && baseRoute.pickup.address) || '');
-  const dropoffAddress = cleanOrderText((incomingRoute.dropoff && incomingRoute.dropoff.address) || (baseRoute.dropoff && baseRoute.dropoff.address) || '');
-  const stops = normalizeStopsForOrder(
-    Array.isArray(incomingRoute.stops) ? incomingRoute.stops : (Array.isArray(baseRoute.stops) ? baseRoute.stops : []),
-    Array.isArray(baseRoute.stops) ? baseRoute.stops : []
-  );
+  // route.stops is the ONLY place route legs live now — index 0 is pickup,
+  // the last index is dropoff, everything between is an intermediate stop.
+  // getUnifiedStops folds any still-legacy-shaped base data (separate
+  // route.pickup/route.dropoff + adminData POD scalars) into that same shape
+  // before reconciliation, so an old order gets migrated to the new shape the
+  // moment it's next saved here.
+  const existingUnified = getUnifiedStops(baseRoute, existingAdminData);
+  const incomingHasRoute = !!(incomingRoute.pickup || incomingRoute.dropoff || Array.isArray(incomingRoute.stops));
+  const incomingUnified = incomingHasRoute ? getUnifiedStops(incomingRoute, null) : existingUnified;
+  const stops = normalizeStopsForOrder(incomingUnified, existingUnified);
 
   const schedule = {
     date: cleanOrderText(incomingSchedule.date || baseSchedule.date || ''),
@@ -2041,9 +2132,7 @@ function mergeAdminOrderPayload(orderInput, existingPayload){
   const quote = {
     schedule: schedule,
     route: {
-      pickup: { address: pickupAddress },
-      stops: stops,
-      dropoff: { address: dropoffAddress }
+      stops: stops
     },
     total: total,
     billingMode: cleanOrderText(incomingQuote.billingMode || baseQuote.billingMode || ''),
@@ -2088,8 +2177,10 @@ function validateAdminOrderPayload(payloadData){
   const timeLabel = cleanOrderText(schedule.time);
   if (!dateKey || !timeLabel) return 'Date and time are required.';
   if (!dateTimeFromKey(dateKey, timeLabel, TIMEZONE)) return 'Invalid date or time.';
-  const pickup = cleanOrderText(route.pickup && route.pickup.address);
-  const dropoff = cleanOrderText(route.dropoff && route.dropoff.address);
+  const stops = Array.isArray(route.stops) ? route.stops : [];
+  if (stops.length < 2) return 'Pickup and dropoff are required.';
+  const pickup = cleanOrderText(stops[0] && stops[0].address);
+  const dropoff = cleanOrderText(stops[stops.length - 1] && stops[stops.length - 1].address);
   if (!pickup || !dropoff) return 'Pickup and dropoff are required.';
   return '';
 }
@@ -2198,7 +2289,7 @@ function handleAdminEditOrder(payload){
     const desc = String(event.getDescription() || '');
     const existingPayload = extractPayloadFromDescription(desc) || {};
     const adminData = ensureAdminData(desc, existingPayload);
-    const draft = mergeAdminOrderPayload(payload.order || {}, existingPayload);
+    const draft = mergeAdminOrderPayload(payload.order || {}, existingPayload, adminData);
     draft.reference = cleanOrderText(existingPayload.reference || payload.reference || '');
     if (!draft.reference) draft.reference = buildShortRef(String((draft.quote && draft.quote.schedule && draft.quote.schedule.date) || ''));
     draft.trackingUrl = cleanOrderText(adminData.trackingUrl || draft.trackingUrl || buildTrackingUrl(draft, draft.reference, adminData.trackingToken));
@@ -2268,7 +2359,7 @@ function handleAdminDuplicateOrder(payload){
     const desc = String(event.getDescription() || '');
     const existingPayload = extractPayloadFromDescription(desc) || {};
     const existingAdminData = ensureAdminData(desc, existingPayload);
-    const draft = mergeAdminOrderPayload(payload.order || {}, existingPayload);
+    const draft = mergeAdminOrderPayload(payload.order || {}, existingPayload, existingAdminData);
     const validation = validateAdminOrderPayload(draft);
     if (validation) return jsonResponse({ error: validation }, 400);
 
@@ -2280,6 +2371,7 @@ function handleAdminDuplicateOrder(payload){
           id: Utilities.getUuid(),
           status: 'Pending',
           podUrl: '',
+          podAt: '',
           completedAt: '',
           failureReason: '',
           trackingToken: generatePublicToken(16)
@@ -2659,51 +2751,6 @@ function handleAdminUpdate(payload){
   }
 }
 
-function handleAdminPod(payload){
-  try {
-    const eventId = String(payload.eventId || '').trim();
-    if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
-    const data = String(payload.data || '').trim();
-    if (!data) return jsonResponse({ error: 'Missing file data' }, 400);
-    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
-    const event = cal.getEventById(eventId);
-    if (!event) return jsonResponse({ error: 'Event not found' }, 404);
-    const desc = String(event.getDescription() || '');
-    const payloadData = extractPayloadFromDescription(desc) || {};
-    const adminData = ensureAdminData(desc, payloadData);
-    const podKind = String(payload.podKind || 'dropoff').trim().toLowerCase() === 'pickup' ? 'pickup' : 'dropoff';
-    const podUrl = uploadPodPhoto({ podData: data, podFileName: payload.fileName, podContentType: payload.contentType }, 'pod-photo.jpg');
-    const nowIso = new Date().toISOString();
-    adminData.timeline = Array.isArray(adminData.timeline) ? adminData.timeline : [];
-    if (podKind === 'pickup') {
-      adminData.pickupPodUrl = podUrl;
-      adminData.pickupPodAt = nowIso;
-      adminData.timeline.push({ ts: nowIso, status: adminData.status || '', message: 'Pickup POD uploaded', via: 'system' });
-    } else {
-      adminData.podUrl = podUrl;
-      adminData.podAt = nowIso;
-      adminData.timeline.push({ ts: nowIso, status: adminData.status || '', message: 'POD uploaded', via: 'system' });
-    }
-    const updatedDesc = upsertAdminData(desc, adminData);
-    event.setDescription(updatedDesc);
-    appendOrderLogEntry({
-      action: podKind === 'pickup' ? 'pickup_pod_uploaded' : 'pod_uploaded',
-      eventId: event.getId(),
-      payload: payloadData,
-      adminData: adminData,
-      status: adminData.status,
-      paymentStatus: adminData.paymentStatus,
-      message: podKind === 'pickup' ? 'Pickup POD uploaded' : 'POD uploaded',
-      build: BUILD_ID
-    });
-    return jsonResponse({ ok: true, podUrl: podUrl, podKind: podKind, adminData: adminData }, 200);
-  } catch (err) {
-    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
-    return jsonResponse({ error: 'Server error', detail: msg }, 500);
-  }
-}
-
 function handleAdminGeocode(payload){
   // Proxies Places Text Search + Geocoding API calls server-side to avoid CORS.
   // Routes: name queries → Places first; address queries (contain digit) → Geocoding first.
@@ -2994,6 +3041,16 @@ function buildOrderSummary(event){
       endIso: end ? end.toISOString() : ''
     };
     const customer = payload.customer || {};
+    const quote = payload.quote && typeof payload.quote === 'object' ? payload.quote : {};
+    const route = quote.route && typeof quote.route === 'object' ? quote.route : {};
+    // Every consumer (dispatcher panel, rider app, account panel, tracking
+    // page) sees ONE ordered stops array — pickup first, dropoff last —
+    // regardless of whether this order was stored in the old shape (separate
+    // route.pickup/route.dropoff + adminData POD scalars) or the unified one.
+    const unifiedRoute = Object.assign({}, route, { stops: getUnifiedStops(route, adminData) });
+    delete unifiedRoute.pickup;
+    delete unifiedRoute.dropoff;
+    const unifiedQuote = Object.assign({}, quote, { route: unifiedRoute });
     return {
       eventId: event.getId(),
       reference: reference,
@@ -3012,21 +3069,17 @@ function buildOrderSummary(event){
       isArchived: !!adminData.isArchived,
       createdBy: cleanOrderText(adminData.createdBy || ''),
       lastEditedBy: cleanOrderText(adminData.lastEditedBy || ''),
-      podUrl: adminData.podUrl || '',
-      podAt: cleanOrderText(adminData.podAt || ''),
-      pickupPodUrl: adminData.pickupPodUrl || '',
-      pickupPodAt: cleanOrderText(adminData.pickupPodAt || ''),
       timeline: timeline,
       dispatcherNotes: dispatcherNotes,
       deliveryNote: latestDispatcherNoteText(dispatcherNotes),
       schedule: schedule,
-      quote: payload.quote && typeof payload.quote === 'object' ? payload.quote : {},
+      quote: unifiedQuote,
       customer: {
         name: String(customer.name || ''),
         email: String(customer.email || ''),
         phone: String(customer.phone || '')
       },
-      route: payload.quote && payload.quote.route ? payload.quote.route : null,
+      route: unifiedRoute,
       notes: String(payload.notes || ''),
       language: String(payload.language || 'es'),
       accountToken: cleanOrderText(payload.accountToken || adminData.accountToken || ''),
@@ -3049,18 +3102,27 @@ function buildTrackingPayload(summary){
   const paymentUrl = (paymentStatus === 'Pending' || paymentStatus === 'Failed')
     ? String(summary && summary.paymentUrl || '')
     : '';
-  const podUrl = String(summary && summary.podUrl || '');
-  const pickupPodUrl = String(summary && summary.pickupPodUrl || '');
+  const rawStops = (summary && summary.route && Array.isArray(summary.route.stops)) ? summary.route.stops : [];
+  // Customer-safe per-leg shape only — no failureReason (never shown publicly,
+  // matching buildStopTrackingPayload's existing convention), no id/trackingToken
+  // (no reason to leak per-leg tokens into the aggregate payload).
+  const stops = rawStops.map(function(s, idx){
+    return {
+      index: idx + 1,
+      address: String((s && s.address) || ''),
+      status: String((s && s.status) || 'Pending'),
+      podUrl: String((s && s.podUrl) || ''),
+      podAt: String((s && s.podAt) || ''),
+      completedAt: String((s && s.completedAt) || '')
+    };
+  });
   return {
     reference: summary.reference,
     status: summary.status,
     paymentStatus: paymentStatus,
     paymentUrl: paymentUrl,
     trackingUrl: summary.trackingUrl,
-    podUrl: podUrl,
-    podAt: String(summary && summary.podAt || ''),
-    pickupPodUrl: pickupPodUrl,
-    pickupPodAt: String(summary && summary.pickupPodAt || ''),
+    stops: stops,
     schedule: summary.schedule,
     timeline: summary.timeline || [],
     notes: summary.notes || '',
@@ -3296,7 +3358,9 @@ function sendProgressEmail(payload, adminData, message){
     if (adminData && adminData.paymentStatus) lines.push('Payment: ' + adminData.paymentStatus);
     if (payload.paymentUrl && adminData && adminData.paymentStatus === 'Pending') lines.push('Payment link: ' + payload.paymentUrl);
     if (adminData && adminData.trackingUrl) lines.push('Tracking: ' + adminData.trackingUrl);
-    if (adminData && adminData.podUrl) lines.push('POD: ' + adminData.podUrl);
+    const progressStops = getUnifiedStops((payload.quote && payload.quote.route) || {}, adminData);
+    const dropoffPodUrl = progressStops.length ? progressStops[progressStops.length - 1].podUrl : '';
+    if (dropoffPodUrl) lines.push('POD: ' + dropoffPodUrl);
     lines.push('');
     lines.push('Cargoworks');
     MailApp.sendEmail({
@@ -3322,7 +3386,9 @@ function buildCustomerWhatsAppUrl(payload, adminData, message){
     parts.push('Cargoworks update ' + reference + (updateMessage ? (': ' + updateMessage) : ''));
     if (adminData && adminData.status) parts.push('Status: ' + adminData.status);
     if (adminData && adminData.trackingUrl) parts.push('Tracking: ' + adminData.trackingUrl);
-    if (adminData && adminData.podUrl) parts.push('POD: ' + adminData.podUrl);
+    const waStops = getUnifiedStops((payload.quote && payload.quote.route) || {}, adminData);
+    const waDropoffPodUrl = waStops.length ? waStops[waStops.length - 1].podUrl : '';
+    if (waDropoffPodUrl) parts.push('POD: ' + waDropoffPodUrl);
     if (payload.paymentUrl && adminData && adminData.paymentStatus === 'Pending') parts.push('Payment: ' + payload.paymentUrl);
     const text = parts.join(' | ');
     return 'https://wa.me/' + phone + '?text=' + encodeURIComponent(text);
@@ -3645,7 +3711,7 @@ function buildOrderLogRow(entry){
   const quote = payload.quote || {};
   const schedule = quote.schedule || {};
   const route = quote.route || {};
-  const stops = Array.isArray(route.stops) ? route.stops : [];
+  const stops = getUnifiedStops(route, adminData);
 
   return [
     new Date().toISOString(),
@@ -3662,12 +3728,12 @@ function buildOrderLogRow(entry){
     String(adminData.updatesPreference || payload.updatesPreference || ''),
     String(quote.currency || payload.currency || ''),
     Number(quote.total || payload.total || 0) || 0,
-    String(route.pickup && route.pickup.address || ''),
-    String(route.dropoff && route.dropoff.address || ''),
-    stops.length,
+    String((stops[0] && stops[0].address) || ''),
+    String((stops.length && stops[stops.length - 1].address) || ''),
+    Math.max(0, stops.length - 1),
     String(adminData.trackingUrl || payload.trackingUrl || ''),
     String(adminData.paymentUrl || payload.paymentUrl || ''),
-    String(adminData.podUrl || ''),
+    String((stops.length && stops[stops.length - 1].podUrl) || ''),
     String(data.message || ''),
     String(data.build || BUILD_ID),
     safeJsonStringify(payload),
@@ -4061,27 +4127,17 @@ function handleRiderUpdateStatus(payload){
   if (['Delivered', 'Failed', 'Canceled', 'Delivery rejected'].indexOf(status) >= 0){
     clearRiderEta(eventId);
     const route = payloadData.quote && payloadData.quote.route;
-    if (route && route.dropoff && route.dropoff.address){
-      adminData.lastDropoffAddress = route.dropoff.address;
+    const unifiedStops = getUnifiedStops(route || {}, adminData);
+    const dropoffAddress = unifiedStops.length ? unifiedStops[unifiedStops.length - 1].address : '';
+    if (dropoffAddress){
+      adminData.lastDropoffAddress = dropoffAddress;
       adminData.lastDropoffAt = new Date().toISOString();
     }
   }
 
-  if (payload.podData && status === 'Delivered'){
-    try {
-      adminData.podUrl = uploadPodPhoto(payload, 'pod-rider.jpg');
-      adminData.podAt = new Date().toISOString();
-      pushAdminTimeline(adminData, status, 'POD uploaded by rider', 'rider');
-    } catch(_){}
-  }
-
-  if (payload.podData && status === 'Picked up'){
-    try {
-      adminData.pickupPodUrl = uploadPodPhoto(payload, 'pod-pickup.jpg');
-      adminData.pickupPodAt = new Date().toISOString();
-      pushAdminTimeline(adminData, status, 'Pickup POD uploaded by rider', 'rider');
-    } catch(_){}
-  }
+  // Pickup/dropoff POD photos are no longer attached here — they're captured
+  // per-stop (route.stops[0]/[last]) via riderCompleteStop/adminUpdateStop,
+  // same as every other stop.
 
   const ref = payloadData.reference || extractReferenceFromText(event.getTitle() || '');
   event.setTitle(buildOrderTitle(status, payloadData.customer && payloadData.customer.name, ref));
@@ -4119,7 +4175,8 @@ function handleRiderSetEta(payload){
 
   const quote = payloadData.quote || {};
   const route = quote.route || {};
-  const pickupAddress = String(route.pickup && route.pickup.address || '').trim();
+  const unifiedStopsForEta = getUnifiedStops(route, adminData);
+  const pickupAddress = String((unifiedStopsForEta[0] && unifiedStopsForEta[0].address) || '').trim();
   const orderEtaMins = safeNumber(quote.etaMins, 30);
 
   const travelMins = (hasCoords && pickupAddress)
@@ -4178,13 +4235,17 @@ function handleRiderSetEta(payload){
 
 // ── Multi-stop routes: per-stop completion, route auto-aggregation ────────────
 
-// Called after any stop's status changes. Once every stop on the route has
-// reached a terminal status (Delivered or Failed), the whole route always
-// auto-completes to 'Delivered' — a route is "done" once every stop has been
-// attempted; individual failures are per-stop facts (with their own required
-// failureReason), never something that flips the master order to 'Failed'.
-// Dispatcher can still manually set the master status to Failed afterward via
-// the existing status dropdown for a genuine total-loss exception.
+// Called after any stop's status changes. Once every stop on the route
+// (pickup, every intermediate stop, and dropoff) has reached a terminal status
+// (Delivered or Failed), the whole route always auto-completes to 'Delivered'
+// — a route is "done" once every leg has been attempted; individual failures
+// are per-stop facts (with their own required failureReason), never something
+// that flips the master order to 'Failed'. Dispatcher can still manually set
+// the master status to Failed afterward via the existing status dropdown for
+// a genuine total-loss exception. Since every order now has at least 2 stops
+// (pickup+dropoff), this always runs — including for simple point-to-point
+// orders with no intermediate stops, which previously never auto-completed at
+// all (a latent gap: elapsed-billing timestamps never populated for them).
 function maybeCompleteRoute(payloadData, adminData, event){
   const quote = payloadData.quote || {};
   const route = quote.route || {};
@@ -4198,8 +4259,9 @@ function maybeCompleteRoute(payloadData, adminData, event){
   adminData.routeCompletedAt = new Date().toISOString();
   clearRiderEta(event.getId());
 
-  if (route.dropoff && route.dropoff.address) {
-    adminData.lastDropoffAddress = route.dropoff.address;
+  const dropoffAddress = stops.length ? stops[stops.length - 1].address : '';
+  if (dropoffAddress) {
+    adminData.lastDropoffAddress = dropoffAddress;
     adminData.lastDropoffAt = adminData.routeCompletedAt;
   }
 
@@ -4221,6 +4283,25 @@ function maybeCompleteRoute(payloadData, adminData, event){
     'Route auto-completed: ' + (stops.length - failedCount) + '/' + stops.length + ' stop(s) delivered' +
     (failedCount ? (', ' + failedCount + ' failed') : ''), 'system');
   event.setTitle(buildOrderTitle('Delivered', payloadData.customer && payloadData.customer.name,
+    payloadData.reference || extractReferenceFromText(event.getTitle() || '')));
+  return true;
+}
+
+// Auto-advances the order to 'Picked up' the moment the pickup stop
+// (route.stops[0]) is marked Delivered — never regresses an order already at
+// or past that stage. Deliberately does NOT fire on a Failed pickup: a failed
+// pickup is left for a dispatcher to resolve manually (reassign, cancel, etc.)
+// rather than assumed to mean "picked up and moving on."
+function maybeAdvancePickup(payloadData, adminData, event){
+  const route = (payloadData.quote && payloadData.quote.route) || {};
+  const stops = Array.isArray(route.stops) ? route.stops : [];
+  if (!stops.length || stops[0].status !== 'Delivered') return false;
+  const currentIdx = ORDER_STATUS_VALUES.indexOf(adminData.status || '');
+  const pickedUpIdx = ORDER_STATUS_VALUES.indexOf('Picked up');
+  if (currentIdx < 0 || currentIdx >= pickedUpIdx) return false;
+  adminData.status = 'Picked up';
+  pushAdminTimeline(adminData, 'Picked up', 'Pickup stop completed — order auto-advanced to Picked up', 'system');
+  event.setTitle(buildOrderTitle('Picked up', payloadData.customer && payloadData.customer.name,
     payloadData.reference || extractReferenceFromText(event.getTitle() || '')));
   return true;
 }
@@ -4259,13 +4340,14 @@ function handleRiderCompleteStop(payload){
 
   const quote = payloadData.quote || {};
   const route = quote.route || {};
-  const stops = Array.isArray(route.stops) ? route.stops : [];
+  const stops = ensureStopIds(getUnifiedStops(route, adminData));
   const idx = stops.findIndex(function(s){ return s && s.id === stopId; });
   if (idx < 0) return jsonResponse({ error: 'Stop not found' }, 404);
 
   stops[idx].status = statusInput;
   stops[idx].completedAt = new Date().toISOString();
   stops[idx].failureReason = statusInput === 'Failed' ? reason : '';
+  if ('notes' in payload) stops[idx].notes = cleanOrderText(payload.notes);
 
   if (payload.podData && statusInput === 'Delivered'){
     try {
@@ -4274,11 +4356,16 @@ function handleRiderCompleteStop(payload){
     } catch(_){}
   }
 
+  route.stops = stops;
+  delete route.pickup;
+  delete route.dropoff;
+
   applyOperatorMetadata(adminData, rider.name);
   const stopMsg = rider.name + ' marked stop ' + (idx + 1) + '/' + stops.length + ' (' + stops[idx].address + ') as ' + statusInput +
     (statusInput === 'Failed' ? (': ' + reason) : '');
   pushAdminTimeline(adminData, adminData.status, stopMsg, 'rider');
 
+  maybeAdvancePickup(payloadData, adminData, event);
   maybeCompleteRoute(payloadData, adminData, event);
   event.setDescription(buildEventDescription(payloadData, adminData));
 
@@ -4308,7 +4395,7 @@ function handleAdminUpdateStop(payload){
 
   const quote = payloadData.quote || {};
   const route = quote.route || {};
-  const stops = Array.isArray(route.stops) ? route.stops : [];
+  const stops = ensureStopIds(getUnifiedStops(route, adminData));
   const idx = stops.findIndex(function(s){ return s && s.id === stopId; });
   if (idx < 0) return jsonResponse({ error: 'Stop not found' }, 404);
 
@@ -4331,6 +4418,11 @@ function handleAdminUpdateStop(payload){
       (statusInput === 'Failed' ? (': ' + reason) : ''), 'dispatcher');
   }
 
+  if ('notes' in payload) {
+    stops[idx].notes = cleanOrderText(payload.notes);
+    pushAdminTimeline(adminData, adminData.status, operator + ' updated notes for stop ' + (idx + 1), 'dispatcher');
+  }
+
   if (payload.podData){
     try {
       stops[idx].podUrl = uploadPodPhoto(payload, 'pod-stop.jpg');
@@ -4339,6 +4431,11 @@ function handleAdminUpdateStop(payload){
     } catch(_){}
   }
 
+  route.stops = stops;
+  delete route.pickup;
+  delete route.dropoff;
+
+  maybeAdvancePickup(payloadData, adminData, event);
   maybeCompleteRoute(payloadData, adminData, event);
   event.setDescription(buildEventDescription(payloadData, adminData));
 

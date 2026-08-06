@@ -685,15 +685,8 @@
         <section class="dispatcher-section span-4" id="secRoute">
           <h3>Route</h3>
           <div class="dispatcher-field">
-            <label for="editPickupAddress" class="field-label-row">
-              <span>Pickup</span>
-              <button type="button" id="editPickupLocBtn" class="btn btn--ghost">📍 My location</button>
-            </label>
-            <input id="editPickupAddress" type="text" required />
-          </div>
-          <div class="dispatcher-field">
             <label class="field-label-row">
-              <span>Stops</span>
+              <span>Stops (pickup → dropoff)</span>
               <button type="button" id="stopsQuickAddToggle" class="btn btn--ghost">⚡ Quick add</button>
             </label>
             <!-- Stop quick-add panel -->
@@ -729,10 +722,6 @@
             </div>
             <div id="editStopsList" class="stops-editor-list"></div>
             <button type="button" id="addStopBtn" class="btn btn--ghost" style="margin-top:0.3rem;font-size:0.72rem;">+ Add stop</button>
-          </div>
-          <div class="dispatcher-field">
-            <label for="editDropoffAddress">Dropoff</label>
-            <input id="editDropoffAddress" type="text" required />
             <a id="editMapsRouteLink" class="maps-route-link" href="#" target="_blank" rel="noopener">🗺 Open route in Google Maps</a>
           </div>
           <div class="dispatcher-field"><label for="editNotes">Customer notes</label><textarea id="editNotes"></textarea></div>
@@ -832,7 +821,6 @@
             <input id="editPaymentUrl" type="text" />
             <span id="editCreatePaymentStatus" class="dispatcher-status" style="font-size:0.72rem; margin-top:0.15rem; display:none;"></span>
           </div>
-          <div class="dispatcher-field"><label for="editPodUrl">POD URL (read-only)</label><input id="editPodUrl" type="text" readonly /></div>
         </section>
 
         <section class="dispatcher-section span-6" id="secAdmin">
