@@ -2005,7 +2005,14 @@ window.initZonesMap = function initZonesMap(){
       return;
     }
     if (!hasDate || !hasTime) {
-      setAvailabilityStatus(i18n('quoteDateTimeRequired') || 'Please choose a date and time.', true);
+      // Don't nag while the user is still mid-way through picking date+time
+      // (this fires on every partial input/change of either field). The
+      // "please choose a date and time" message is still enforced — just
+      // later, once it's fair to call it an omission rather than a
+      // work-in-progress: on manual scroll past this section
+      // (validateSectionsOnManualScroll) and at submit time
+      // (getDateTimeValidationError).
+      setAvailabilityStatus('');
       return;
     }
     const dateKey = String(qDate.value);
