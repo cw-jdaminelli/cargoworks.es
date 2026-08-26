@@ -823,6 +823,24 @@
       margin-bottom: 6px;
       box-sizing: border-box;
     }
+    .scan-addr-suggestions {
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+      margin-bottom: 6px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .scan-addr-suggestions.visible { display: flex; }
+    .scan-addr-suggestion-row {
+      padding: 8px 10px;
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .scan-addr-suggestion-row:hover { background: var(--accent); color: #fff; }
     .scan-edit-actions {
       display: flex;
       gap: 6px;
@@ -1344,25 +1362,53 @@
 
     // ── API calls ──────────────────────────────────────────────────────────────
 
-    async function api(method, data) {
+    async function api(method, data, opts) {
+      opts = opts || {};
+      var timeoutMs = opts.timeoutMs || 20000;
+      var controller = new AbortController();
+      var timer = setTimeout(function() { controller.abort(); }, timeoutMs);
       try {
+        var res;
         if (method === 'GET') {
           const qs = Object.keys(data).map(function(k) {
             return encodeURIComponent(k) + '=' + encodeURIComponent(data[k]);
           }).join('&');
-          const res = await fetch(API + '?' + qs);
-          return await res.json();
+          res = await fetch(API + '?' + qs, { signal: controller.signal });
         } else {
           // Send as form-encoded to avoid CORS preflight on Apps Script
-          const res = await fetch(API, {
+          res = await fetch(API, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'payload=' + encodeURIComponent(JSON.stringify(data))
+            body: 'payload=' + encodeURIComponent(JSON.stringify(data)),
+            signal: controller.signal
           });
-          return await res.json();
         }
+        clearTimeout(timer);
+
+        // Apps Script's own JSON responses always embed app-level status as a
+        // JSON field (never a non-2xx HTTP status) — a non-JSON body or a
+        // non-2xx status here means Google's infra served its own error page
+        // (execution-time-cap kill, quota throttle, etc.), not the app. Catch
+        // that here instead of letting res.json() throw a raw parser
+        // exception ("Unexpected token '<', <!DOCTYPE...") into the UI.
+        var ctype = res.headers.get('content-type') || '';
+        if (!res.ok || ctype.indexOf('application/json') === -1) {
+          var sample = '';
+          try { sample = (await res.text()).slice(0, 200); } catch (_e) {}
+          return {
+            error: 'The server took too long or is temporarily overloaded. Please try again.',
+            errorKind: 'server_unavailable',
+            httpStatus: res.status,
+            diagnostic: sample
+          };
+        }
+        return await res.json();
       } catch (err) {
-        return { error: String(err && err.message || 'Network error') };
+        clearTimeout(timer);
+        if (err && err.name === 'AbortError') {
+          return { error: 'The server took too long to respond. Please try again.', errorKind: 'timeout' };
+        }
+        return { error: String(err && err.message || 'Network error'), errorKind: 'network' };
       }
     }
 
@@ -2049,10 +2095,13 @@
           id: RIDER_ID,
           image: b64,
           mimeType: mime
-        });
+        }, { timeoutMs: 55000 });
 
         if (res.error) {
-          showScanStatus(statusEl, 'Error: ' + res.error, 'error');
+          var errMsg = (res.errorKind === 'timeout' || res.errorKind === 'server_unavailable')
+            ? '⏱ ' + res.error
+            : 'Error: ' + res.error;
+          showScanStatus(statusEl, errMsg, 'error');
           scanBtn.disabled = false;
           scanBtn.innerHTML = '📷 Tap to scan route sheet';
           return;
@@ -2068,14 +2117,18 @@
           });
         }
 
-        // Client-side sanity filter — catch anything malformed that slipped past server validation
+        // Client-side sanity filter — catch anything malformed that slipped past server validation.
+        // No digit requirement: a street-only address (door number not legible
+        // on the scan) is valid and should reach the rider rather than being
+        // silently dropped — a ≥2-word-token check catches bare fragments
+        // ("Carrer" alone, "N/A") instead, mirroring isValidAddress in Code.gs.
         stops = stops.filter(function(s) {
           if (!s || typeof s !== 'object') return false;
           var addr = String(s.address || '').trim();
           if (addr.length < 6 || addr.length > 200) return false;
-          // Must have letters and a number
           if (!/[a-zA-ZÀ-ÿ]{3,}/.test(addr)) return false;
-          if (!/\d/.test(addr)) return false;
+          var words = addr.split(/\s+/).filter(function(w) { return /[a-zA-ZÀ-ÿ]{2,}/.test(w); });
+          if (words.length < 2) return false;
           // Reject obvious code/JSON garbage
           if (/^(true|false|null|undefined)$/i.test(addr)) return false;
           if (/^[\{\}\[\]:,"]/.test(addr)) return false;
@@ -2142,6 +2195,7 @@
           address: String(s.address || '').trim(),
           tier: String(s.tier || '').trim(),
           outlier: !!s.outlier,
+          outlierReason: s.outlierReason || null,
           priority: !!s.priority,
           lat: s.lat || null,
           lng: s.lng || null
@@ -2220,10 +2274,11 @@
             hasBadges = true;
           }
           if (stop.outlier) {
+            var badgeInfo = outlierBadgeInfo(stop.outlierReason);
             var outlierFlag = document.createElement('span');
             outlierFlag.className = 'scan-outlier-flag';
-            outlierFlag.title = 'This stop seems far from your normal zone — verify the address';
-            outlierFlag.textContent = '⚠ Outlier';
+            outlierFlag.title = badgeInfo.title;
+            outlierFlag.textContent = badgeInfo.label;
             badgeRow.appendChild(outlierFlag);
             hasBadges = true;
           }
@@ -2368,12 +2423,59 @@
         var item = listWrap.children[idx];
         var body = item.querySelector('.scan-addr-body');
         body.innerHTML = '';
+        var originalAddress = stop.address;
 
         var input = document.createElement('input');
         input.type = 'text';
         input.className = 'scan-addr-edit';
         input.value = stop.address;
         body.appendChild(input);
+
+        // Confirm-address dropdown: as the rider types, show up to 5 real
+        // candidate addresses from Google. Selecting one guarantees the final
+        // coordinates match a place a human actually confirmed, instead of an
+        // independent best-guess geocode of raw typed text.
+        var dropdown = document.createElement('div');
+        dropdown.className = 'scan-addr-suggestions';
+        body.appendChild(dropdown);
+
+        var stagedCandidate = null;
+        var lookupTimer = null;
+
+        function clearDropdown() {
+          dropdown.innerHTML = '';
+          dropdown.classList.remove('visible');
+        }
+
+        function renderCandidates(candidates) {
+          clearDropdown();
+          if (!candidates || !candidates.length) return;
+          candidates.forEach(function(c) {
+            var row = document.createElement('div');
+            row.className = 'scan-addr-suggestion-row';
+            row.textContent = '📍 ' + c.label;
+            row.addEventListener('click', function() {
+              input.value = c.label;
+              stagedCandidate = c;
+              clearDropdown();
+            });
+            dropdown.appendChild(row);
+          });
+          dropdown.classList.add('visible');
+        }
+
+        input.addEventListener('input', function() {
+          stagedCandidate = null; // any typing after a selection invalidates it
+          clearDropdown();
+          if (lookupTimer) clearTimeout(lookupTimer);
+          var q = input.value.trim();
+          if (q.length < 3) return;
+          lookupTimer = setTimeout(async function() {
+            var res = await api('POST', { action: 'riderGeocodeCandidates', id: RIDER_ID, query: q });
+            if (input.value.trim() !== q) return; // stale response, input changed since
+            if (res && res.candidates) renderCandidates(res.candidates);
+          }, 700);
+        });
 
         var btnRow = document.createElement('div');
         btnRow.className = 'scan-edit-actions';
@@ -2382,14 +2484,40 @@
         saveBtn.type = 'button';
         saveBtn.className = 'scan-edit-mini scan-edit-save';
         saveBtn.textContent = 'Save';
-        saveBtn.addEventListener('click', function() {
+        saveBtn.addEventListener('click', async function() {
           var newVal = input.value.trim();
-          if (newVal) {
+          if (!newVal) { rebuildList(); return; }
+          if (newVal === originalAddress) { rebuildList(); return; } // no-op, nothing changed
+
+          if (stagedCandidate && stagedCandidate.label === newVal) {
+            // Confirmed via dropdown selection — trust it outright, no re-geocode needed.
             workingStops[idx].address = newVal;
-            // Edited address is no longer flagged as outlier
+            workingStops[idx].lat = stagedCandidate.lat;
+            workingStops[idx].lng = stagedCandidate.lng;
             workingStops[idx].outlier = false;
+            workingStops[idx].outlierReason = null;
             markDirty();
+            flagOutliers(); // geometric layer still gets a sanity-check pass
+            rebuildList();
+            return;
           }
+
+          // Free-typed text with no confirmed candidate — invalidate the
+          // stale coordinates immediately and force a real re-geocode of the
+          // NEW text before this stop is considered resolved again. This is
+          // what stops a "fixed" address from silently keeping its old,
+          // possibly-wrong pin.
+          saveBtn.disabled = true;
+          saveBtn.textContent = 'Verifying…';
+          workingStops[idx].address = newVal;
+          workingStops[idx].lat = null;
+          workingStops[idx].lng = null;
+          workingStops[idx].outlier = false;
+          workingStops[idx].outlierReason = null;
+          markDirty();
+
+          await geocodeAllStops();
+          flagOutliers();
           rebuildList();
         });
 
@@ -2650,8 +2778,12 @@
         }
         showScanStatus(statusEl, 'Geocoding and optimizing ' + workingStops.length + ' stops…', 'info');
 
-        // Geocode anything missing first
+        // Geocode anything missing first, then re-run the outlier/precision
+        // check — previously missing here entirely, meaning any stop
+        // geocoded via re-optimize (or an appended second scan, which just
+        // calls this function) got zero quality checking, ever.
         await geocodeAllStops();
+        flagOutliers();
 
         // Nearest-neighbor sort on geocoded stops.
         // Priority stops jump to the front first.
@@ -2755,7 +2887,7 @@
           var tags = [];
           if (stop.priority) tags.push('⭐ Priority');
           if (stop.tier) tags.push(stop.tier);
-          if (stop.outlier) tags.push('⚠ Outlier');
+          if (stop.outlier) tags.push(outlierBadgeInfo(stop.outlierReason).label);
           if (tags.length) {
             var tagEl = document.createElement('div');
             tagEl.className = 'scan-commit-preview-tags';
@@ -2954,7 +3086,7 @@
           var popupHtml = '<strong>' + (i + 1) + '. ' + escapeHtml(stop.address) + '</strong>';
           if (stop.tier) popupHtml += '<br><span style="color:var(--text-dim);font-size:0.75rem;">' + escapeHtml(stop.tier) + '</span>';
           if (stop.priority) popupHtml += '<br><span style="color:var(--yellow);font-size:0.75rem;">⭐ Priority</span>';
-          if (stop.outlier) popupHtml += '<br><span style="color:var(--orange);font-size:0.75rem;">⚠ Outlier</span>';
+          if (stop.outlier) popupHtml += '<br><span style="color:var(--orange);font-size:0.75rem;">' + outlierBadgeInfo(stop.outlierReason).label + '</span>';
           popupHtml += '<br><a href="https://www.google.com/maps/?q=' + encodeURIComponent(/barcelona/i.test(stop.address) ? stop.address : stop.address + ', Barcelona') + '" target="_blank" rel="noopener">📍 Open in Google Maps</a>';
           marker.bindPopup(popupHtml);
           mapMarkers.push(marker);
@@ -2984,15 +3116,32 @@
       //      (catches same-street-name ambiguity like Conca in 08027 vs Moncada)
       var BCN_BBOX = { minLat: 41.31, maxLat: 41.47, minLng: 2.05, maxLng: 2.23 };
 
+      // Single source of truth for the "needs verification" badge text/title
+      // across the stop list, the map popup, and the commit-confirmation
+      // modal — one visual mechanism (the existing outlier badge), three
+      // possible reasons behind it.
+      function outlierBadgeInfo(reason) {
+        var byReason = {
+          geo_outlier:   { label: '⚠ Outlier', title: 'This stop seems far from your normal zone — verify the address' },
+          low_precision: { label: '⚠ Verify address', title: 'Google could not pinpoint an exact building for this address — verify on arrival' },
+          no_number:     { label: '⚠ No door number', title: 'No door number was read from the scan — geocoded by street only, verify on arrival' }
+        };
+        return byReason[reason] || { label: '⚠ Verify address', title: 'Verify this address' };
+      }
+
       function flagOutliers() {
         var geocoded = workingStops.filter(function(s) { return s.lat && s.lng; });
         if (geocoded.length === 0) return;
 
-        // Layer 1: hard bbox
+        // Layer 1: hard bbox. geo_outlier overrides any existing reason
+        // (low_precision/no_number) since geographic implausibility is the
+        // more actionable/severe signal when a stop is both imprecise and
+        // geographically wrong.
         geocoded.forEach(function(s) {
           if (s.lat < BCN_BBOX.minLat || s.lat > BCN_BBOX.maxLat ||
               s.lng < BCN_BBOX.minLng || s.lng > BCN_BBOX.maxLng) {
             s.outlier = true;
+            s.outlierReason = 'geo_outlier';
           }
         });
 
@@ -3019,6 +3168,7 @@
         geocoded.forEach(function(s) {
           if (!s.outlier && haverDist(s) > 6) {
             s.outlier = true;
+            s.outlierReason = 'geo_outlier';
           }
         });
       }
@@ -3041,21 +3191,43 @@
 
         showScanStatus(statusEl, 'Geocoding ' + needsGeocoding.length + ' stops…', 'info');
 
-        // Geocode all needed stops in parallel (Maps Geocoding API, client-side)
+        // Geocode all needed stops in parallel (Maps Geocoding API, client-side).
+        // Bounds+region bias the search toward Barcelona, but on a ZERO_RESULTS
+        // (or any non-OK status) we do NOT retry unbounded — that's exactly the
+        // mechanism that used to let a same-named street in a neighboring town
+        // match; the stop just stays unresolved (lat/lng null) instead.
         var geocodeOne = async function(stop) {
+          var hasNumber = /\d/.test(stop.address);
           var addr = /barcelona/i.test(stop.address) ? stop.address : stop.address + ', Barcelona';
           var url = 'https://maps.googleapis.com/maps/api/geocode/json?address=' +
-            encodeURIComponent(addr) + '&key=' + encodeURIComponent(mapsKey);
+            encodeURIComponent(addr) + '&region=ES&bounds=41.317,2.052|41.468,2.239&key=' + encodeURIComponent(mapsKey);
           try {
             var r = await fetch(url);
             var data = await r.json();
-            if (data.results && data.results[0]) {
-              var loc = data.results[0].geometry.location;
-              stop.lat = loc.lat;
-              stop.lng = loc.lng;
-            } else {
+            var result = data.results && data.results[0];
+            if (!result) {
               console.warn('Geocode failed for:', stop.address, 'status:', data.status, data.error_message || '');
+              return;
             }
+            var loc = result.geometry.location;
+            var locationType = (result.geometry && result.geometry.location_type) || '';
+            var isConfident = (locationType === 'ROOFTOP' || locationType === 'RANGE_INTERPOLATED') && !result.partial_match;
+
+            stop.lat = loc.lat;
+            stop.lng = loc.lng;
+            stop.geocodeLocationType = locationType;
+
+            if (!hasNumber) {
+              // Street-only address (no legible door number) — always flag,
+              // regardless of match quality, since the query was intentionally imprecise.
+              stop.outlier = true;
+              stop.outlierReason = 'no_number';
+            } else if (!isConfident) {
+              stop.outlier = true;
+              stop.outlierReason = 'low_precision';
+            }
+            // else: leave outlier/outlierReason as-is — flagOutliers() (geometric
+            // layer) still runs afterward and may still flag it as geo_outlier.
           } catch (err) { console.error('Geocode fetch error:', stop.address, err); }
         };
 

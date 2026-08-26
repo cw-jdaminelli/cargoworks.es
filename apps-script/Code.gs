@@ -356,6 +356,7 @@ function doPost(e){
       if (action === 'routeOptimize') return handleRouteOptimize(payload);
       if (action === 'riderCommitStops') return handleRiderCommitStops(payload);
       if (action === 'riderGeocode') return handleRiderGeocode(payload);
+      if (action === 'riderGeocodeCandidates') return handleRiderGeocodeCandidates(payload);
       if (action === 'urgentAccept') return handleUrgentAccept(payload);
       if (action === 'urgentDecline') return handleUrgentDecline(payload);
       return handleAdminPost(payload);
@@ -1394,11 +1395,16 @@ function handleVisionExtract(payload) {
     var prompt = [
       'Extract all delivery addresses from this image of a delivery sheet.',
       'Return ONLY a JSON array of objects with this exact shape:',
-      '[{"address":"Full street address with number","tier":"tier label or empty string"}]',
+      '[{"address":"Street name, and number if legible","tier":"tier label or empty string"}]',
       '',
       'Rules:',
-      '- Each address MUST include a street name and number (e.g. Carrer de Mallorca 123)',
-      '- Do NOT include partial addresses, floor/door info, or fragments without a street number',
+      '- Each address MUST include a real street name.',
+      '- Include the door/building number ONLY if you can read it clearly and confidently.',
+      '  If the number is missing, smudged, cut off, or ambiguous, DO NOT GUESS OR INVENT A NUMBER —',
+      '  return the street name alone (e.g. "Carrer de Mallorca" with no trailing number).',
+      '  A street-only address is a valid, useful result. A wrong invented number is worse than no number.',
+      '- Do NOT include partial addresses or fragments that are not a real street name',
+      '  (e.g. reject a bare floor/door note like "2n 1a" with nothing else).',
       '- Do NOT include JSON tokens, code snippets, or non-address text',
       '- tier is the delivery tier label visible near the address (e.g. "19h", "48h", "49h"), or empty string if none',
       '- Deduplicate: if the same address appears more than once, include it only once',
@@ -1429,7 +1435,22 @@ function handleVisionExtract(payload) {
       muteHttpExceptions: true
     });
 
-    var data = JSON.parse(response.getContentText());
+    var statusCode = response.getResponseCode();
+    var rawBody = response.getContentText();
+    var data = null;
+    try { data = JSON.parse(rawBody); } catch (parseErr) { data = null; }
+
+    if (statusCode < 200 || statusCode >= 300) {
+      var apiErrMsg = (data && data.error && data.error.message) ? data.error.message : rawBody.slice(0, 200);
+      if (statusCode === 429) {
+        return jsonResponse({ error: 'Vision API is rate-limited right now. Please try again in a moment.', detail: apiErrMsg }, 429);
+      }
+      if (statusCode === 529 || statusCode === 503) {
+        return jsonResponse({ error: 'Vision API is temporarily overloaded. Please try again in a moment.', detail: apiErrMsg }, 503);
+      }
+      return jsonResponse({ error: 'Vision API error (' + statusCode + ')', detail: apiErrMsg }, 502);
+    }
+    if (!data) return jsonResponse({ error: 'Vision API returned an unreadable response' }, 502);
     if (data.error) return jsonResponse({ error: data.error.message || 'API error' }, 500);
 
     var rawText = '';
@@ -1452,13 +1473,17 @@ function handleVisionExtract(payload) {
       });
     }
 
-    // Validate and clean
+    // Validate and clean. No digit requirement — a clean street-only address
+    // (no legible door number) is valid and should reach the rider; a
+    // >=2-word-token floor instead rejects bare fragments ("Carrer" alone,
+    // "N/A") without needing a maintained blocklist.
     function isValidAddress(s) {
       if (!s || s.length < 6 || s.length > 200) return false;
       if (!/[a-zA-ZÀ-ÿ]/.test(s)) return false;
-      if (!/[0-9]/.test(s)) return false;
       if (/[{}\[\]<>]/.test(s)) return false;
       if (/^(const|var|let|function|return|import|export)\b/.test(s)) return false;
+      var words = s.split(/\s+/).filter(function(w) { return /[a-zA-ZÀ-ÿ]{2,}/.test(w); });
+      if (words.length < 2) return false;
       return true;
     }
 
@@ -2751,6 +2776,58 @@ function handleAdminUpdate(payload){
   }
 }
 
+// Shared Places Text Search proxy, Barcelona-biased — used by both
+// handleAdminGeocode (single best result, via textSearch() below) and
+// handleRiderGeocodeCandidates (multiple ranked candidates for a rider-facing
+// confirm-address dropdown). Places Text Search naturally returns several
+// ranked results per query, unlike the plain Geocoding API which effectively
+// only ever yields one primary result.
+function placesTextSearchCandidates(query, mapsKey, limit){
+  try {
+    const BCN_LAT = 41.3874, BCN_LNG = 2.1686;
+    const RADIUS  = 15000;
+    const url = 'https://maps.googleapis.com/maps/api/place/textsearch/json'
+      + '?query='    + encodeURIComponent(query)
+      + '&location=' + BCN_LAT + ',' + BCN_LNG
+      + '&radius='   + RADIUS
+      + '&region=es'
+      + '&key='      + encodeURIComponent(mapsKey);
+    const res  = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    const data = JSON.parse(res.getContentText());
+    if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      return { error: 'Places API: ' + data.status + (data.error_message ? ' — ' + data.error_message : '') };
+    }
+    const candidates = (data.results || []).slice(0, limit || 5).map(function(r){
+      const loc = r.geometry && r.geometry.location;
+      if (!loc) return null;
+      return { label: r.formatted_address || r.name || query, lat: loc.lat, lng: loc.lng, placeId: r.place_id || '' };
+    }).filter(Boolean);
+    return { candidates: candidates };
+  } catch(e) { return { error: 'Places request failed: ' + String(e.message || e) }; }
+}
+
+function handleRiderGeocodeCandidates(payload){
+  try {
+    var riderId = String(payload.id || '').trim();
+    var rider = getRiderById(riderId);
+    var isAdmin = !rider && isAdminAuthorized(String(payload.token || '').trim());
+    if (!rider && !isAdmin) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+    var query = String(payload.query || '').trim();
+    if (!query || query.length < 3) return jsonResponse({ candidates: [] }, 200);
+
+    var mapsKey = getMapsApiKey();
+    if (!mapsKey) return jsonResponse({ error: 'Maps API key not configured on server' }, 500);
+
+    var qWithCity = /barcelona/i.test(query) ? query : (query + ', Barcelona, Spain');
+    var result = placesTextSearchCandidates(qWithCity, mapsKey, 5);
+    if (result.error) return jsonResponse({ error: result.error }, 502);
+    return jsonResponse({ candidates: result.candidates }, 200);
+  } catch (err) {
+    return jsonResponse({ error: 'Server error: ' + String(err.message || err) }, 500);
+  }
+}
+
 function handleAdminGeocode(payload){
   // Proxies Places Text Search + Geocoding API calls server-side to avoid CORS.
   // Routes: name queries → Places first; address queries (contain digit) → Geocoding first.
@@ -2761,34 +2838,16 @@ function handleAdminGeocode(payload){
     const mapsKey = getMapsApiKey();
     if (!mapsKey) return jsonResponse({ error: 'Maps API key not configured on server (MAPS_API_KEY script property).' }, 500);
 
-    const BCN_LAT = 41.3874, BCN_LNG = 2.1686;
-    const RADIUS  = 15000;
     const looksLikeAddress = /\d/.test(query);
 
     function textSearch() {
-      try {
-        const url = 'https://maps.googleapis.com/maps/api/place/textsearch/json'
-          + '?query='    + encodeURIComponent(query)
-          + '&location=' + BCN_LAT + ',' + BCN_LNG
-          + '&radius='   + RADIUS
-          + '&region=es'
-          + '&key='      + encodeURIComponent(mapsKey);
-        const res  = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-        const data = JSON.parse(res.getContentText());
-        if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-          return { error: 'Places API: ' + data.status + (data.error_message ? ' — ' + data.error_message : '') };
-        }
-        if (data.results && data.results[0]) {
-          const loc = data.results[0].geometry && data.results[0].geometry.location;
-          if (loc) return {
-            lat:   loc.lat,
-            lng:   loc.lng,
-            label: data.results[0].formatted_address || data.results[0].name || query,
-            via:   'places'
-          };
-        }
-        return null;
-      } catch(e) { return { error: 'Places request failed: ' + String(e.message || e) }; }
+      const result = placesTextSearchCandidates(query, mapsKey, 1);
+      if (result.error) return { error: result.error };
+      if (result.candidates && result.candidates[0]) {
+        const c = result.candidates[0];
+        return { lat: c.lat, lng: c.lng, label: c.label, via: 'places' };
+      }
+      return null;
     }
 
     function geocoding() {
