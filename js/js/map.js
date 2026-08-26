@@ -1172,10 +1172,37 @@ window.initZonesMap = function initZonesMap(){
     }
     return '';
   }
+  // Same distinction as isDateTimeGenuinelyInvalid: only true once an address
+  // has actually been typed and failed to geocode — never for "not typed yet".
+  function isAddressGenuinelyInvalid(){
+    const orderedInputs = getOrderedInputs();
+    if (!orderedInputs || orderedInputs.length < 2) return false;
+    const pickupEl = orderedInputs[0];
+    const dropEl = orderedInputs[orderedInputs.length - 1];
+    const pickupText = String((pickupEl && pickupEl.value) || '').trim();
+    const dropText = String((dropEl && dropEl.value) || '').trim();
+    if (!pickupText || !dropText) return false;
+    if (!getLocationForInput(pickupEl) || !getLocationForInput(dropEl)) return true;
+    for (let i = 1; i < orderedInputs.length - 1; i++) {
+      const stopInput = orderedInputs[i];
+      const stopText = String((stopInput && stopInput.value) || '').trim();
+      if (!stopText) continue;
+      if (!getLocationForInput(stopInput)) return true;
+    }
+    return false;
+  }
   function getDateTimeValidationError(){
     if (!hasDateTimeSelection()) return i18n('quoteDateTimeRequired') || 'Please choose a date and time.';
     if (isSelectedDateTimeInPast()) return i18n('quoteDateTimePast') || 'Please choose a future date and time.';
     return '';
+  }
+  // Distinguishes "not filled in yet" (not an error — the user just hasn't
+  // gotten there) from "filled in but actually wrong" (a real constraint
+  // violation worth flagging immediately, e.g. a past date/time). Used to
+  // decide whether autoEstimateIfReady's guided-flow highlighting should
+  // paint a section red — only the latter case should.
+  function isDateTimeGenuinelyInvalid(){
+    return hasDateTimeSelection() && isSelectedDateTimeInPast();
   }
   function getCargoValidationError(){
     const cargoValue = String((qCargo && qCargo.value) || '').trim();
@@ -2999,7 +3026,12 @@ window.initZonesMap = function initZonesMap(){
       if (addressError) {
         guidedScrolledToDateTime = false;
         guidedScrolledToCargo = false;
-        if (highlightErrors && (source === 'address' || source === 'datetime' || source === 'cargo')) {
+        // Only highlight a section the guided flow is passing THROUGH (not
+        // one the user is actively filling in) when it's genuinely wrong
+        // (e.g. an address that failed to geocode) — never merely because
+        // it's still empty, or picking a later section (cargo/datetime) would
+        // retroactively flag an address the user simply hasn't reached yet.
+        if (highlightErrors && (source === 'address' || source === 'datetime' || source === 'cargo') && isAddressGenuinelyInvalid()) {
           setSectionValidationState('addresses', addressError);
         }
         return;
@@ -3016,9 +3048,10 @@ window.initZonesMap = function initZonesMap(){
       const cargoError = getCargoValidationError();
       if (cargoError) {
         guidedScrolledToDateTime = false;
-        if (highlightErrors && (source === 'datetime' || source === 'cargo')) {
-          setSectionValidationState('cargo', cargoError);
-        }
+        // Cargo has no "filled in but wrong" state, only "not chosen yet" —
+        // so it's never eagerly highlighted here. Scrolling past the section
+        // (validateSectionsOnManualScroll) and submit-time validation still
+        // catch a genuinely missing cargo choice.
         return;
       }
       setSectionValidationState('cargo', '');
@@ -3032,7 +3065,10 @@ window.initZonesMap = function initZonesMap(){
 
       const dateTimeError = getDateTimeValidationError();
       if (dateTimeError) {
-        if (highlightErrors && (source === 'datetime' || source === 'cargo')) {
+        // Same rule: only flag a genuine violation (a past date/time),
+        // never "date/time not chosen yet" — picking cargo shouldn't
+        // retroactively nag about an empty date/time section below it.
+        if (highlightErrors && (source === 'datetime' || source === 'cargo') && isDateTimeGenuinelyInvalid()) {
           setSectionValidationState('datetime', dateTimeError);
         }
         return;
