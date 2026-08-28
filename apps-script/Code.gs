@@ -1393,22 +1393,30 @@ function handleVisionExtract(payload) {
     if (!apiKey) return jsonResponse({ error: 'Anthropic API key not configured' }, 500);
 
     var prompt = [
-      'Extract all delivery addresses from this image of a delivery sheet.',
+      'Extract every delivery entry from this image of a delivery sheet — one entry per',
+      'row/line item, EVEN IF it looks incomplete, messy, or you are unsure it is a real',
+      'address. Do not skip or drop an entry just because it seems doubtful — the app will',
+      'flag anything it cannot confidently place on a map, but it can only do that if every',
+      'entry from the sheet actually reaches it. Missing a real entry is a worse outcome',
+      'than including an uncertain one.',
       'Return ONLY a JSON array of objects with this exact shape:',
-      '[{"address":"Street name, and number if legible","tier":"tier label or empty string"}]',
+      '[{"address":"Street name, and number if legible","unit":"apartment/floor/door if visible","name":"recipient name if visible","tier":"tier label or empty string"}]',
       '',
       'Rules:',
-      '- Each address MUST include a real street name.',
-      '- Include the door/building number ONLY if you can read it clearly and confidently.',
-      '  If the number is missing, smudged, cut off, or ambiguous, DO NOT GUESS OR INVENT A NUMBER —',
-      '  return the street name alone (e.g. "Carrer de Mallorca" with no trailing number).',
-      '  A street-only address is a valid, useful result. A wrong invented number is worse than no number.',
-      '- Do NOT include partial addresses or fragments that are not a real street name',
-      '  (e.g. reject a bare floor/door note like "2n 1a" with nothing else).',
-      '- Do NOT include JSON tokens, code snippets, or non-address text',
+      '- address should be the street name, and number if you can read it clearly and',
+      '  confidently. If the number is missing, smudged, cut off, or ambiguous, DO NOT GUESS',
+      '  OR INVENT A NUMBER — return the street name alone (e.g. "Carrer de Mallorca" with no',
+      '  trailing number). A street-only address is a valid, useful result.',
+      '- unit is apartment/floor/door/staircase info (e.g. "2n 1a", "Ático B", "Puerta 3") if',
+      '  visible near the address — put it here, NOT appended to address. Empty string if none.',
+      '- name is the recipient/customer name if visible near the entry. Empty string if none.',
+      '- Even an entry with only a unit/name and no usable street text should still be',
+      '  included (address can be your best partial reading, or empty) — do not silently omit it.',
+      '- Do NOT include JSON tokens, code snippets, or text that is clearly not a sheet entry',
+      '  (e.g. a page title, a printed date/time header, column labels like "Address" or "Name").',
       '- tier is the delivery tier label visible near the address (e.g. "19h", "48h", "49h"), or empty string if none',
-      '- Deduplicate: if the same address appears more than once, include it only once',
-      '- Minimum address length: 6 characters. Maximum: 200 characters',
+      '- Deduplicate only EXACT repeats (same address AND same unit AND same name) — keep entries',
+      '  that share an address but differ in unit or name, since those are different deliveries.',
       '- Return ONLY the JSON array, no explanation, no markdown fences'
     ].join('\n');
 
@@ -1473,24 +1481,48 @@ function handleVisionExtract(payload) {
       });
     }
 
-    // Validate and clean. No digit requirement — a clean street-only address
-    // (no legible door number) is valid and should reach the rider; a
-    // >=2-word-token floor instead rejects bare fragments ("Carrer" alone,
-    // "N/A") without needing a maintained blocklist.
-    function isValidAddress(s) {
-      if (!s || s.length < 6 || s.length > 200) return false;
-      if (!/[a-zA-ZÀ-ÿ]/.test(s)) return false;
-      if (/[{}\[\]<>]/.test(s)) return false;
-      if (/^(const|var|let|function|return|import|export)\b/.test(s)) return false;
-      var words = s.split(/\s+/).filter(function(w) { return /[a-zA-ZÀ-ÿ]{2,}/.test(w); });
-      if (words.length < 2) return false;
+    // Reject only genuine junk (empty, code/JSON artifacts, absolutely no
+    // letters) — everything else the model chose to extract should reach the
+    // rider. An entry with just a name/unit and a blank or partial address is
+    // still valid; the app flags it for the rider to resolve rather than the
+    // backend silently deciding it doesn't count.
+    function isValidEntry(item) {
+      var addr = String(item.address || '').trim();
+      var unit = String(item.unit || '').trim();
+      var name = String(item.name || '').trim();
+      if (!addr && !unit && !name) return false; // nothing at all — not a real sheet entry
+      if (addr) {
+        if (addr.length > 200) return false;
+        if (/[{}\[\]<>]/.test(addr)) return false;
+        if (/^(const|var|let|function|return|import|export)\b/.test(addr)) return false;
+      }
       return true;
     }
 
-    function normalizeAddress(s) {
-      return s.replace(/,?\s*(piso|planta|pta|puerta|escalera|esc|atico|bajo|principal|izq|dcha|izqda|dcha)\b.*/i, '')
-              .replace(/\s+/g, ' ')
-              .trim();
+    // Safety net: if the model still left floor/door text baked into address
+    // (didn't split it into unit per the prompt), pull it out into unit
+    // instead of discarding it — the app now needs that detail, not just a
+    // trimmed address.
+    // Matches EITHER a Spanish keyword-based floor/door note (piso, puerta,
+    // etc.) OR a Catalan-style ordinal+letter shorthand ("2n 1a", "3r 2a",
+    // "4t B") — the whole fragment after the comma must match end-to-end, not
+    // just contain a match, so this only fires when the trailing text really
+    // looks like a unit note and nothing else.
+    var UNIT_TOKEN_RE = /^(?:(?:\d{1,2}[a-zA-Zºª]{0,3}\.?)\s*){1,3}$|^(piso|planta|pta|puerta|escalera|esc|atico|ático|bajo|principal|izq(?:uierda)?|dcha|izqda|dreta)\b/i;
+    function splitUnitFromAddress(addr, existingUnit) {
+      var clean = addr.replace(/\s+/g, ' ').trim();
+      if (existingUnit) return { address: clean, unit: existingUnit };
+      var commaIdx = clean.indexOf(',');
+      if (commaIdx < 0) return { address: clean, unit: '' };
+      var before = clean.slice(0, commaIdx).trim();
+      var after = clean.slice(commaIdx + 1).trim();
+      // Only split if there's already a street number BEFORE the comma —
+      // otherwise "Street name, 45" is very likely just the common
+      // "street, number" address format, not a floor/door note, and
+      // splitting it would strip the real street number.
+      if (!/\d/.test(before)) return { address: clean, unit: '' };
+      if (!after || !UNIT_TOKEN_RE.test(after)) return { address: clean, unit: '' };
+      return { address: before, unit: after };
     }
 
     function cleanTierLabel(s) {
@@ -1503,15 +1535,20 @@ function handleVisionExtract(payload) {
     var seen = {};
     stops = stops
       .filter(function(item) { return item && typeof item === 'object'; })
+      .filter(isValidEntry)
       .map(function(item) {
+        var split = splitUnitFromAddress(String(item.address || '').trim(), String(item.unit || '').trim());
         return {
-          address: normalizeAddress(String(item.address || '').trim()),
+          address: split.address,
+          unit: split.unit,
+          name: String(item.name || '').trim().slice(0, 100),
           tier: cleanTierLabel(item.tier || '')
         };
       })
-      .filter(function(item) { return isValidAddress(item.address); })
       .filter(function(item) {
-        var key = item.address.toLowerCase();
+        // Only collapse EXACT repeats (address+unit+name) — entries that
+        // share an address but differ in unit/name are different deliveries.
+        var key = (item.address + '|' + item.unit + '|' + item.name).toLowerCase();
         if (seen[key]) return false;
         seen[key] = true;
         return true;
@@ -2034,7 +2071,12 @@ function normalizeStopsForOrder(incomingStops, existingStops){
       status: (prior && prior.status) || 'Pending',
       podUrl: (prior && prior.podUrl) || '',
       podAt: (prior && prior.podAt) || '',
-      notes: (prior && prior.notes) || '',
+      // On first-ever save (no prior) an incoming note is trusted — this is
+      // how a rider's scanned name/apartment detail becomes the stop's note
+      // the moment it's committed. Once a prior note exists it always wins,
+      // same as before, so a later resubmit (reorder, append-scan) can never
+      // clobber a note someone has already set.
+      notes: (prior && prior.notes) || cleanOrderText(stop && stop.notes) || '',
       trackingToken: (prior && prior.trackingToken) || generatePublicToken(16),
       completedAt: (prior && prior.completedAt) || '',
       failureReason: (prior && prior.failureReason) || ''

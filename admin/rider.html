@@ -725,6 +725,11 @@
       margin-bottom: 6px;
       word-break: break-word;
     }
+    .scan-addr-details {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      margin: -2px 0 6px;
+    }
     .scan-addr-mini-btn {
       display: inline-block;
       padding: 5px 10px;
@@ -770,6 +775,11 @@
       background: transparent;
       color: var(--text-dim);
       border: 1px dashed var(--border);
+    }
+    .scan-action-btn.secondary.is-active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
     }
 
     /* Tier badges */
@@ -2117,24 +2127,33 @@
           });
         }
 
-        // Client-side sanity filter — catch anything malformed that slipped past server validation.
-        // No digit requirement: a street-only address (door number not legible
-        // on the scan) is valid and should reach the rider rather than being
-        // silently dropped — a ≥2-word-token check catches bare fragments
-        // ("Carrer" alone, "N/A") instead, mirroring isValidAddress in Code.gs.
+        // Client-side sanity filter — catch only genuine junk that slipped
+        // past server validation. Every real sheet entry should reach the
+        // rider, even a messy/incomplete one (it gets flagged, not dropped) —
+        // so this only rejects entries with nothing usable at all, or
+        // obvious code/JSON artifacts, never on address length/word-count.
         stops = stops.filter(function(s) {
           if (!s || typeof s !== 'object') return false;
           var addr = String(s.address || '').trim();
-          if (addr.length < 6 || addr.length > 200) return false;
-          if (!/[a-zA-ZÀ-ÿ]{3,}/.test(addr)) return false;
-          var words = addr.split(/\s+/).filter(function(w) { return /[a-zA-ZÀ-ÿ]{2,}/.test(w); });
-          if (words.length < 2) return false;
-          // Reject obvious code/JSON garbage
-          if (/^(true|false|null|undefined)$/i.test(addr)) return false;
-          if (/^[\{\}\[\]:,"]/.test(addr)) return false;
-          if (/[<>{}]/.test(addr)) return false;
-          if (/^\s*\/\//.test(addr)) return false;
+          var unit = String(s.unit || '').trim();
+          var name = String(s.name || '').trim();
+          if (!addr && !unit && !name) return false;
+          if (addr) {
+            if (addr.length > 200) return false;
+            if (/^(true|false|null|undefined)$/i.test(addr)) return false;
+            if (/^[\{\}\[\]:,"]/.test(addr)) return false;
+            if (/[<>{}]/.test(addr)) return false;
+            if (/^\s*\/\//.test(addr)) return false;
+          }
           return true;
+        }).map(function(s) {
+          return {
+            address: String(s.address || '').trim(),
+            unit: String(s.unit || '').trim(),
+            name: String(s.name || '').trim(),
+            tier: String(s.tier || '').trim(),
+            outlier: !!s.outlier
+          };
         });
 
         if (stops.length === 0) {
@@ -2191,8 +2210,12 @@
 
       // Mutable copy for in-place edits
       var workingStops = stops.map(function(s) {
+        var addr = String(s.address || '').trim();
         return {
-          address: String(s.address || '').trim(),
+          address: addr,
+          originalAddress: s.originalAddress || addr, // as scanned, before Google normalizes it
+          unit: String(s.unit || '').trim(),
+          name: String(s.name || '').trim(),
           tier: String(s.tier || '').trim(),
           outlier: !!s.outlier,
           outlierReason: s.outlierReason || null,
@@ -2202,6 +2225,7 @@
         };
       });
       var dirty = true; // becomes false after a successful commit, true again on edit
+      var routeStartOverride = null; // {lat,lng} from the rider's GPS, used as doReoptimize's starting point instead of the fixed Eixample default
       var mapInstance = null;
       var mapMarkers = [];
       var mapPolyline = null;
@@ -2291,7 +2315,13 @@
           var txt = document.createElement('div');
           txt.className = 'scan-addr-text';
           txt.style.flex = '1';
-          txt.textContent = stop.address;
+          if (stop.address) {
+            txt.textContent = stop.address;
+          } else {
+            txt.textContent = '(address not read from scan — edit to fix)';
+            txt.style.fontStyle = 'italic';
+            txt.style.color = 'var(--orange)';
+          }
           txtRow.appendChild(txt);
 
           // Priority star toggle
@@ -2317,6 +2347,30 @@
           txtRow.appendChild(editBtn);
 
           body.appendChild(txtRow);
+
+          // Original scanned text, shown small if Google's normalization
+          // changed it meaningfully — lets the rider cross-check against the
+          // paper sheet if a match looks questionable.
+          if (stop.originalAddress && stop.address && stop.originalAddress !== stop.address) {
+            var origLine = document.createElement('div');
+            origLine.className = 'scan-addr-details';
+            origLine.textContent = '📝 As scanned: ' + stop.originalAddress;
+            body.appendChild(origLine);
+          }
+
+          // Compact details block: recipient name + apartment/unit, if the
+          // sheet had either. Read-only display — edited via the address
+          // edit flow's free-text field is out of scope here, this is purely
+          // "what did the sheet say" at a glance.
+          if (stop.name || stop.unit) {
+            var detailsBlock = document.createElement('div');
+            detailsBlock.className = 'scan-addr-details';
+            var parts = [];
+            if (stop.name) parts.push('👤 ' + stop.name);
+            if (stop.unit) parts.push('🚪 ' + stop.unit);
+            detailsBlock.textContent = parts.join('  ·  ');
+            body.appendChild(detailsBlock);
+          }
 
           // Up/down move buttons (mobile-friendly fallback to drag)
           var moveRow = document.createElement('div');
@@ -2578,6 +2632,43 @@
           reoptBtn.innerHTML = '🧭 Re-optimize route';
           reoptBtn.addEventListener('click', function() { doReoptimize(reoptBtn); });
           actionsWrap.appendChild(reoptBtn);
+
+          // Route-start toggle — replaces the fixed Eixample-center default
+          // with the rider's live GPS position for the nearest-neighbor sort.
+          // A toggle rather than a fake "stop" in the list: it's a routing
+          // input, not a delivery, so it never needs its own row, edit,
+          // removal, or commit-to-order handling.
+          var startBtn = document.createElement('button');
+          startBtn.type = 'button';
+          startBtn.className = 'scan-action-btn secondary' + (routeStartOverride ? ' is-active' : '');
+          startBtn.innerHTML = routeStartOverride ? '📍 Starting from my location ✓' : '📍 Start from my location';
+          startBtn.addEventListener('click', function() {
+            if (routeStartOverride) {
+              routeStartOverride = null;
+              buildActions();
+              return;
+            }
+            if (!navigator.geolocation) {
+              showScanStatus(statusEl, 'Geolocation not supported by this browser.', 'error');
+              return;
+            }
+            startBtn.disabled = true;
+            startBtn.innerHTML = '📍 Locating…';
+            navigator.geolocation.getCurrentPosition(
+              function(pos) {
+                routeStartOverride = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                showScanStatus(statusEl, '✓ Will start the route from your current location on next re-optimize.', 'success');
+                buildActions();
+              },
+              function(err) {
+                showScanStatus(statusEl, 'Could not get your location: ' + (err.message || 'permission denied.'), 'error');
+                startBtn.disabled = false;
+                startBtn.innerHTML = '📍 Start from my location';
+              },
+              { enableHighAccuracy: true, timeout: 8000 }
+            );
+          });
+          actionsWrap.appendChild(startBtn);
         }
 
         // Build chunk URLs
@@ -2805,9 +2896,10 @@
         var priority = geocoded.filter(function(s) { return s.priority; });
         var normal = geocoded.filter(function(s) { return !s.priority; });
 
-        // Nearest-neighbor on normal stops.
-        // Start from Eixample center (Barcelona's geographic delivery hub).
-        var start = { lat: 41.3902, lng: 2.1542 };
+        // Nearest-neighbor on normal stops. Starts from the rider's live GPS
+        // position if they've toggled "Start from my location", otherwise
+        // falls back to Eixample center (Barcelona's geographic delivery hub).
+        var start = routeStartOverride || { lat: 41.3902, lng: 2.1542 };
         var current = start;
         var remaining = normal.slice();
         var sorted = [];
@@ -2952,11 +3044,27 @@
         showScanStatus(statusEl, 'Saving ' + workingStops.length + ' stops to order…', 'info');
 
         try {
+          // Compose notes from the scanned name/apartment so they survive
+          // into the order (normalizeStopsForOrder trusts an incoming note
+          // only on a stop's first-ever save, see Code.gs). Also guarantee a
+          // non-empty address — the backend requires one per stop and would
+          // otherwise silently drop a name/unit-only entry entirely, which is
+          // exactly the "stops missing" problem this is meant to fix.
+          var commitStops = workingStops.map(function(s) {
+            var noteParts = [];
+            if (s.name) noteParts.push(s.name);
+            if (s.unit) noteParts.push(s.unit);
+            var addr = s.address || s.name || s.unit || (s.originalAddress || '(address not read from scan)');
+            return Object.assign({}, s, {
+              address: addr,
+              notes: noteParts.join(' · ')
+            });
+          });
           var res = await api('POST', {
             action: 'riderCommitStops',
             id: RIDER_ID,
             eventId: orderEventId,
-            stops: workingStops
+            stops: commitStops
           });
 
           if (res.error) {
@@ -3124,7 +3232,8 @@
         var byReason = {
           geo_outlier:   { label: '⚠ Outlier', title: 'This stop seems far from your normal zone — verify the address' },
           low_precision: { label: '⚠ Verify address', title: 'Google could not pinpoint an exact building for this address — verify on arrival' },
-          no_number:     { label: '⚠ No door number', title: 'No door number was read from the scan — geocoded by street only, verify on arrival' }
+          no_number:     { label: '⚠ No door number', title: 'No door number was read from the scan — geocoded by street only, verify on arrival' },
+          no_address:    { label: '⚠ No address read', title: 'The scan did not produce a usable address for this entry — tap edit to enter it manually' }
         };
         return byReason[reason] || { label: '⚠ Verify address', title: 'Verify this address' };
       }
@@ -3197,6 +3306,13 @@
         // mechanism that used to let a same-named street in a neighboring town
         // match; the stop just stays unresolved (lat/lng null) instead.
         var geocodeOne = async function(stop) {
+          if (!stop.address) {
+            // Nothing to search on (name/unit-only entry) — don't waste a
+            // request on a query that can only resolve to generic Barcelona.
+            stop.outlier = true;
+            stop.outlierReason = 'no_address';
+            return;
+          }
           var hasNumber = /\d/.test(stop.address);
           var addr = /barcelona/i.test(stop.address) ? stop.address : stop.address + ', Barcelona';
           var url = 'https://maps.googleapis.com/maps/api/geocode/json?address=' +
@@ -3216,6 +3332,10 @@
             stop.lat = loc.lat;
             stop.lng = loc.lng;
             stop.geocodeLocationType = locationType;
+            // Normalize to Google's canonical address text once resolved —
+            // originalAddress (set once, at scan time) keeps the raw OCR
+            // reading around for comparison if the match looks off.
+            if (result.formatted_address) stop.address = result.formatted_address;
 
             if (!hasNumber) {
               // Street-only address (no legible door number) — always flag,
