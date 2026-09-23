@@ -2738,6 +2738,23 @@ window.initZonesMap = function initZonesMap(){
       const nextRecent = recent.concat(Array.from(used));
       while (nextRecent.length > 8) nextRecent.shift();
       window._recentRandomStops = nextRecent;
+      // A random test route only proves the estimator works if it actually
+      // produces a price the way a real completed booking would. Without
+      // this, the tool silently leaves the flow stuck on "please confirm
+      // cargo type" / "choose a date and time" — no price, no error, since
+      // those are simply things the user hasn't done yet, not violations.
+      // Only fill in what's still empty, so a manual in-progress choice
+      // (cargo already confirmed, or a date already picked) is left alone.
+      if (!cargoExplicitlyConfirmed && qCargo) {
+        cargoExplicitlyConfirmed = true;
+        syncCargoOptionChips();
+      }
+      if (qDate && !qDate.value) {
+        const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+        qDate.value = tomorrow.getFullYear() + '-' + pad2(tomorrow.getMonth() + 1) + '-' + pad2(tomorrow.getDate());
+        syncDateDisplay();
+      }
+      if (qTime && !qTime.value) qTime.value = '10:00';
       autoEstimateIfReady({ source: 'address', immediate: true });
     } catch(_){ }
   }
