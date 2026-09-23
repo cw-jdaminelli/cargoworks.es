@@ -15,6 +15,8 @@ const POD_FOLDER_PROPERTY = 'POD_FOLDER_ID';
 const ORDERS_LOG_SHEET_PROPERTY = 'ORDERS_LOG_SHEET_ID';
 const ORDERS_LOG_SPREADSHEET_NAME = 'Cargoworks Orders Log';
 const ORDERS_LOG_TAB_NAME = 'OrdersLog';
+const SCAN_FOLDER_PROPERTY = 'SCAN_FOLDER_ID';
+const SCAN_LOG_TAB_NAME = 'RouteScanLog';
 const ADMIN_DATA_START = '--- ADMIN DATA ---';
 const ADMIN_DATA_END = '--- END ADMIN DATA ---';
 const DEFAULT_STATUS_LABEL = 'Confirmed';
@@ -1554,6 +1556,24 @@ function handleVisionExtract(payload) {
         return true;
       });
 
+    // Archive every successful read (image + extracted stops) so the office
+    // can later check what was scanned and how well the read went. Never let
+    // a logging failure break the response the rider is waiting on.
+    if (stops.length > 0) {
+      try {
+        logScanResult({
+          riderId: riderId,
+          riderName: (rider && rider.name) || (isAdmin ? 'Admin' : ''),
+          eventId: String(payload.eventId || ''),
+          imageBase64: imageBase64,
+          mimeType: mimeType,
+          stops: stops
+        });
+      } catch (logErr) {
+        // Keep the scan flow resilient if archiving fails.
+      }
+    }
+
     return jsonResponse({ stops: stops, count: stops.length }, 200);
 
   } catch (err) {
@@ -3003,6 +3023,62 @@ function uploadPodPhoto(payload, defaultFileName){
   const file = folder.createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   return file.getUrl();
+}
+
+function logScanResult(entry){
+  const data = entry || {};
+  const imageUrl = uploadScanPhoto(data.imageBase64, data.mimeType, data.riderId, data.eventId);
+  const stops = Array.isArray(data.stops) ? data.stops : [];
+  const outlierCount = stops.filter(function(s){ return s && s.outlier; }).length;
+  const sheet = ensureScanLogSheet();
+  sheet.appendRow([
+    new Date().toISOString(),
+    String(data.riderId || ''),
+    String(data.riderName || ''),
+    String(data.eventId || ''),
+    imageUrl,
+    stops.length,
+    outlierCount,
+    safeJsonStringify(stops)
+  ]);
+}
+
+function uploadScanPhoto(imageBase64, mimeType, riderId, eventId){
+  const contentType = String(mimeType || 'image/jpeg').trim();
+  const base64 = String(imageBase64 || '').indexOf('base64,') >= 0
+    ? String(imageBase64).split('base64,').pop()
+    : imageBase64;
+  const fileName = 'scan_' + String(riderId || 'unknown') + '_' + (eventId ? (String(eventId) + '_') : '') + new Date().getTime() + '.jpg';
+  const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
+  const folder = ensureScanFolder();
+  const file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return file.getUrl();
+}
+
+function ensureScanFolder(){
+  const props = PropertiesService.getScriptProperties();
+  const existingId = String(props.getProperty(SCAN_FOLDER_PROPERTY) || '').trim();
+  if (existingId) {
+    try { return DriveApp.getFolderById(existingId); } catch(_) {}
+  }
+  const folder = DriveApp.createFolder('Cargoworks Route Scans');
+  props.setProperty(SCAN_FOLDER_PROPERTY, folder.getId());
+  return folder;
+}
+
+function ensureScanLogSheet(){
+  const sheet = ensureOrdersLogSheet();
+  const ss = sheet.getParent();
+  let scanSheet = ss.getSheetByName(SCAN_LOG_TAB_NAME);
+  if (!scanSheet) scanSheet = ss.insertSheet(SCAN_LOG_TAB_NAME);
+
+  const headers = ['LoggedAt', 'RiderId', 'RiderName', 'EventId', 'ImageUrl', 'StopsCount', 'OutlierCount', 'StopsJson'];
+  if (scanSheet.getLastRow() < 1) {
+    scanSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    scanSheet.setFrozenRows(1);
+  }
+  return scanSheet;
 }
 
 function ensurePodFolder(){

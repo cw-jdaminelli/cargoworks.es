@@ -1241,6 +1241,7 @@
     </div>
     <div class="auth-tagline">Rider Panel</div>
     <div id="authError" class="auth-error">Rider ID not recognised. Check your link.</div>
+    <button id="authRetryBtn" class="btn btn-primary" style="display:none;" type="button">Retry</button>
     <div id="authLoading" style="color: var(--text-dim); font-size: 0.85rem;">Verifying...</div>
   </div>
 
@@ -1424,19 +1425,38 @@
 
     // ── Auth ───────────────────────────────────────────────────────────────────
 
-    async function init() {
+    async function init(isRetry) {
       const params = new URLSearchParams(location.search);
       RIDER_ID = String(params.get('id') || '').trim();
 
       if (!RIDER_ID) {
-        showAuthError('No rider ID in URL. Check your link.');
+        showAuthError('No rider ID in URL. Check your link.', false);
         return;
       }
+
+      document.getElementById('authLoading').style.display = '';
+      document.getElementById('authError').classList.remove('visible');
+      document.getElementById('authRetryBtn').style.display = 'none';
 
       const res = await api('GET', { action: 'riderValidate', id: RIDER_ID });
 
       if (res.error || !res.ok) {
-        showAuthError('Rider ID not recognised. Check your link.');
+        // A missing/blocked network path or a slow cold-start Apps Script
+        // response surfaces as errorKind (network/timeout/server_unavailable)
+        // — those are worth a quiet, automatic retry since most clear up on
+        // their own (spotty signal, a slow first request of the day). A
+        // genuinely wrong rider ID comes back as a normal JSON error with no
+        // errorKind and retrying it would just fail the same way again, so
+        // that one goes straight to the dead-end message.
+        const transient = res.errorKind === 'timeout' || res.errorKind === 'network' || res.errorKind === 'server_unavailable';
+        if (transient && !isRetry) {
+          setTimeout(function() { init(true); }, 1500);
+          return;
+        }
+        showAuthError(
+          transient ? 'Connection trouble — could not reach the server. Check your signal and tap Retry.' : 'Rider ID not recognised. Check your link.',
+          transient
+        );
         return;
       }
 
@@ -1450,12 +1470,15 @@
       loadOrders();
     }
 
-    function showAuthError(msg) {
+    function showAuthError(msg, allowRetry) {
       document.getElementById('authLoading').style.display = 'none';
       const err = document.getElementById('authError');
       err.textContent = msg;
       err.classList.add('visible');
+      document.getElementById('authRetryBtn').style.display = allowRetry ? '' : 'none';
     }
+
+    document.getElementById('authRetryBtn').addEventListener('click', function() { init(); });
 
     // ── Date navigation ────────────────────────────────────────────────────────
 
@@ -1492,7 +1515,7 @@
 
     // ── Load orders ────────────────────────────────────────────────────────────
 
-    async function loadOrders() {
+    async function loadOrders(isRetry) {
       const listEl = document.getElementById('orderList');
       listEl.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
 
@@ -1503,7 +1526,19 @@
       });
 
       if (res.error) {
-        listEl.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">' + res.error + '</div></div>';
+        // Same reasoning as the auth screen: a network/timeout/cold-start
+        // hiccup is worth one silent retry (most clear up on their own),
+        // but always leave a manual Retry button either way — the rider
+        // should never have to reload the whole page just to try again.
+        const transient = res.errorKind === 'timeout' || res.errorKind === 'network' || res.errorKind === 'server_unavailable';
+        if (transient && !isRetry) {
+          setTimeout(function() { loadOrders(true); }, 1500);
+          return;
+        }
+        listEl.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">' + res.error + '</div></div>' +
+          '<div class="empty-state" style="padding-top:0;"><button type="button" class="btn btn-primary" id="loadOrdersRetryBtn">Retry</button></div>';
+        var retryBtn = document.getElementById('loadOrdersRetryBtn');
+        if (retryBtn) retryBtn.addEventListener('click', function() { loadOrders(); });
         return;
       }
 
@@ -1579,8 +1614,21 @@
       chipEl.innerHTML = '';
       chipEl.appendChild(makeChip(order.status));
 
-      renderDetailBody(order);
-      renderActionFooter(order);
+      // Rendering an order's detail is all synchronous, built straight from
+      // data already in memory — but an unexpected shape in one order (e.g.
+      // a field a newer render step assumes exists) shouldn't be able to
+      // silently no-op the whole tap. Without this, an exception here would
+      // abort before the panel ever opens, so tapping the card just does
+      // nothing and looks like the app failed to load the order.
+      try {
+        renderDetailBody(order);
+        renderActionFooter(order);
+      } catch (err) {
+        try { console.error('[rider] openOrder render failed', err, order); } catch (_) {}
+        toast('Could not fully load this order — some details may be missing.', 'error');
+        const footer = document.getElementById('actionFooter');
+        if (footer) footer.innerHTML = '';
+      }
 
       document.getElementById('orderDetail').classList.add('open');
       document.body.style.overflow = 'hidden';
@@ -1873,7 +1921,11 @@
         const podInput = document.createElement('input');
         podInput.type = 'file';
         podInput.accept = 'image/*';
-        podInput.capture = 'environment';
+        // No `capture` attribute here on purpose: setting it forces the OS to
+        // jump straight into the camera with no option to pick an existing
+        // photo. Riders need to upload photos taken earlier, not just shoot
+        // one on the spot — omitting it lets the browser show its normal
+        // "Camera / Photo Library / Files" chooser.
         const podPreview = document.createElement('img');
         podPreview.className = 'pod-preview';
         podBtn.addEventListener('click', function() { podInput.click(); });
@@ -2041,6 +2093,13 @@
       statusEl.className = 'scan-status';
       wrap.appendChild(statusEl);
 
+      // Holds a "🔄 Retry same photo" button when a scan fails — resending
+      // the already-captured image is instant, versus the scanBtn path which
+      // forces a brand-new camera capture (fileInput has `capture` set, so
+      // there's no "pick from gallery" fallback for a quick re-try).
+      var retryWrap = document.createElement('div');
+      wrap.appendChild(retryWrap);
+
       var resultEl = document.createElement('div');
       resultEl.className = 'scan-result';
       wrap.appendChild(resultEl);
@@ -2060,6 +2119,7 @@
         var file = fileInput.files[0];
 
         showScanStatus(statusEl, 'Processing image…', 'info');
+        clearScanRetry(retryWrap);
 
         var img = new Image();
         img.onload = function() {
@@ -2072,7 +2132,7 @@
           canvas.height = h;
           canvas.getContext('2d').drawImage(img, 0, 0, w, h);
           var b64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-          doScanExtract(b64, 'image/jpeg', scanBtn, statusEl, resultEl, orderEventId);
+          doScanExtract(b64, 'image/jpeg', scanBtn, statusEl, resultEl, orderEventId, retryWrap);
         };
         img.onerror = function() {
           showScanStatus(statusEl, 'Could not read the image. Try again.', 'error');
@@ -2091,11 +2151,32 @@
       statusEl.className = 'scan-status';
       statusEl.textContent = '';
     }
+    function clearScanRetry(retryWrap) {
+      if (retryWrap) retryWrap.innerHTML = '';
+    }
+    // A failed scan (bad connection, server hiccup, Claude timing out) is no
+    // reason to make the rider physically retake the photo — the image
+    // they already captured is still good. Offer to resend it as-is.
+    function showScanRetry(retryWrap, onRetry) {
+      if (!retryWrap) return;
+      retryWrap.innerHTML = '';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-primary';
+      btn.style.marginTop = '6px';
+      btn.textContent = '🔄 Retry same photo';
+      btn.addEventListener('click', function() {
+        clearScanRetry(retryWrap);
+        onRetry();
+      });
+      retryWrap.appendChild(btn);
+    }
 
-    async function doScanExtract(b64, mime, scanBtn, statusEl, resultEl, orderEventId) {
+    async function doScanExtract(b64, mime, scanBtn, statusEl, resultEl, orderEventId, retryWrap) {
       scanBtn.disabled = true;
       scanBtn.innerHTML = '⏳ Sending to Claude…';
       showScanStatus(statusEl, 'Extracting addresses — this can take 10–20 seconds…', 'info');
+      clearScanRetry(retryWrap);
       resultEl.className = 'scan-result';
       resultEl.innerHTML = '';
 
@@ -2104,8 +2185,9 @@
           action: 'visionExtract',
           id: RIDER_ID,
           image: b64,
-          mimeType: mime
-        }, { timeoutMs: 55000 });
+          mimeType: mime,
+          eventId: orderEventId || ''
+        }, { timeoutMs: 75000 });
 
         if (res.error) {
           var errMsg = (res.errorKind === 'timeout' || res.errorKind === 'server_unavailable')
@@ -2114,6 +2196,9 @@
           showScanStatus(statusEl, errMsg, 'error');
           scanBtn.disabled = false;
           scanBtn.innerHTML = '📷 Tap to scan route sheet';
+          showScanRetry(retryWrap, function() {
+            doScanExtract(b64, mime, scanBtn, statusEl, resultEl, orderEventId, retryWrap);
+          });
           return;
         }
 
@@ -2161,6 +2246,9 @@
           scanBtn.disabled = false;
           scanBtn.innerHTML = '📷 Tap to scan route sheet';
           _appendMode = false;
+          showScanRetry(retryWrap, function() {
+            doScanExtract(b64, mime, scanBtn, statusEl, resultEl, orderEventId, retryWrap);
+          });
           return;
         }
 
@@ -2192,6 +2280,9 @@
         showScanStatus(statusEl, 'Request failed: ' + (err.message || String(err)), 'error');
         scanBtn.disabled = false;
         scanBtn.innerHTML = '📷 Tap to scan route sheet';
+        showScanRetry(retryWrap, function() {
+          doScanExtract(b64, mime, scanBtn, statusEl, resultEl, orderEventId, retryWrap);
+        });
       }
     }
 
@@ -3553,7 +3644,14 @@
     // stop, since they're just the first/last entries in the unified route.
 
     function updateAndRerender(updatedOrder) {
-      if (!updatedOrder) { loadOrders(); closeOrder(); return; }
+      // Every caller already checked res.error before getting here, so the
+      // action itself succeeded server-side — a missing echoed order is just
+      // the response shape being off, not a failure. Bouncing the rider back
+      // to the list here (as this used to do) turned a successful tap (mark
+      // delivered, assign, etc.) into what looks like a failed one. Just
+      // refresh the list in the background and leave the rider where they
+      // are instead.
+      if (!updatedOrder) { toast('Saved ✓', 'success'); setFooterLoading(false); loadOrders(); return; }
 
       // Update in local array
       const idx = allOrders.findIndex(function(o) { return o.eventId === updatedOrder.eventId; });
