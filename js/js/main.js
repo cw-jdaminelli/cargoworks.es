@@ -275,6 +275,22 @@ if (langSelect) {
       quoteAddStopBtn.setAttribute('title', dict.quoteAddStop);
       quoteAddStopBtn.setAttribute('aria-label', dict.quoteAddStop);
     }
+    const quoteOptimizeBtn = document.getElementById('quoteOptimize');
+    if (quoteOptimizeBtn && dict.quoteOptimize) {
+      quoteOptimizeBtn.textContent = dict.quoteOptimize;
+      quoteOptimizeBtn.setAttribute('title', dict.quoteOptimize);
+      quoteOptimizeBtn.setAttribute('aria-label', dict.quoteOptimize);
+    }
+    const quoteCalculateBtn = document.getElementById('quoteCalculate');
+    if (quoteCalculateBtn && dict.quoteCalculate) {
+      quoteCalculateBtn.textContent = dict.quoteCalculate;
+      quoteCalculateBtn.setAttribute('title', dict.quoteCalculate);
+      quoteCalculateBtn.setAttribute('aria-label', dict.quoteCalculate);
+    }
+    const quoteStaleHintEl = document.getElementById('quoteStaleHint');
+    if (quoteStaleHintEl && dict.quoteStaleHint) {
+      quoteStaleHintEl.textContent = dict.quoteStaleHint;
+    }
     const quoteLoadRandomBtn = document.getElementById('quoteLoadRandom');
     if (quoteLoadRandomBtn && dict.quoteLoadRandom) {
       quoteLoadRandomBtn.textContent = dict.quoteLoadRandom;

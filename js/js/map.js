@@ -694,7 +694,10 @@ window.initZonesMap = function initZonesMap(){
         const currentVal = String(inputEl.value || '').trim();
         setInputLocationData(inputEl, loc, currentVal || val);
         updateAddressMarkers();
-        autoEstimateIfReady();
+        // A stop's address is still geocoded so distances/locks work with it,
+        // but doesn't trigger a price recompute on its own — same reasoning
+        // as markStopsDirty. Pickup/dropoff keep the normal live behavior.
+        if (isStopInputEl(inputEl)) markStopsDirty(); else autoEstimateIfReady();
         updateDeliverySummary();
       });
     } catch(_) {}
@@ -836,7 +839,7 @@ window.initZonesMap = function initZonesMap(){
           inputEl.dataset.address = label;
           setAddressMarker(inputEl, ll);
           updateAddressMarkers();
-          autoEstimateIfReady();
+          if (isStopInputEl(inputEl)) markStopsDirty(); else autoEstimateIfReady();
         } catch(err) {
           setQuoteResultWithDebug(i18n('quoteLocationUnavailable') || 'Location unavailable', (err && err.message) || 'Reverse geocode failed');
         }
@@ -861,6 +864,8 @@ window.initZonesMap = function initZonesMap(){
   const qCargoOptionChips = Array.from(document.querySelectorAll('.cargo-option-chip[data-cargo-option]'));
   const qLoadRandom = document.getElementById('quoteLoadRandom');
   const qRefresh = document.getElementById('quoteRefresh');
+  const qCalculate = document.getElementById('quoteCalculate');
+  const qStaleHint = document.getElementById('quoteStaleHint');
   const qDiscount = document.getElementById('quoteDiscount');
   const qDiscountApply = document.getElementById('quoteDiscountApply');
   const qDiscountStatus = document.getElementById('quoteDiscountStatus');
@@ -2466,7 +2471,7 @@ window.initZonesMap = function initZonesMap(){
               if (label) inputEl.value = label;
               setInputLocationData(inputEl, loc, label);
               updateAddressMarkers();
-              autoEstimateIfReady();
+              if (isStopInputEl(inputEl)) markStopsDirty(); else autoEstimateIfReady();
               updateDeliverySummary();
             }
           } catch(_) {}
@@ -2538,14 +2543,59 @@ window.initZonesMap = function initZonesMap(){
       });
     } catch(_) {}
   }
-  function handleStopListChange(){
+  // Stops (unlike pickup/dropoff) shouldn't trigger a full recompute on every
+  // edit — adding several stops or dragging them into order used to fire a
+  // fresh price calculation (and, the first time, an auto-scroll to the
+  // price) after EACH change, which was both a jarring UX and, under heavy
+  // reordering, a source of overlapping geocode/estimate calls that could
+  // leave no price computed at all. Editing the stops list now just marks
+  // the last price as stale; the rider/customer confirms with Calculate.
+  function isStopInputEl(el){
+    return !!(el && el.classList && el.classList.contains('quote-stop'));
+  }
+  function showStaleHint(){
+    try { if (qStaleHint) qStaleHint.classList.remove('is-hidden'); } catch(_) {}
+  }
+  function hideStaleHint(){
+    try { if (qStaleHint) qStaleHint.classList.add('is-hidden'); } catch(_) {}
+  }
+  function markStopsDirty(){
     try {
       normalizeStopOrder();
       updateAddressMarkers();
       updateSubmitVisibility();
       updateDeliverySummary();
-      autoEstimateIfReady({ source: 'address', immediate: true });
+      invalidateEstimate();
+      showStaleHint();
     } catch(_) {}
+  }
+  // Shared lock toggle button, added to every intermediate stop row (never
+  // pickup/dropoff, which are always fixed as the first/last waypoint
+  // anyway). A locked stop keeps its exact position when Optimize reorders
+  // the rest — see doOptimizeStops.
+  function createStopLockToggle(){
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'stop-lock';
+    const lockTitle = i18n('quoteLockStopTitle') || "Lock position (Optimize won't move this stop)";
+    btn.title = lockTitle;
+    btn.setAttribute('aria-label', lockTitle);
+    btn.innerHTML = '🔓';
+    btn.addEventListener('click', function(){
+      const wrapper = btn.closest('.quote-stop-item');
+      if (!wrapper) return;
+      const locked = wrapper.classList.toggle('is-locked');
+      wrapper.dataset.locked = locked ? '1' : '0';
+      btn.classList.toggle('is-active', locked);
+      btn.innerHTML = locked ? '🔒' : '🔓';
+      const t = locked ? (i18n('quoteUnlockStopTitle') || 'Unlock position') : lockTitle;
+      btn.title = t;
+      btn.setAttribute('aria-label', t);
+    });
+    return btn;
+  }
+  function handleStopListChange(){
+    markStopsDirty();
   }
   // Create a stop item and return its input element
   function createStopItem(){
@@ -2580,8 +2630,15 @@ window.initZonesMap = function initZonesMap(){
     });
     if (h) w.appendChild(h);
     w.appendChild(i);
+    w.appendChild(createStopLockToggle());
     w.appendChild(del);
-    qStopsWrap.appendChild(w);
+    // Insert before the dropoff wrapper, not at the very end — appending
+    // blindly would push this new stop AFTER dropoff, silently turning the
+    // real dropoff into an intermediate stop and making this new (often
+    // still-empty) row the de-facto endpoint.
+    const dropWrapForNewStop = qStopsWrap.querySelector('[data-role="drop"]');
+    if (dropWrapForNewStop) qStopsWrap.insertBefore(w, dropWrapForNewStop);
+    else qStopsWrap.appendChild(w);
     attachAutocomplete(i);
     attachStopDragHandlers(w);
     attachAddressInputHandlers(i);
@@ -2778,6 +2835,7 @@ window.initZonesMap = function initZonesMap(){
       if (qRate) qRate.textContent = '';
       window._lastQuoteContext = null;
       resetGuidedFlowState(true);
+      hideStaleHint();
       if (qDeliverySummary) {
         qDeliverySummary.classList.add('is-hidden');
         qDeliverySummary.innerHTML = '';
@@ -2818,6 +2876,7 @@ window.initZonesMap = function initZonesMap(){
       }
       // Clear outputs and overlays
       if (qOut) qOut.textContent = '';
+      hideStaleHint();
       const summaryEl = document.getElementById('pricingUiSummary');
       const breakdownEl = document.getElementById('pricingUiBreakdown');
       if (summaryEl) summaryEl.textContent = '';
@@ -2846,6 +2905,14 @@ window.initZonesMap = function initZonesMap(){
   }
   if (qLoadRandom) qLoadRandom.addEventListener('click', () => { loadRandomScenario(); });
   if (qRefresh) qRefresh.addEventListener('click', () => { resetEstimator(); });
+  // Explicit "take the current stops as they are and price the route" action —
+  // the counterpart to stop edits no longer auto-calculating (see
+  // markStopsDirty). highlightErrors:true so a genuinely missing/invalid
+  // field gets flagged now that the user has asked for a real calculation.
+  if (qCalculate) qCalculate.addEventListener('click', () => {
+    hideStaleHint();
+    autoEstimateIfReady({ source: 'address', immediate: true, highlightErrors: true });
+  });
   // Distance helper (km)
   function haversineKm(a, b){
     try {
@@ -2867,8 +2934,82 @@ window.initZonesMap = function initZonesMap(){
       return R * c;
     } catch(_) { return 0; }
   }
-  // Optimize stops order for cheapest route (distance-based)
+  // Optimize stops order for the shortest route (distance-based). A stop
+  // marked "locked" (via its 🔒 toggle) is never moved — the route is
+  // instead solved independently on each side of it, so locked stops act as
+  // fixed waypoints the optimizer routes around rather than through.
+  // Deliberately does NOT recalculate the price itself afterwards (see
+  // markStopsDirty) — reordering and pricing are two separate, explicit
+  // steps (Optimize, then Calculate).
+  function tspMetrics(anchorStart, anchorEnd, order){
+    const detour = 1.25;
+    let prev = anchorStart; let meters = 0;
+    for (let i = 0; i < order.length; i++){
+      meters += haversineKm(prev, order[i].loc) * detour * 1000;
+      prev = order[i].loc;
+    }
+    meters += haversineKm(prev, anchorEnd) * detour * 1000;
+    return meters;
+  }
+  function tspPermute(arr){
+    const res = [];
+    function backtrack(path, used){
+      if (path.length === arr.length) { res.push(path.slice()); return; }
+      for (let i = 0; i < arr.length; i++){
+        if (used[i]) continue;
+        used[i] = true; path.push(arr[i]);
+        backtrack(path, used);
+        path.pop(); used[i] = false;
+      }
+    }
+    backtrack([], Array(arr.length).fill(false));
+    return res;
+  }
+  const TSP_MAX_BRUTE = 7;
+  // Solves one segment (the free/unlocked stops between two fixed anchor
+  // points) for the shortest order: exact brute-force for small segments,
+  // nearest-neighbor + 2-opt for larger ones — same approach either way,
+  // just scoped to a segment instead of the whole route.
+  function solveStopSegment(anchorStart, anchorEnd, items){
+    if (items.length === 0) return [];
+    if (items.length === 1) return items;
+    if (items.length <= TSP_MAX_BRUTE) {
+      let best = null; let bestScore = Number.POSITIVE_INFINITY;
+      tspPermute(items).forEach(function(p){
+        const s = tspMetrics(anchorStart, anchorEnd, p);
+        if (s < bestScore) { bestScore = s; best = p; }
+      });
+      return best;
+    }
+    const remaining = items.slice();
+    const route = [];
+    let current = anchorStart;
+    while (remaining.length) {
+      let bestIdx = 0; let bestDist = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < remaining.length; i++){
+        const d = haversineKm(current, remaining[i].loc);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      const next = remaining.splice(bestIdx, 1)[0];
+      route.push(next);
+      current = next.loc;
+    }
+    let improved = true; let rBest = route; let sBest = tspMetrics(anchorStart, anchorEnd, rBest);
+    while (improved){
+      improved = false;
+      for (let i = 0; i < rBest.length - 1; i++){
+        for (let j = i+1; j < rBest.length; j++){
+          const cand = rBest.slice(0, i).concat(rBest.slice(i, j+1).reverse()).concat(rBest.slice(j+1));
+          const s = tspMetrics(anchorStart, anchorEnd, cand);
+          if (s < sBest) { rBest = cand; sBest = s; improved = true; }
+        }
+      }
+    }
+    return rBest;
+  }
   async function optimizeStopsOrder(){
+    const originalLabel = qOptimize ? qOptimize.innerHTML : null;
+    if (qOptimize) { qOptimize.disabled = true; qOptimize.innerHTML = '⏳ ' + (i18n('quoteOptimize') || 'Optimize route'); }
     try {
       const pickupEl = document.getElementById('quotePickup');
       const dropEl = document.getElementById('quoteDropoff');
@@ -2876,89 +3017,70 @@ window.initZonesMap = function initZonesMap(){
       const dropQ = (dropEl && dropEl.value || '').trim();
       const pickupLoc = pickupEl ? (getLocationForInput(pickupEl) || await geocodeOne(pickupQ)) : null;
       const dropLoc = dropEl ? (getLocationForInput(dropEl) || await geocodeOne(dropQ)) : null;
-      if (!pickupLoc || !dropLoc) return;
+      if (!pickupLoc || !dropLoc) {
+        setQuoteResultWithDebug(i18n('quoteOptimizeNeedPickup') || 'Enter a pickup address first.', 'Optimize: missing pickup/dropoff location');
+        if (qOut) qOut.classList.remove('is-hidden');
+        return;
+      }
       const stopItems = qStopsWrap ? Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).filter(w => ((w && w.dataset && w.dataset.role) || 'stop') === 'stop') : [];
-      const stops = [];
+      // Resolve every stop's location (geocoding any that aren't cached yet)
+      // while keeping current DOM order — empty rows are left untouched in
+      // place, they carry no address to route by.
+      const resolved = [];
       for (let i = 0; i < stopItems.length; i++){
-        const el = stopItems[i].querySelector && stopItems[i].querySelector('.quote-stop');
+        const w = stopItems[i];
+        const el = w.querySelector && w.querySelector('.quote-stop');
         const val = (el && el.value || '').trim();
         if (!val) continue;
         const loc = getLocationForInput(el) || await geocodeOne(val);
-        if (loc) stops.push({ w: stopItems[i], el, loc });
+        if (!loc) continue;
+        resolved.push({ w, el, loc, locked: w.classList.contains('is-locked') });
       }
-      if (stops.length <= 1) return;
-      function metrics(order){
-        const detour = 1.25;
-        let prev = pickupLoc; let meters = 0;
-        for (let i = 0; i < order.length; i++){
-          const km = haversineKm(prev, order[i].loc) * detour;
-          meters += km * 1000;
-          prev = order[i].loc;
-        }
-        const kmLast = haversineKm(prev, dropLoc) * detour;
-        meters += kmLast * 1000;
-        return meters;
+      if (resolved.length <= 1) {
+        setQuoteResultWithDebug(i18n('quoteOptimizeNeedMore') || 'Add at least two stops to optimize.', 'Optimize: not enough resolved stops');
+        if (qOut) qOut.classList.remove('is-hidden');
+        return;
       }
-      function permute(arr){
-        const res = [];
-        function backtrack(path, used){
-          if (path.length === arr.length) { res.push(path.slice()); return; }
-          for (let i = 0; i < arr.length; i++){
-            if (used[i]) continue;
-            used[i] = true; path.push(arr[i]);
-            backtrack(path, used);
-            path.pop(); used[i] = false;
-          }
+
+      // Split into segments between fixed anchors (pickup, each locked stop
+      // in turn, dropoff) and solve each segment's free stops independently
+      // — a locked stop always keeps its exact place in the sequence.
+      const segments = [];
+      const lockedItems = [];
+      let anchor = pickupLoc;
+      let free = [];
+      resolved.forEach(function(item){
+        if (item.locked) {
+          segments.push({ anchorStart: anchor, anchorEnd: item.loc, free: free });
+          lockedItems.push(item);
+          anchor = item.loc;
+          free = [];
+        } else {
+          free.push(item);
         }
-        backtrack([], Array(arr.length).fill(false));
-        return res;
-      }
-      let best = null; let bestScore = Number.POSITIVE_INFINITY;
-      const MAX_BRUTE = 7;
-      if (stops.length <= MAX_BRUTE) {
-        const perms = permute(stops);
-        for (let p = 0; p < perms.length; p++){
-          const s = metrics(perms[p]);
-          if (s < bestScore) { bestScore = s; best = perms[p]; }
-        }
-      } else {
-        // Heuristic: nearest-neighbor then 2-opt
-        const remaining = stops.slice();
-        const route = [];
-        let current = pickupLoc;
-        while (remaining.length) {
-          let bestIdx = 0; let bestDist = Number.POSITIVE_INFINITY;
-          for (let i = 0; i < remaining.length; i++){
-            const d = haversineKm(current, remaining[i].loc);
-            if (d < bestDist) { bestDist = d; bestIdx = i; }
-          }
-          const next = remaining.splice(bestIdx, 1)[0];
-          route.push(next);
-          current = next.loc;
-        }
-        // 2-opt improvement
-        let improved = true; let rBest = route; let sBest = metrics(rBest);
-        while (improved){
-          improved = false;
-          for (let i = 0; i < rBest.length - 1; i++){
-            for (let j = i+1; j < rBest.length; j++){
-              const cand = rBest.slice(0, i).concat(rBest.slice(i, j+1).reverse()).concat(rBest.slice(j+1));
-              const s = metrics(cand);
-              if (s < sBest) { rBest = cand; sBest = s; improved = true; }
-            }
-          }
-        }
-        best = rBest;
-      }
-      if (!best || !best.length) return;
-      // Reorder DOM: insert each best stop before drop wrapper
+      });
+      segments.push({ anchorStart: anchor, anchorEnd: dropLoc, free: free });
+
+      const finalOrder = [];
+      segments.forEach(function(seg, i){
+        finalOrder.push.apply(finalOrder, solveStopSegment(seg.anchorStart, seg.anchorEnd, seg.free));
+        if (i < segments.length - 1) finalOrder.push(lockedItems[i]);
+      });
+      if (!finalOrder.length) return;
+
+      // Reorder DOM: insert each stop, in solved order, right before the
+      // dropoff wrapper (pickup's wrapper is never touched, so it stays put).
       const dropWrap = qStopsWrap.querySelector('[data-role="drop"]') || null;
-      for (let k = 0; k < best.length; k++){
-        const src = best[k].w;
-        if (src && dropWrap) qStopsWrap.insertBefore(src, dropWrap);
-      }
-      try { if (typeof runEstimate === 'function') await runEstimate(); } catch(_){ }
-    } catch(_){ }
+      finalOrder.forEach(function(item){
+        if (item && item.w && dropWrap) qStopsWrap.insertBefore(item.w, dropWrap);
+      });
+      markStopsDirty();
+      const lockedNote = lockedItems.length ? (' (' + lockedItems.length + ' locked in place)') : '';
+      setQuoteResultWithDebug((i18n('quoteOptimizeDone') || 'Stops reordered for the shortest route. Tap Calculate to see the price.') + lockedNote, 'Optimize: ' + resolved.length + ' stops, ' + lockedItems.length + ' locked');
+      if (qOut) qOut.classList.remove('is-hidden');
+    } catch(_){ } finally {
+      if (qOptimize) { qOptimize.disabled = false; qOptimize.innerHTML = originalLabel; }
+    }
   }
   if (qOptimize) { qOptimize.addEventListener('click', optimizeStopsOrder); }
   function getStopAfter(container, y){
@@ -2984,9 +3106,8 @@ window.initZonesMap = function initZonesMap(){
       } catch(_){}
     });
     qStopsWrap.addEventListener('drop', async function(){
-      try { normalizeStopOrder(); } catch(_) {}
-      // Recompute after reorder
-      autoEstimateIfReady({ source: 'address', immediate: true });
+      // Reordering just marks the price stale — see markStopsDirty's comment.
+      markStopsDirty();
     });
   }
   function getLocationForInput(inputEl){
@@ -3203,6 +3324,7 @@ window.initZonesMap = function initZonesMap(){
       i.placeholder = ph;
       i.setAttribute('aria-label', ph);
       i.className = 'quote-stop';
+      const lockBtn = createStopLockToggle();
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'stop-delete';
@@ -3213,13 +3335,19 @@ window.initZonesMap = function initZonesMap(){
         try {
           clearAddressMarker(i);
           w.remove();
-          autoEstimateIfReady({ source: 'address', immediate: true });
+          markStopsDirty();
         } catch(_) {}
       });
       if (h) w.appendChild(h);
       w.appendChild(i);
+      w.appendChild(lockBtn);
       w.appendChild(del);
-      qStopsWrap.appendChild(w);
+      // Same reasoning as createStopItem: insert before dropoff, never after —
+      // appending to the end would silently demote the real dropoff to an
+      // intermediate stop and make this new row the de-facto endpoint.
+      const dropWrapForNewStop = qStopsWrap.querySelector('[data-role="drop"]');
+      if (dropWrapForNewStop) qStopsWrap.insertBefore(w, dropWrapForNewStop);
+      else qStopsWrap.appendChild(w);
       attachAutocomplete(i);
       attachStopDragHandlers(w);
       attachAddressInputHandlers(i);
@@ -3251,10 +3379,16 @@ window.initZonesMap = function initZonesMap(){
               try {
                 clearAddressMarker(i);
                 i.parentElement.remove();
-                autoEstimateIfReady({ source: 'address', immediate: true });
+                markStopsDirty();
               } catch(_) {}
             });
             i.parentElement.appendChild(del);
+          }
+          if (!i.parentElement.querySelector('.stop-lock')) {
+            const lockBtn = createStopLockToggle();
+            const existingDel = i.parentElement.querySelector('.stop-delete');
+            if (existingDel) i.parentElement.insertBefore(lockBtn, existingDel);
+            else i.parentElement.appendChild(lockBtn);
           }
           if (!i.parentElement.dataset.role) i.parentElement.dataset.role = 'stop';
           attachStopDragHandlers(i.parentElement);
@@ -3272,6 +3406,7 @@ window.initZonesMap = function initZonesMap(){
           i.parentElement ? i.parentElement.insertBefore(w, i) : qStopsWrap.appendChild(w);
           if (h) w.appendChild(h);
           w.appendChild(i);
+          w.appendChild(createStopLockToggle());
           const del = document.createElement('button');
           del.type = 'button';
           del.className = 'stop-delete';
@@ -3282,7 +3417,7 @@ window.initZonesMap = function initZonesMap(){
             try {
               clearAddressMarker(i);
               w.remove();
-              autoEstimateIfReady({ source: 'address', immediate: true });
+              markStopsDirty();
             } catch(_) {}
           });
           w.appendChild(del);
@@ -3925,6 +4060,7 @@ window.initZonesMap = function initZonesMap(){
       const eurPerHourHeadline = i18n('quoteEurPerHourHeadline', { currency: cur, rate: eurPerHour.toFixed(2) }) || ('EUR/h: ' + cur + eurPerHour.toFixed(2));
       if (qRate) { qRate.textContent = ''; qRate.classList.add('is-hidden'); }
       if (qOut) { qOut.textContent = ''; qOut.classList.add('is-hidden'); }
+      hideStaleHint();
       const zonePath = [pickupZoneNum].concat(stopZoneNums).concat([dropZoneNum]);
       const trace = buildQuoteTrace({
         cur,
