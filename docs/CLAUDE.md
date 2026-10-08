@@ -294,6 +294,27 @@ If the user ends abruptly, Claude Code still writes the log entry from what was 
 
 ---
 
+**Date:** 2026-10-08
+**Phase / task:** Legacy stack fixes/features — account billing, rider app reliability, dispatcher fixes
+**Files touched:** `account.html`, `admin/dispatcher.html`, `js/js/dispatcher-admin.js`, `admin/rider.html`, `admin/create-rider.html`, `apps-script/Code.gs`
+**Completed:**
+- Account panel: dates as ddmmyyyy; "Paid" and "Invoiced ddmmyyyy" tags under each order total; totals only count unpaid orders ("Total due"); "+N stops" counts only stops not already shown in Route and expands to just those; stop dropdown columns Notes/Status match the main table
+- Dispatcher: "Account orders" loader (all orders for one BIZ- token, remembered in browser for suggestions); per-card checkboxes + sticky bar with "Mark selected as paid/invoiced"; Invoiced filter and per-card Invoiced Yes/No; "Account" payment option on cards (quick save no longer flips account orders to Pending); account badge stays after Paid; rider dropdown fixed (riders now load with every order load); Assign button toast fixed
+- Backend: `adminUpdate` accepts `invoiced` (stored as `adminData.invoicedAt`, returned in order summary + accountOrders); `visionExtract` skips archiving when `deferLog`; new `riderLogScan` action archives scans in the background
+- Rider app: one request at start (riderGetOrders) instead of two; orders/rider name cached in localStorage and drawn instantly; open order + date restored after the phone reloads the tab; phone Back closes the order; in-page camera for sheet scans (no more camera-app tab kills) with gallery fallback; POD photos shrunk to 1600px before upload; geocoding 10 at a time; Leaflet deferred; highlighted Notes section (customer notes, dispatcher internal note, dispatcher quick notes) + "📝 Notes" flag on cards
+- create-rider.html: rider links now point to /admin/rider.html (was /rider.html → 404)
+**Tested:** Editor diagnostics only (no errors). Not tested in a browser or on a phone yet.
+**Next step:**
+1. Paste `apps-script/Code.gs` into Apps Script and deploy a new version (needed for "invoiced" and faster scans)
+2. Test on a phone: sheet scan with in-page camera, reload/back behaviour, POD upload, Notes section
+3. Test dispatcher: Load account → select → mark invoiced/paid → check account panel tags and totals
+**Notes / decisions:**
+- Scan model left as claude-sonnet-4-6; switching to a faster model would cut scan time but may reduce accuracy on messy sheets — Julian to decide
+- Rider page "Delete" button still calls an `op: 'delete'` the backend doesn't have (Revoke works)
+- `docs/ACCOUNTS_OPERATOR_GUIDE.md` Part 10 still says mark paid/invoiced isn't tracked — now outdated
+
+---
+
 **Date:** 2026-06-10
 **Phase / task:** Accounts MVP — Steps 5-9 (backend complete)
 **Files touched:** `apps-script/Code.gs`, `css/effects/layout.css`, `index.html`
