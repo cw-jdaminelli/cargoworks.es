@@ -14,9 +14,21 @@
     'Canceled',
     'Delivery rejected'
   ];
-  const PAYMENT_STATUS_VALUES = ['Pending', 'Paid', 'Failed'];
+  // 'Account' = business-account order not yet paid. It must be selectable on
+  // the card, otherwise a quick save silently flips account orders to 'Pending'.
+  const PAYMENT_STATUS_VALUES = ['Pending', 'Paid', 'Failed', 'Account'];
+  const knownAccountsKey = 'cwDispatcherKnownAccounts';
 
   let _ridersCache = []; // { id, name, active }
+  let _ridersLoadedAt = 0;
+
+  // Fetched alongside every order load (see fetchOrders) so each card's
+  // "Assign rider" list is already filled when the card is drawn, and newly
+  // created riders show up within a few minutes without reloading the page.
+  function ensureRidersCache() {
+    if (_ridersCache.length && Date.now() - _ridersLoadedAt < 5 * 60 * 1000) return Promise.resolve();
+    return loadRidersCache();
+  }
 
   async function loadRidersCache() {
     const token = currentToken();
@@ -29,7 +41,10 @@
         body: 'payload=' + encodeURIComponent(payload)
       });
       const json = await res.json();
-      if (json.riders) _ridersCache = json.riders.filter(function(r){ return r.active !== false; });
+      if (json.riders) {
+        _ridersCache = json.riders.filter(function(r){ return r.active !== false; });
+        _ridersLoadedAt = Date.now();
+      }
     } catch(_) {}
   }
 
@@ -47,6 +62,10 @@
   const searchBtn = document.getElementById('dispatcherSearchButton');
   const logSheetBtn = document.getElementById('dispatcherLogSheet');
   const newOrderBtn = document.getElementById('dispatcherNewOrder');
+  const accountInput = document.getElementById('dispatcherAccountInput');
+  const accountList = document.getElementById('dispatcherAccountList');
+  const loadAccountBtn = document.getElementById('dispatcherLoadAccount');
+  const filterInvoiced = document.getElementById('dispatcherFilterInvoiced');
 
   const keywordInput = document.getElementById('dispatcherKeyword');
   const filterStatus = document.getElementById('dispatcherFilterStatus');
@@ -210,7 +229,12 @@
   let loadMode = 'none';
   let loadLabel = '';
   let lastReference = '';
+  let lastAccount = '';
   let filterTimer = null;
+  // Orders ticked on their card checkbox (by eventId), for the bulk actions bar.
+  const selectedEventIds = new Set();
+  let bulkBusy = false;
+  let bulkEls = null;
   let editorState = {
     open: false,
     mode: 'edit',
@@ -464,8 +488,10 @@
   }
 
   async function fetchOrders(params){
+    const ridersReady = ensureRidersCache(); // in parallel with the orders request
     const payload = Object.assign({ action: 'adminList' }, params || {});
     const json = await postAdmin(payload);
+    await ridersReady;
     return Array.isArray(json.orders) ? json.orders : [];
   }
 
@@ -570,6 +596,7 @@
     const status = normalizeText(filterStatus && filterStatus.value);
     const updates = normalizeText(filterUpdates && filterUpdates.value);
     const payment = normalizeText(filterPayment && filterPayment.value);
+    const invoicedFilter = normalizeText(filterInvoiced && filterInvoiced.value);
     const fromDateRaw = normalizeText(filterFromDate && filterFromDate.value);
     const toDateRaw = normalizeText(filterToDate && filterToDate.value);
     const fromDate = normalizeDateKey(fromDateRaw);
@@ -580,6 +607,8 @@
       if (status && normalizeText(order.status) !== status) return false;
       if (updates && normalizeText(order.updatesPreference) !== updates) return false;
       if (payment && normalizeText(order.paymentStatus) !== payment) return false;
+      if (invoicedFilter === 'yes' && !normalizeText(order.invoicedAt)) return false;
+      if (invoicedFilter === 'no' && normalizeText(order.invoicedAt)) return false;
       const dateKey = orderDateKey(order);
       if (fromDate && dateKey && dateKey < fromDate) return false;
       if (toDate && dateKey && dateKey > toDate) return false;
@@ -621,6 +650,49 @@
     const updates = Array.from(new Set(allOrders.map(function(order){ return normalizeText(order && order.updatesPreference); }).filter(Boolean))).sort();
     setSelectOptions(filterStatus, statuses, 'Any status');
     setSelectOptions(filterUpdates, updates, 'Any updates');
+    rememberAccounts(allOrders);
+  }
+
+  // Business accounts seen in any loaded orders are remembered in this
+  // browser, so the "Account orders" box can suggest them next time.
+  function loadKnownAccounts(){
+    try {
+      const list = JSON.parse(localStorage.getItem(knownAccountsKey) || '[]');
+      return Array.isArray(list) ? list : [];
+    } catch(_) { return []; }
+  }
+
+  function renderAccountOptions(list){
+    if (!accountList) return;
+    accountList.innerHTML = '';
+    list.slice().sort(function(a, b){ return compareByString(a.token, b.token); }).forEach(function(acct){
+      const opt = document.createElement('option');
+      opt.value = acct.token;
+      if (acct.name) opt.label = acct.name;
+      accountList.appendChild(opt);
+    });
+  }
+
+  function rememberAccounts(orders){
+    const known = loadKnownAccounts();
+    let changed = false;
+    (orders || []).forEach(function(order){
+      const token = normalizeText(order && order.accountToken).toUpperCase();
+      if (!token) return;
+      const name = normalizeText(order.accountName);
+      const existing = known.find(function(a){ return a.token === token; });
+      if (!existing) {
+        known.push({ token: token, name: name });
+        changed = true;
+      } else if (name && existing.name !== name) {
+        existing.name = name;
+        changed = true;
+      }
+    });
+    if (changed) {
+      try { localStorage.setItem(knownAccountsKey, JSON.stringify(known)); } catch(_) {}
+    }
+    renderAccountOptions(known);
   }
 
   function statusChip(text, className){
@@ -735,9 +807,17 @@
         ? 'from all loaded orders'
         : (loadMode === 'reference' || loadMode === 'reference-fallback'
           ? ('for reference ' + (loadLabel || 'search'))
-          : ''));
+          : (loadMode === 'account' ? ('for account ' + loadLabel) : '')));
 
-    setSummary('Showing ' + visible.length + ' of ' + allOrders.length + ' order(s)' + (scope ? (' ' + scope) : '') + '.');
+    let summary = 'Showing ' + visible.length + ' of ' + allOrders.length + ' order(s)' + (scope ? (' ' + scope) : '') + '.';
+    if (loadMode === 'account') {
+      // Same rule as the client's account panel: everything not marked Paid is still due.
+      const unpaid = visible.filter(function(order){ return normalizeText(order.paymentStatus) !== 'Paid'; });
+      const due = unpaid.reduce(function(sum, order){ return sum + safeNumber(order.quote && order.quote.total, 0); }, 0);
+      const notInvoiced = visible.filter(function(order){ return !normalizeText(order.invoicedAt); }).length;
+      summary += ' Unpaid: ' + unpaid.length + ' order(s), EUR ' + money(due) + ' + IVA. Not invoiced: ' + notInvoiced + '.';
+    }
+    setSummary(summary);
   }
 
   function upsertOrderInState(order, prepend){
@@ -767,6 +847,10 @@
       if (lastReference) {
         await loadByReference(lastReference, true);
       }
+      return;
+    }
+    if (loadMode === 'account' && lastAccount) {
+      await loadAccount(lastAccount, true);
     }
   }
 
@@ -859,6 +943,156 @@
     }
   }
 
+  // Loads every order placed on one business account (respecting the From/To
+  // dates if set), so they can all be managed on one screen.
+  async function loadAccount(token, quiet){
+    const cleanToken = normalizeText(token).toUpperCase();
+    if (!cleanToken) {
+      setStatus('Enter an account token (e.g. BIZ-NAME).', true);
+      return;
+    }
+    const fromRaw = normalizeText(filterFromDate && filterFromDate.value);
+    const toRaw = normalizeText(filterToDate && filterToDate.value);
+    const from = normalizeDateKey(fromRaw);
+    const to = normalizeDateKey(toRaw);
+    if ((fromRaw && !from) || (toRaw && !to)) {
+      setStatus('Choose valid From/To dates.', true);
+      return;
+    }
+
+    try {
+      if (!quiet) setStatus('Loading account orders...');
+      const orders = await fetchOrders({ scope: 'all', from: from, to: to });
+      rememberAccounts(orders);
+      allOrders = orders.filter(function(order){
+        return normalizeText(order && order.accountToken).toUpperCase() === cleanToken;
+      });
+      loadMode = 'account';
+      lastAccount = cleanToken;
+      const named = allOrders.find(function(order){ return normalizeText(order.accountName); });
+      loadLabel = named ? (normalizeText(named.accountName) + ' (' + cleanToken + ')') : cleanToken;
+      if (accountInput) accountInput.value = cleanToken;
+      refreshFilterOptions();
+      applyFilters();
+      if (!quiet) setStatus(allOrders.length ? ('Loaded ' + allOrders.length + ' order(s) for ' + cleanToken + '.') : ('No orders found for ' + cleanToken + '.'));
+    } catch (err) {
+      allOrders = [];
+      renderOrders([]);
+      setSummary('No data yet.');
+      setStatus(err && err.message ? err.message : 'Could not load account orders.', true);
+    }
+  }
+
+  // Marks every ticked order as paid (kind 'paid') or invoiced (kind 'invoiced').
+  // One request per order, sent one after another to stay within Apps Script
+  // limits. Orders that fail stay ticked so the action can simply be retried.
+  async function updateSelectedOrders(kind){
+    const isPaid = kind === 'paid';
+    const verb = isPaid ? 'paid' : 'invoiced';
+    const selected = allOrders.filter(function(order){ return selectedEventIds.has(order.eventId); });
+    if (!selected.length) {
+      setStatus('Tick at least one order first.', true);
+      return;
+    }
+    const targets = selected.filter(function(order){
+      return isPaid ? normalizeText(order.paymentStatus) !== 'Paid' : !normalizeText(order.invoicedAt);
+    });
+    if (!targets.length) {
+      setStatus('The selected orders are already ' + verb + '.');
+      return;
+    }
+    const skipped = selected.length - targets.length;
+    if (!window.confirm('Mark ' + targets.length + ' order(s) as ' + verb + '?' + (skipped ? (' ' + skipped + ' already ' + verb + ' will be skipped.') : ''))) return;
+
+    bulkBusy = true;
+    updateBulkBar();
+    let done = 0;
+    let failed = 0;
+    for (const order of targets) {
+      setStatus('Marking as ' + verb + ' ' + (done + failed + 1) + '/' + targets.length + '...');
+      const changes = isPaid ? { paymentStatus: 'Paid' } : { invoiced: true };
+      try {
+        await postAdmin(Object.assign({ action: 'adminUpdate', eventId: order.eventId, operator: currentOperator() }, changes));
+        selectedEventIds.delete(order.eventId);
+        done++;
+      } catch (_) {
+        failed++;
+      }
+    }
+    // Already-done orders that were skipped don't need to stay ticked either.
+    selected.forEach(function(order){ if (targets.indexOf(order) < 0) selectedEventIds.delete(order.eventId); });
+    bulkBusy = false;
+    await refreshCurrentLoad();
+    updateBulkBar();
+    setStatus(failed
+      ? ('Marked ' + done + ' as ' + verb + ', ' + failed + ' failed (still ticked, try again).')
+      : ('Marked ' + done + ' order(s) as ' + verb + '.'), failed > 0);
+  }
+
+  function updateBulkBar(){
+    if (!bulkEls) return;
+    const count = selectedEventIds.size;
+    bulkEls.count.textContent = count + ' selected';
+    bulkEls.allBox.checked = count > 0 && count === bulkEls.total;
+    bulkEls.allBox.indeterminate = count > 0 && count < bulkEls.total;
+    bulkEls.paidBtn.disabled = bulkBusy || !count;
+    bulkEls.invoicedBtn.disabled = bulkBusy || !count;
+  }
+
+  // Sticky bar under the order list: select all + the bulk actions.
+  function buildBulkBar(orders){
+    const bar = document.createElement('div');
+    bar.className = 'dispatcher-bulk-bar';
+
+    const selectable = orders.filter(function(order){ return order.eventId; });
+    const allLabel = document.createElement('label');
+    const allBox = document.createElement('input');
+    allBox.type = 'checkbox';
+    allBox.className = 'dispatcher-select';
+    allBox.addEventListener('change', function(){
+      selectable.forEach(function(order){
+        if (allBox.checked) selectedEventIds.add(order.eventId);
+        else selectedEventIds.delete(order.eventId);
+      });
+      ordersWrap.querySelectorAll('.dispatcher-card .dispatcher-select').forEach(function(box){
+        box.checked = allBox.checked;
+        box.closest('.dispatcher-card').classList.toggle('is-selected', allBox.checked);
+      });
+      updateBulkBar();
+    });
+    allLabel.appendChild(allBox);
+    allLabel.appendChild(document.createTextNode('Select all shown (' + selectable.length + ')'));
+
+    const count = document.createElement('span');
+    count.className = 'dispatcher-bulk-count';
+
+    const paidBtn = document.createElement('button');
+    paidBtn.type = 'button';
+    paidBtn.className = 'btn';
+    paidBtn.textContent = 'Mark selected as paid';
+    paidBtn.addEventListener('click', function(){ updateSelectedOrders('paid'); });
+
+    const invoicedBtn = document.createElement('button');
+    invoicedBtn.type = 'button';
+    invoicedBtn.className = 'btn btn--ghost';
+    invoicedBtn.textContent = 'Mark selected as invoiced';
+    invoicedBtn.addEventListener('click', function(){ updateSelectedOrders('invoiced'); });
+
+    bar.appendChild(allLabel);
+    bar.appendChild(count);
+    bar.appendChild(invoicedBtn);
+    bar.appendChild(paidBtn);
+    bulkEls = { allBox: allBox, count: count, paidBtn: paidBtn, invoicedBtn: invoicedBtn, total: selectable.length };
+    updateBulkBar();
+    return bar;
+  }
+
+  // ISO timestamp -> DDMMYYYY in local time.
+  function formatIsoForUi(iso){
+    const d = new Date(normalizeText(iso));
+    return Number.isNaN(d.getTime()) ? '' : formatDateForUi(formatDateKey(d));
+  }
+
   async function openLogSheet(){
     try {
       setStatus('Loading log sheet...');
@@ -877,6 +1111,7 @@
     if (filterStatus) filterStatus.value = '';
     if (filterUpdates) filterUpdates.value = '';
     if (filterPayment) filterPayment.value = '';
+    if (filterInvoiced) filterInvoiced.value = '';
     if (filterFromDate) filterFromDate.value = '';
     if (filterToDate) filterToDate.value = '';
     if (sortSelect) sortSelect.value = 'newest';
@@ -1330,6 +1565,8 @@
         eventId: order.eventId,
         status: normalizeText(controls.status && controls.status.value) || normalizeText(order.status),
         paymentStatus: normalizeText(controls.payment && controls.payment.value) || normalizeText(order.paymentStatus),
+        // Left undefined (so not sent) when the caller has no Invoiced control.
+        invoiced: controls.invoiced ? controls.invoiced.value === 'yes' : undefined,
         riderName: normalizeText(controls.riderName && controls.riderName.value),
         riderPhone: normalizeText(controls.riderPhone && controls.riderPhone.value),
         internalNotes: normalizeText(controls.internalNotes && controls.internalNotes.value),
@@ -1517,6 +1754,11 @@
     if (!ordersWrap) return;
     ordersWrap.innerHTML = '';
 
+    // Only orders on screen can stay ticked, so bulk actions never touch hidden orders.
+    const visibleIds = new Set(orders.map(function(order){ return order.eventId; }));
+    selectedEventIds.forEach(function(id){ if (!visibleIds.has(id)) selectedEventIds.delete(id); });
+    bulkEls = null;
+
     if (!orders.length) {
       const empty = document.createElement('div');
       empty.className = 'dispatcher-empty';
@@ -1536,6 +1778,21 @@
       titleWrap.className = 'dispatcher-card-title';
       const title = document.createElement('h3');
       title.textContent = (normalizeText(order.reference) || 'Order') + ' - ' + (normalizeText(order.status) || '');
+      if (order.eventId) {
+        const selectBox = document.createElement('input');
+        selectBox.type = 'checkbox';
+        selectBox.className = 'dispatcher-select';
+        selectBox.checked = selectedEventIds.has(order.eventId);
+        selectBox.setAttribute('aria-label', 'Select ' + (normalizeText(order.reference) || 'order'));
+        if (selectBox.checked) card.classList.add('is-selected');
+        selectBox.addEventListener('change', function(){
+          if (selectBox.checked) selectedEventIds.add(order.eventId);
+          else selectedEventIds.delete(order.eventId);
+          card.classList.toggle('is-selected', selectBox.checked);
+          updateBulkBar();
+        });
+        title.prepend(selectBox);
+      }
       titleWrap.appendChild(title);
 
       const sub = document.createElement('div');
@@ -1548,7 +1805,9 @@
       badges.className = 'dispatcher-badges';
       badges.appendChild(statusChip(normalizeText(order.status) || 'Unknown', normalizeText(order.status) === 'Canceled' ? 'is-danger' : ''));
       badges.appendChild(statusChip('Payment: ' + (normalizeText(order.paymentStatus) || '-'), normalizeText(order.paymentStatus) === 'Paid' ? 'is-ok' : ''));
-      if (normalizeText(order.paymentStatus) === 'Account') badges.appendChild(statusChip('Account: ' + (normalizeText(order.accountName) || normalizeText(order.accountToken) || 'Account'), 'is-account'));
+      // Keyed on the token (not payment status) so the badge stays after the order is marked Paid.
+      if (normalizeText(order.accountToken) || normalizeText(order.paymentStatus) === 'Account') badges.appendChild(statusChip('Account: ' + (normalizeText(order.accountName) || normalizeText(order.accountToken) || 'Account'), 'is-account'));
+      if (normalizeText(order.invoicedAt)) badges.appendChild(statusChip('Invoiced ' + formatIsoForUi(order.invoicedAt), 'is-invoiced'));
       if (normalizeText(order.riderName)) badges.appendChild(statusChip('Rider: ' + normalizeText(order.riderName)));
       if (order && order.isArchived) badges.appendChild(statusChip('Archived', 'is-danger'));
       top.appendChild(badges);
@@ -1617,6 +1876,15 @@
         quickPayment.appendChild(option);
       });
 
+      const quickInvoiced = document.createElement('select');
+      [['no', 'No'], ['yes', 'Yes']].forEach(function(pair){
+        const option = document.createElement('option');
+        option.value = pair[0];
+        option.textContent = pair[1];
+        if ((normalizeText(order.invoicedAt) ? 'yes' : 'no') === pair[0]) option.selected = true;
+        quickInvoiced.appendChild(option);
+      });
+
       const quickRiderName = document.createElement('input');
       quickRiderName.type = 'text';
       quickRiderName.value = normalizeText(order.riderName);
@@ -1662,6 +1930,22 @@
         if (r.name === normalizeText(order.riderName)) opt.selected = true;
         riderDropdown.appendChild(opt);
       });
+      // Rider assigned by a name that's not in the active list (revoked, or
+      // typed by hand) — show it rather than pretending the order is unassigned.
+      const currentRider = normalizeText(order.riderName);
+      if (currentRider && !_ridersCache.some(function(r){ return r.name === currentRider; })) {
+        const opt = document.createElement('option');
+        opt.value = currentRider;
+        opt.textContent = currentRider + ' (not in rider list)';
+        opt.selected = true;
+        riderDropdown.appendChild(opt);
+      }
+      if (!_ridersCache.length) {
+        const opt = document.createElement('option');
+        opt.disabled = true;
+        opt.textContent = 'Rider list did not load — reload the orders';
+        riderDropdown.appendChild(opt);
+      }
       riderDropdownWrap.appendChild(riderDropdownLabel);
       riderDropdownWrap.appendChild(riderDropdown);
       quick.appendChild(riderDropdownWrap);
@@ -1692,7 +1976,7 @@
           internalNotes: quickInternalNotes,
           note: quickNote
         }, false);
-        toast(name ? 'Assigned to ' + name : 'Rider unassigned');
+        showToast(name ? 'Assigned to ' + name : 'Rider unassigned');
       });
 
       const assignWrap = document.createElement('div');
@@ -1705,6 +1989,7 @@
 
       quickField('Status', 'span-2', quickStatus);
       quickField('Payment', 'span-2', quickPayment);
+      quickField('Invoiced', 'span-2', quickInvoiced);
       quickField('Rider name', 'span-2', quickRiderName);
       quickField('Rider phone', 'span-2', quickRiderPhone);
       quickField('Date', 'span-2', quickDate);
@@ -1755,6 +2040,7 @@
       const quickControls = {
         status: quickStatus,
         payment: quickPayment,
+        invoiced: quickInvoiced,
         riderName: quickRiderName,
         riderPhone: quickRiderPhone,
         date: quickDate,
@@ -1802,6 +2088,8 @@
 
       ordersWrap.appendChild(card);
     });
+
+    ordersWrap.appendChild(buildBulkBar(orders));
   }
 
   function handleGate(){
@@ -3157,12 +3445,22 @@
     }
   });
 
+  if (loadAccountBtn) loadAccountBtn.addEventListener('click', function(){
+    loadAccount(accountInput && accountInput.value, false);
+  });
+  if (accountInput) accountInput.addEventListener('keydown', function(e){
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loadAccount(accountInput.value, false);
+    }
+  });
+
   if (logSheetBtn) logSheetBtn.addEventListener('click', openLogSheet);
   if (newOrderBtn) newOrderBtn.addEventListener('click', handleNewOrder);
   if (applyFiltersBtn) applyFiltersBtn.addEventListener('click', applyFilters);
   if (clearFiltersBtn) clearFiltersBtn.addEventListener('click', clearFilters);
 
-  [keywordInput, filterStatus, filterUpdates, filterPayment, filterFromDate, filterToDate, sortSelect]
+  [keywordInput, filterStatus, filterUpdates, filterPayment, filterInvoiced, filterFromDate, filterToDate, sortSelect]
     .forEach(function(control){
       if (!control) return;
       const eventName = control.tagName === 'INPUT' ? 'input' : 'change';
@@ -3262,6 +3560,7 @@
     if (operatorInput) operatorInput.value = operator || 'dispatcher';
     const today = formatDateKey(new Date());
     if (dateInput) dateInput.value = today;
+    renderAccountOptions(loadKnownAccounts());
     setupImportPanel();
     setupStopsQuickAdd();
   })();

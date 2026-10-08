@@ -170,6 +170,29 @@
     .dispatcher-chip.is-danger { background: rgba(197, 61, 61, 0.12); color: #8d2525; border-color: rgba(197, 61, 61, 0.28); }
     .dispatcher-chip.is-ok { background: rgba(28, 138, 90, 0.12); color: #1b6f49; border-color: rgba(28, 138, 90, 0.25); }
     .dispatcher-chip.is-account { background: rgba(108, 63, 197, 0.12); color: #4a2a8c; border-color: rgba(108, 63, 197, 0.28); }
+    .dispatcher-chip.is-invoiced { background: rgba(26, 79, 174, 0.1); color: #1a4fae; border-color: rgba(26, 79, 174, 0.25); }
+
+    .dispatcher-select { width: 1rem; height: 1rem; margin: 0 0.45rem 0 0; vertical-align: -0.15em; cursor: pointer; accent-color: var(--dispatch-accent); }
+    .dispatcher-card.is-selected { border-color: var(--dispatch-accent); box-shadow: 0 0 0 2px rgba(240, 123, 57, 0.25), 0 10px 22px rgba(22, 35, 54, 0.08); }
+    .dispatcher-bulk-bar {
+      position: sticky;
+      bottom: 0.5rem;
+      z-index: 5;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.65rem;
+      background: #fff;
+      border: 1px solid var(--dispatch-border);
+      border-radius: 12px;
+      box-shadow: 0 10px 22px rgba(22, 35, 54, 0.16);
+      font-size: 0.8rem;
+    }
+    .dispatcher-bulk-bar label { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; cursor: pointer; }
+    .dispatcher-bulk-bar .dispatcher-select { margin: 0; }
+    .dispatcher-bulk-count { color: var(--dispatch-muted); margin-right: auto; }
+    .dispatcher-bulk-bar .btn { padding: 0.3rem 0.6rem; font-size: 0.74rem; }
 
     .dispatcher-meta {
       display: grid;
@@ -190,6 +213,8 @@
     }
     .dispatcher-inline-actions { display: flex; flex-wrap: wrap; gap: 0.24rem; }
     .dispatcher-inline-actions .btn { padding: 0.3rem 0.52rem; font-size: 0.72rem; }
+    .dispatcher-account-row { flex-wrap: nowrap; }
+    .dispatcher-account-row input { flex: 1 1 110px; width: auto; min-width: 0; }
 
     .dispatcher-pricing,
     .dispatcher-history,
@@ -555,6 +580,7 @@
             <option value="Pending">Pending</option>
             <option value="Paid">Paid</option>
             <option value="Failed">Failed</option>
+            <option value="Account">Account (unpaid)</option>
           </select>
         </div>
 
@@ -601,6 +627,22 @@
             <button id="dispatcherClearFilters" class="btn btn--ghost" type="button">Clear</button>
             <button id="dispatcherSearchButton" class="btn btn--ghost" type="button">Find</button>
           </div>
+        </div>
+        <div class="dispatcher-field span-4">
+          <label for="dispatcherAccountInput">Account orders</label>
+          <div class="dispatcher-inline-actions dispatcher-account-row">
+            <input id="dispatcherAccountInput" type="text" list="dispatcherAccountList" placeholder="BIZ-NAME" autocomplete="off" />
+            <button id="dispatcherLoadAccount" class="btn btn--ghost" type="button">Load account</button>
+          </div>
+          <datalist id="dispatcherAccountList"></datalist>
+        </div>
+        <div class="dispatcher-field span-2">
+          <label for="dispatcherFilterInvoiced">Invoiced</label>
+          <select id="dispatcherFilterInvoiced">
+            <option value="">Any</option>
+            <option value="yes">Invoiced</option>
+            <option value="no">Not invoiced</option>
+          </select>
         </div>
       </div>
       </div><!-- /.dispatcher-controls-wrap -->

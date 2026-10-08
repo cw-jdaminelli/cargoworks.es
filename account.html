@@ -41,6 +41,8 @@
     .acct-badge--canceled  { background: #fdecea; color: #8b0000; }
     .acct-badge--default   { background: #f0edf8; color: #6c3fc5; }
     .acct-badge--stops     { background: #f0edf8; color: #6c3fc5; font-size: 0.7rem; margin-left: 0.3rem; cursor: pointer; border: none; font-family: inherit; }
+    .acct-paid { display: block; margin-top: 0.2rem; width: fit-content; padding: 0.05rem 0.4rem; border-radius: 5px; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; background: #d0f0d8; color: #1a5c2a; }
+    .acct-paid--invoiced { background: #e8f0fd; color: #1a4fae; }
     .acct-stops-detail-row td { padding: 0.4rem 0.6rem 0.8rem; background: rgba(108, 63, 197, 0.03); }
     table.acct-stops-detail { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
     table.acct-stops-detail th { text-align: left; font-size: 0.68rem; text-transform: uppercase; color: var(--acct-muted); padding: 0.2rem 0.5rem; }
@@ -99,11 +101,11 @@
 
       <div id="acctTotals" class="acct-totals" style="display:none">
         <div class="acct-totals__row">
-          <span class="acct-totals__label">Total (<span id="acctOrderCount">0</span> orders)</span>
+          <span class="acct-totals__label">Total due (<span id="acctOrderCount">0</span> unpaid orders)</span>
           <span class="acct-totals__value" id="acctTotalNet"></span>
         </div>
         <div class="acct-totals__row acct-totals__row--iva">
-          <span class="acct-totals__label">Total + IVA (21%)</span>
+          <span class="acct-totals__label">Total due + IVA (21%)</span>
           <span class="acct-totals__value" id="acctTotalIva"></span>
         </div>
       </div>
@@ -178,17 +180,41 @@
       return 'acct-badge--default';
     }
 
+    // Stops between pickup and final dropoff — the Route column already shows
+    // the first and last address, so these are the only ones not visible.
+    function extraStops(o) {
+      var all = o.stopsDetail || [];
+      return all.length > 2 ? all.slice(1, -1) : [];
+    }
+
+    function isPaid(o) {
+      return String(o.paymentStatus || '').toLowerCase() === 'paid';
+    }
+
+    // YYYY-MM-DD -> DDMMYYYY (same format as the dispatcher).
+    function formatDate(value) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+      return m ? m[3] + m[2] + m[1] : String(value || '');
+    }
+
+    // ISO timestamp -> DDMMYYYY in the viewer's local time.
+    function formatIsoDate(iso) {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      function pad(n) { return (n < 10 ? '0' : '') + n; }
+      return pad(d.getDate()) + pad(d.getMonth() + 1) + d.getFullYear();
+    }
+
     function cellHtml(col, o) {
       switch (col.key) {
         case 'ref':
-          // Every order's stopsDetail always includes at least pickup+dropoff
-          // now, so the expandable badge always applies.
-          var stopsHtml = (o.stopsDetail && o.stopsDetail.length)
-            ? ' <button type="button" class="acct-badge acct-badge--stops" data-ref="' + escHtml(o.reference) + '">+' + o.stops + ' stops ▾</button>'
+          var extraCount = extraStops(o).length;
+          var stopsHtml = extraCount
+            ? ' <button type="button" class="acct-badge acct-badge--stops" data-ref="' + escHtml(o.reference) + '">+' + extraCount + (extraCount === 1 ? ' stop' : ' stops') + ' ▾</button>'
             : '';
           return escHtml(o.reference || '—') + stopsHtml;
         case 'date':
-          return escHtml(o.date || '—');
+          return escHtml(formatDate(o.date) || '—');
         case 'route':
           return '<span class="acct-route">' + escHtml(o.pickup || '—') + '<span class="acct-route-arrow">→</span>' + escHtml(o.dropoff || '—') + '</span>';
         case 'staff':
@@ -204,7 +230,9 @@
         case 'status':
           return '<span class="acct-badge ' + statusBadgeClass(o.status) + '">' + escHtml(o.status || '—') + '</span>';
         case 'total':
-          return escHtml(o.total ? 'EUR ' + Number(o.total).toFixed(2) : '—');
+          var invoicedHtml = o.invoicedAt ? '<span class="acct-paid acct-paid--invoiced">Invoiced ' + escHtml(formatIsoDate(o.invoicedAt)) + '</span>' : '';
+          var paidHtml = isPaid(o) ? '<span class="acct-paid">Paid</span>' : '';
+          return escHtml(o.total ? 'EUR ' + Number(o.total).toFixed(2) : '—') + invoicedHtml + paidHtml;
         case 'track':
           return o.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(o.trackingUrl) + '" target="_blank">Track →</a>' : '—';
         default:
@@ -225,13 +253,19 @@
       elEmpty.style.display = 'none';
       elTable.style.display = '';
 
+      // Paid orders are already settled, so only unpaid ones count towards the total due.
       var netSum = 0;
-      orders.forEach(function(o) { netSum += Number(o.total) || 0; });
+      var unpaidCount = 0;
+      orders.forEach(function(o) {
+        if (isPaid(o)) return;
+        netSum += Number(o.total) || 0;
+        unpaidCount++;
+      });
       var ivaSum = Math.round(netSum * 1.21 * 100) / 100;
       netSum = Math.round(netSum * 100) / 100;
       if (elTotals) {
         elTotals.style.display = '';
-        if (elOrderCount) elOrderCount.textContent = orders.length;
+        if (elOrderCount) elOrderCount.textContent = unpaidCount;
         if (elTotalNet)  elTotalNet.textContent  = 'EUR ' + netSum.toFixed(2);
         if (elTotalIva)  elTotalIva.textContent  = 'EUR ' + ivaSum.toFixed(2);
       }
@@ -243,17 +277,16 @@
         }).join('');
         elBody.appendChild(tr);
 
-        if (o.stopsDetail && o.stopsDetail.length) {
+        var extras = extraStops(o);
+        if (extras.length) {
           var detailTr = document.createElement('tr');
           detailTr.className = 'acct-stops-detail-row';
           detailTr.setAttribute('data-detail-for', o.reference || '');
           detailTr.style.display = 'none';
           var td = document.createElement('td');
           td.colSpan = columns.length;
-          var rowsHtml = o.stopsDetail.map(function(s, i) {
-            var isFirst = i === 0;
-            var isLast = i === o.stopsDetail.length - 1;
-            var label = isFirst ? 'Pickup' : (isLast ? 'Dropoff' : String(i));
+          var rowsHtml = extras.map(function(s, i) {
+            var label = String(i + 1);
             var statusHtml = '<span class="acct-badge ' + stopStatusBadgeClass(s.status) + '">' + escHtml(s.status || 'Pending') + '</span>' +
               (s.status === 'Failed' && s.failureReason ? ' <span style="color:#8b0000;">' + escHtml(s.failureReason) + '</span>' : '');
             var podHtml = s.podUrl ? '<a class="acct-track-link" href="' + escHtml(s.podUrl) + '" target="_blank">POD →</a>' : '—';
@@ -261,13 +294,13 @@
             return '<tr>' +
               '<td>' + escHtml(label) + '</td>' +
               '<td>' + escHtml(s.address || '—') + '</td>' +
-              '<td>' + statusHtml + '</td>' +
               '<td>' + escHtml(s.notes || '—') + '</td>' +
+              '<td>' + statusHtml + '</td>' +
               '<td>' + podHtml + '</td>' +
               '<td>' + trackHtml + '</td>' +
             '</tr>';
           }).join('');
-          td.innerHTML = '<table class="acct-stops-detail"><thead><tr><th>#</th><th>Address</th><th>Status</th><th>Notes</th><th>POD</th><th>Track</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+          td.innerHTML = '<table class="acct-stops-detail"><thead><tr><th>#</th><th>Address</th><th>Notes</th><th>Status</th><th>POD</th><th>Track</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
           detailTr.appendChild(td);
           elBody.appendChild(detailTr);
         }

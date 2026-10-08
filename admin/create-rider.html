@@ -178,7 +178,7 @@
     }
 
     const baseUrl = document.getElementById('apiUrl').value.trim().replace('script.google.com/macros/s/', '').split('/exec')[0];
-    const riderUrl = 'https://cargoworks.es/rider.html?id=' + res.id;
+    const riderUrl = 'https://cargoworks.es/admin/rider.html?id=' + res.id;
     document.getElementById('resultId').textContent = res.id;
     document.getElementById('resultUrl').textContent = riderUrl;
     resultEl.className = 'result visible';
@@ -194,7 +194,7 @@
     if (!riders.length) { listEl.innerHTML = '<div style="color:#888;font-size:.85rem;">No riders yet.</div>'; return; }
     listEl.innerHTML = '';
     riders.forEach(function(r) {
-      const riderUrl = 'https://cargoworks.es/rider.html?id=' + r.id;
+      const riderUrl = 'https://cargoworks.es/admin/rider.html?id=' + r.id;
       const item = document.createElement('div');
       item.className = 'rider-item';
       item.style.flexWrap = 'wrap';

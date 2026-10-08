@@ -11,8 +11,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <!-- defer: the map is only drawn after a sheet scan, so the page shouldn't wait for Leaflet to download before showing orders -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
   <script>
     // Set API base — same pattern as other pages
     window.CARGOWORKS_BOOKING_API = 'https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec';
@@ -150,6 +151,9 @@
       text-align: center;
       letter-spacing: 0.02em;
     }
+    /* Orders on screen are from this phone's cache while fresh ones load */
+    .date-label.is-refreshing { animation: rider-refresh-pulse 1.1s ease-in-out infinite; }
+    @keyframes rider-refresh-pulse { 50% { opacity: 0.4; } }
 
     /* ── FILTER TABS ── */
     .filter-tabs {
@@ -389,6 +393,22 @@
       border-bottom: 1px solid var(--border);
     }
     .detail-row:last-child { border-bottom: none; }
+
+    /* Notes for the rider — highlighted so they're never missed */
+    .detail-section.is-notes { border-color: var(--yellow); }
+    .detail-section.is-notes .detail-section-title { color: var(--yellow); }
+    .order-note { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    .order-note:last-child { border-bottom: none; }
+    .order-note-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+    }
+    .order-note-text { font-size: 0.92rem; color: var(--text); line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .card-notes-flag { font-size: 0.72rem; font-weight: 600; color: var(--yellow); white-space: nowrap; }
     .detail-row-label {
       font-size: 0.72rem;
       font-weight: 600;
@@ -523,6 +543,37 @@
       gap: 8px;
     }
     .btn-row .btn { flex: 1; }
+
+    /* ── IN-PAGE CAMERA (route sheet scan) ── */
+    .scan-camera {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: #000;
+      display: none;
+      flex-direction: column;
+    }
+    .scan-camera.open { display: flex; }
+    .scan-camera video { flex: 1; width: 100%; min-height: 0; object-fit: contain; background: #000; }
+    .scan-camera-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 20px calc(var(--safe-bottom) + 16px);
+    }
+    .scan-camera-bar .btn { width: auto; min-width: 92px; }
+    .scan-camera-shutter {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      border: 4px solid #fff;
+      background: rgba(255,255,255,0.25);
+      cursor: pointer;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .scan-camera-shutter:active { background: rgba(255,255,255,0.65); }
 
     /* ── TOAST ── */
     #toast {
@@ -1286,6 +1337,16 @@
     <div class="action-footer" id="actionFooter"></div>
   </div>
 
+  <!-- In-page camera for scanning route sheets — see openScanCamera() -->
+  <div id="scanCamera" class="scan-camera">
+    <video id="scanCameraVideo" playsinline muted autoplay></video>
+    <div class="scan-camera-bar">
+      <button type="button" class="btn btn-ghost" id="scanCameraCancel">Cancel</button>
+      <button type="button" class="scan-camera-shutter" id="scanCameraShutter" aria-label="Take photo"></button>
+      <button type="button" class="btn btn-ghost" id="scanCameraGallery">Gallery</button>
+    </div>
+  </div>
+
   <!-- Toast notification -->
   <div id="toast"></div>
 
@@ -1301,6 +1362,8 @@
     let allOrders = [];
     let activeOrder = null;
     let _stopPodMap = {}; // stopId -> photo data URL, for the active order's per-stop POD capture (every leg, including pickup/dropoff)
+    let _navReady = false;   // date/filter tab listeners attached
+    let _pendingOpenId = ''; // order that was open before the phone reloaded the tab — reopened once the list is back
 
     // ── Utilities ──────────────────────────────────────────────────────────────
 
@@ -1423,9 +1486,64 @@
       }
     }
 
+    // ── Saved state (survives the phone reloading the tab) ────────────────────
+    // Phones often kill a backgrounded browser tab (rider switched to Maps,
+    // the camera, WhatsApp…) and reload it on return. The rider name and the
+    // last loaded orders are kept in localStorage so the app can draw them
+    // instantly instead of a blank spinner, and the open order + selected day
+    // are kept in sessionStorage (scoped to this tab) so the rider lands back
+    // where they were.
+
+    function cacheKey(name) { return 'cw_rider_' + RIDER_ID + '_' + name; }
+    function readCache(name) {
+      try { const raw = localStorage.getItem(cacheKey(name)); return raw ? JSON.parse(raw) : null; } catch (_) { return null; }
+    }
+    function writeCache(name, value) {
+      try {
+        if (value == null) localStorage.removeItem(cacheKey(name));
+        else localStorage.setItem(cacheKey(name), JSON.stringify(value));
+      } catch (_) {}
+    }
+
+    function getCachedOrders(dateKey) {
+      const all = readCache('orders') || {};
+      return all[dateKey] ? all[dateKey].orders : null;
+    }
+    function setCachedOrders(dateKey, orders) {
+      const all = readCache('orders') || {};
+      all[dateKey] = { orders: orders, savedAt: Date.now() };
+      // Keep only the 3 most recently loaded days so storage never fills up.
+      Object.keys(all)
+        .sort(function(a, b) { return all[b].savedAt - all[a].savedAt; })
+        .slice(3)
+        .forEach(function(k) { delete all[k]; });
+      writeCache('orders', all);
+    }
+
+    function saveViewState() {
+      try {
+        sessionStorage.setItem('cw_rider_view', JSON.stringify({
+          date: formatDateKey(currentDate),
+          open: activeOrder ? activeOrder.eventId : '',
+          savedAt: Date.now()
+        }));
+      } catch (_) {}
+    }
+    function restoreViewState() {
+      let view = null;
+      try { view = JSON.parse(sessionStorage.getItem('cw_rider_view') || 'null'); } catch (_) {}
+      // Only resume a recent session — a tab left open since yesterday should start on today.
+      if (!view || !view.savedAt || Date.now() - view.savedAt > 6 * 60 * 60 * 1000) return;
+      if (view.date) currentDate = new Date(view.date + 'T00:00:00');
+      _pendingOpenId = view.open || '';
+    }
+
     // ── Auth ───────────────────────────────────────────────────────────────────
 
-    async function init(isRetry) {
+    // There's no separate "validate rider" call any more: riderGetOrders
+    // already checks the rider ID and returns the rider's name with the
+    // orders, so the first screen needs one server round trip instead of two.
+    function init() {
       const params = new URLSearchParams(location.search);
       RIDER_ID = String(params.get('id') || '').trim();
 
@@ -1434,43 +1552,38 @@
         return;
       }
 
-      document.getElementById('authLoading').style.display = '';
-      document.getElementById('authError').classList.remove('visible');
-      document.getElementById('authRetryBtn').style.display = 'none';
-
-      const res = await api('GET', { action: 'riderValidate', id: RIDER_ID });
-
-      if (res.error || !res.ok) {
-        // A missing/blocked network path or a slow cold-start Apps Script
-        // response surfaces as errorKind (network/timeout/server_unavailable)
-        // — those are worth a quiet, automatic retry since most clear up on
-        // their own (spotty signal, a slow first request of the day). A
-        // genuinely wrong rider ID comes back as a normal JSON error with no
-        // errorKind and retrying it would just fail the same way again, so
-        // that one goes straight to the dead-end message.
-        const transient = res.errorKind === 'timeout' || res.errorKind === 'network' || res.errorKind === 'server_unavailable';
-        if (transient && !isRetry) {
-          setTimeout(function() { init(true); }, 1500);
-          return;
-        }
-        showAuthError(
-          transient ? 'Connection trouble — could not reach the server. Check your signal and tap Retry.' : 'Rider ID not recognised. Check your link.',
-          transient
-        );
-        return;
+      restoreViewState();
+      const cachedName = readCache('name');
+      if (cachedName) {
+        // Seen this rider on this phone before — open the app right away.
+        showApp(cachedName);
+      } else {
+        document.getElementById('authLoading').style.display = '';
+        document.getElementById('authError').classList.remove('visible');
+        document.getElementById('authRetryBtn').style.display = 'none';
       }
-
-      RIDER_NAME = res.name || 'Rider';
-      document.getElementById('authScreen').style.display = 'none';
-      document.getElementById('headerRiderName').textContent = RIDER_NAME;
-      document.getElementById('app').classList.add('visible');
-
-      setupDateNav();
-      setupFilterTabs();
       loadOrders();
     }
 
+    function showApp(name) {
+      RIDER_NAME = name || 'Rider';
+      document.getElementById('authScreen').style.display = 'none';
+      document.getElementById('headerRiderName').textContent = RIDER_NAME;
+      document.getElementById('app').classList.add('visible');
+      if (!_navReady) {
+        _navReady = true;
+        setupDateNav();
+        setupFilterTabs();
+      }
+    }
+
+    function appVisible() {
+      return document.getElementById('app').classList.contains('visible');
+    }
+
     function showAuthError(msg, allowRetry) {
+      document.getElementById('app').classList.remove('visible');
+      document.getElementById('authScreen').style.display = '';
       document.getElementById('authLoading').style.display = 'none';
       const err = document.getElementById('authError');
       err.textContent = msg;
@@ -1487,11 +1600,13 @@
       document.getElementById('datePrev').addEventListener('click', function() {
         currentDate.setDate(currentDate.getDate() - 1);
         updateDateLabel();
+        saveViewState();
         loadOrders();
       });
       document.getElementById('dateNext').addEventListener('click', function() {
         currentDate.setDate(currentDate.getDate() + 1);
         updateDateLabel();
+        saveViewState();
         loadOrders();
       });
     }
@@ -1515,24 +1630,61 @@
 
     // ── Load orders ────────────────────────────────────────────────────────────
 
+    function setRefreshing(on) {
+      document.getElementById('dateLabel').classList.toggle('is-refreshing', !!on);
+    }
+
     async function loadOrders(isRetry) {
       const listEl = document.getElementById('orderList');
-      listEl.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+      const dateKey = formatDateKey(currentDate);
+      const cached = getCachedOrders(dateKey);
+
+      if (!isRetry) {
+        if (cached && appVisible()) {
+          // Draw the last known list immediately; fresh data replaces it below.
+          allOrders = cached;
+          renderOrderList();
+          reopenPendingOrder();
+        } else {
+          listEl.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+        }
+      }
+      setRefreshing(true);
 
       const res = await api('GET', {
         action: 'riderGetOrders',
         id: RIDER_ID,
-        date: formatDateKey(currentDate)
+        date: dateKey
       });
 
+      // The rider moved to another day while this was loading — that day's
+      // own request will draw the list.
+      if (dateKey !== formatDateKey(currentDate)) return;
+
       if (res.error) {
-        // Same reasoning as the auth screen: a network/timeout/cold-start
-        // hiccup is worth one silent retry (most clear up on their own),
-        // but always leave a manual Retry button either way — the rider
-        // should never have to reload the whole page just to try again.
+        // A network/timeout/cold-start hiccup is worth one silent retry (most
+        // clear up on their own), but always leave a manual Retry either way —
+        // the rider should never have to reload the whole page just to try again.
+        // A wrong/revoked rider ID comes back as a normal JSON error with no
+        // errorKind; retrying that would just fail the same way again.
         const transient = res.errorKind === 'timeout' || res.errorKind === 'network' || res.errorKind === 'server_unavailable';
         if (transient && !isRetry) {
           setTimeout(function() { loadOrders(true); }, 1500);
+          return;
+        }
+        setRefreshing(false);
+        if (!transient && res.error === 'Unauthorized') {
+          writeCache('name', null);
+          writeCache('orders', null);
+          showAuthError(appVisible() ? 'This rider link is no longer active. Ask the office for a new one.' : 'Rider ID not recognised. Check your link.', false);
+          return;
+        }
+        if (!appVisible()) {
+          showAuthError('Connection trouble — could not reach the server. Check your signal and tap Retry.', true);
+          return;
+        }
+        if (cached) {
+          toast('Could not refresh — showing the last loaded orders.', 'error');
           return;
         }
         listEl.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">' + res.error + '</div></div>' +
@@ -1542,8 +1694,46 @@
         return;
       }
 
+      setRefreshing(false);
+      const name = (res.rider && res.rider.name) || RIDER_NAME || 'Rider';
+      writeCache('name', name);
+      if (!appVisible() || name !== RIDER_NAME) showApp(name);
+
       allOrders = res.orders || [];
+      setCachedOrders(dateKey, allOrders);
       renderOrderList();
+      reopenPendingOrder();
+      refreshOpenOrderIfIdle();
+      _pendingOpenId = ''; // not in today's list any more — nothing to reopen
+    }
+
+    // Reopens the order the rider had open before the tab was reloaded.
+    function reopenPendingOrder() {
+      if (!_pendingOpenId || activeOrder) return;
+      const order = allOrders.find(function(o) { return o.eventId === _pendingOpenId; });
+      if (!order) return;
+      _pendingOpenId = '';
+      openOrder(order);
+    }
+
+    // After fresh data arrives, update an open order's screen — but only if
+    // the rider isn't in the middle of something there (photo picked, note
+    // typed, scan running/showing), so nothing they've entered is wiped.
+    function refreshOpenOrderIfIdle() {
+      if (!activeOrder) return;
+      const fresh = allOrders.find(function(o) { return o.eventId === activeOrder.eventId; });
+      if (!fresh || JSON.stringify(fresh) === JSON.stringify(activeOrder)) return;
+      if (Object.keys(_stopPodMap).length) return;
+      const body = document.getElementById('detailBody');
+      if (body.contains(document.activeElement)) return;
+      if (body.querySelector('.scan-result.visible, .scan-btn:disabled')) return;
+      const typed = Array.prototype.some.call(body.querySelectorAll('textarea, input[type="text"]'), function(el) { return el.value.trim(); });
+      if (typed) return;
+      activeOrder = fresh;
+      document.getElementById('detailStatusChip').innerHTML = '';
+      document.getElementById('detailStatusChip').appendChild(makeChip(fresh.status));
+      renderDetailBody(fresh);
+      renderActionFooter(fresh);
     }
 
     // ── Render list ────────────────────────────────────────────────────────────
@@ -1597,6 +1787,12 @@
         '</div>';
 
       const bottom = card.querySelector('.card-bottom');
+      if (getOrderNotes(order).length) {
+        const flag = document.createElement('span');
+        flag.className = 'card-notes-flag';
+        flag.textContent = '📝 Notes';
+        bottom.appendChild(flag);
+      }
       bottom.appendChild(makeChip(order.status));
 
       card.addEventListener('click', function() { openOrder(order); });
@@ -1632,13 +1828,32 @@
 
       document.getElementById('orderDetail').classList.add('open');
       document.body.style.overflow = 'hidden';
+
+      // Give the open order its own history entry, so the phone's Back
+      // button closes the order instead of leaving (and later reloading) the page.
+      if (!(history.state && history.state.riderDetail)) {
+        try { history.pushState({ riderDetail: true }, ''); } catch (_) {}
+      }
+      saveViewState();
     }
 
-    function closeOrder() {
+    function hideOrderDetail() {
       document.getElementById('orderDetail').classList.remove('open');
       document.body.style.overflow = '';
       activeOrder = null;
+      saveViewState();
     }
+
+    function closeOrder() {
+      // Going back pops the order's history entry; the popstate handler below hides it.
+      if (history.state && history.state.riderDetail) history.back();
+      else hideOrderDetail();
+    }
+
+    window.addEventListener('popstate', function() {
+      closeScanCamera();
+      if (activeOrder) hideOrderDetail();
+    });
 
     document.getElementById('backBtn').addEventListener('click', closeOrder);
 
@@ -1674,6 +1889,10 @@
       const customer = order.customer || {};
       const stops = Array.isArray(route.stops) ? route.stops : [];
 
+      // Notes first — the rider needs these to complete the order.
+      const notesSec = buildOrderNotesSection(order);
+      if (notesSec) body.appendChild(notesSec);
+
       // Route section — one ordered list of stops, pickup first, dropoff last.
       if (stops.length) body.appendChild(buildRouteStopsSection(order, stops));
 
@@ -1695,8 +1914,8 @@
         ['Weight', quote.weightKg ? (quote.weightKg + ' kg') : null],
         ['Volume', quote.volumeM3 ? (quote.volumeM3 + ' m³') : null],
         ['Customer', customer.name],
-        ['Phone', customer.phone],
-        ['Notes', order.notes]
+        ['Phone', customer.phone]
+        // Order notes now live in their own highlighted section at the top.
       ];
       rows.forEach(function(r) {
         if (!r[1]) return;
@@ -1778,6 +1997,48 @@
         });
         body.appendChild(buildCollapsibleSection('Timeline (' + timeline.length + ')', tlList, false));
       }
+    }
+
+    // Everything written for this order that the rider should read:
+    //  - Customer: the booking form's "Notes for pickup or delivery" (also the
+    //    dispatcher's "Customer notes" field)
+    //  - Dispatch: the dispatcher's "Internal note"
+    //  - Dispatch + time: each "Quick note" the dispatcher saved/sent (newest first)
+    // The rider's own messages (via 'rider') are left out — they wrote them.
+    function getOrderNotes(order) {
+      const items = [];
+      if (order.notes) items.push({ label: 'Customer', text: order.notes });
+      if (order.internalNotes) items.push({ label: 'Dispatch', text: order.internalNotes });
+      const dispatchUpdates = (Array.isArray(order.dispatcherNotes) ? order.dispatcherNotes : []).filter(function(n) {
+        const via = String(n && n.via || '').toLowerCase();
+        return n && String(n.message || '').trim() && via.indexOf('dispatcher') >= 0 && via.indexOf('rider') < 0;
+      });
+      dispatchUpdates.slice().reverse().forEach(function(n) {
+        items.push({ label: 'Dispatch · ' + formatIso(n.ts), text: n.message });
+      });
+      return items;
+    }
+
+    function buildOrderNotesSection(order) {
+      const items = getOrderNotes(order);
+      if (!items.length) return null;
+      const sec = document.createElement('div');
+      sec.className = 'detail-section is-notes';
+      sec.innerHTML = '<div class="detail-section-title">📝 Notes</div>';
+      items.forEach(function(item) {
+        const row = document.createElement('div');
+        row.className = 'order-note';
+        const label = document.createElement('div');
+        label.className = 'order-note-label';
+        label.textContent = item.label;
+        const text = document.createElement('div');
+        text.className = 'order-note-text';
+        text.textContent = item.text;
+        row.appendChild(label);
+        row.appendChild(text);
+        sec.appendChild(row);
+      });
+      return sec;
     }
 
     // ── Elapsed-billing route timer ──────────────────────────────────────────
@@ -1931,15 +2192,14 @@
         podBtn.addEventListener('click', function() { podInput.click(); });
         podInput.addEventListener('change', function() {
           if (podInput.files && podInput.files[0]) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-              _stopPodMap[stop.id] = e.target.result;
-              podPreview.src = e.target.result;
+            shrinkPhoto(podInput.files[0], 1600, function(dataUrl) {
+              if (!dataUrl) { toast('Could not read that photo — try another.', 'error'); return; }
+              _stopPodMap[stop.id] = dataUrl;
+              podPreview.src = dataUrl;
               podPreview.classList.add('visible');
               podBtn.classList.add('has-file');
               podBtn.innerHTML = '<span class="pod-btn-icon">✓</span> Photo added — tap to change';
-            };
-            reader.readAsDataURL(podInput.files[0]);
+            });
           }
         });
         row.appendChild(podBtn);
@@ -1973,6 +2233,28 @@
       }
 
       return sec;
+    }
+
+    // Phone photos are often 4–8 MB; shrinking to 1600px JPEG (~300 KB) makes
+    // the upload many times faster on mobile data and keeps the page's memory
+    // low (a heavy page is more likely to be killed and reloaded by the phone).
+    function shrinkPhoto(file, maxSide, done) {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = function() {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        done(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = function() {
+        URL.revokeObjectURL(url);
+        done(null);
+      };
+      img.src = url;
     }
 
     async function doCompleteStop(eventId, stopId, status) {
@@ -2082,10 +2364,12 @@
       scanBtn.innerHTML = '📷 Tap to scan route sheet';
       wrap.appendChild(scanBtn);
 
+      // Gallery/file picker — the fallback when the in-page camera can't be
+      // used. No `capture` attribute: that would jump to the phone's camera
+      // app, which is what used to get the tab killed mid-scan.
       var fileInput = document.createElement('input');
       fileInput.type = 'file';
       fileInput.accept = 'image/*';
-      fileInput.capture = 'environment';
       fileInput.style.display = 'none';
       wrap.appendChild(fileInput);
 
@@ -2104,7 +2388,15 @@
       resultEl.className = 'scan-result';
       wrap.appendChild(resultEl);
 
-      scanBtn.addEventListener('click', function() { fileInput.click(); });
+      scanBtn.addEventListener('click', function() {
+        openScanCamera(
+          function(b64) {
+            clearScanRetry(retryWrap);
+            doScanExtract(b64, 'image/jpeg', scanBtn, statusEl, resultEl, orderEventId, retryWrap);
+          },
+          function() { fileInput.value = ''; fileInput.click(); }
+        );
+      });
 
       // Restore previously saved scan state for this order
       var _savedStops = orderEventId ? loadScanState(orderEventId) : null;
@@ -2121,27 +2413,92 @@
         showScanStatus(statusEl, 'Processing image…', 'info');
         clearScanRetry(retryWrap);
 
+        var imgUrl = URL.createObjectURL(file);
         var img = new Image();
         img.onload = function() {
-          var canvas = document.createElement('canvas');
-          var maxW = 1280;
-          var w = img.width;
-          var h = img.height;
-          if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
-          canvas.width = w;
-          canvas.height = h;
-          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-          var b64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+          var b64 = toScanJpegBase64(img, img.width, img.height);
+          URL.revokeObjectURL(imgUrl);
           doScanExtract(b64, 'image/jpeg', scanBtn, statusEl, resultEl, orderEventId, retryWrap);
         };
         img.onerror = function() {
+          URL.revokeObjectURL(imgUrl);
           showScanStatus(statusEl, 'Could not read the image. Try again.', 'error');
         };
-        img.src = URL.createObjectURL(file);
+        img.src = imgUrl;
       });
 
       return wrap;
     }
+
+    // Shrinks a photo/video frame to 1280px wide and returns JPEG base64
+    // (no "data:" prefix) — small enough to upload quickly, sharp enough to read a sheet.
+    function toScanJpegBase64(source, srcW, srcH) {
+      var maxW = 1280;
+      var w = srcW;
+      var h = srcH;
+      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+      var canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(source, 0, 0, w, h);
+      return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    }
+
+    // ── In-page camera ─────────────────────────────────────────────────────
+    // Opening the phone's own camera app sends the browser to the background,
+    // and phones often kill the tab while it's there: the rider comes back to
+    // a reloaded page and the photo is lost. Shooting inside the page means
+    // the browser never leaves the screen. If the camera can't be opened (no
+    // permission, old browser) it falls back to the normal photo picker.
+    var _cameraStream = null;
+    var _cameraOnPhoto = null;
+    var _cameraOpenPicker = null;
+
+    function openScanCamera(onPhoto, openPicker) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { openPicker(); return; }
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      }).then(function(stream) {
+        _cameraStream = stream;
+        _cameraOnPhoto = onPhoto;
+        _cameraOpenPicker = openPicker;
+        var video = document.getElementById('scanCameraVideo');
+        video.srcObject = stream;
+        document.getElementById('scanCamera').classList.add('open');
+        var playing = video.play();
+        if (playing && playing.catch) playing.catch(function() {});
+      }).catch(function() {
+        openPicker();
+      });
+    }
+
+    function closeScanCamera() {
+      document.getElementById('scanCamera').classList.remove('open');
+      if (_cameraStream) {
+        _cameraStream.getTracks().forEach(function(t) { t.stop(); });
+        _cameraStream = null;
+      }
+      document.getElementById('scanCameraVideo').srcObject = null;
+    }
+
+    document.getElementById('scanCameraShutter').addEventListener('click', function() {
+      var video = document.getElementById('scanCameraVideo');
+      if (!video.videoWidth || !_cameraOnPhoto) return; // camera still starting
+      var onPhoto = _cameraOnPhoto;
+      var b64 = toScanJpegBase64(video, video.videoWidth, video.videoHeight);
+      closeScanCamera();
+      onPhoto(b64);
+    });
+    document.getElementById('scanCameraCancel').addEventListener('click', function() {
+      _appendMode = false;
+      closeScanCamera();
+    });
+    document.getElementById('scanCameraGallery').addEventListener('click', function() {
+      var openPicker = _cameraOpenPicker;
+      closeScanCamera();
+      if (openPicker) openPicker();
+    });
 
     function showScanStatus(statusEl, msg, type) {
       statusEl.textContent = msg;
@@ -2186,7 +2543,10 @@
           id: RIDER_ID,
           image: b64,
           mimeType: mime,
-          eventId: orderEventId || ''
+          eventId: orderEventId || '',
+          // Archive separately (riderLogScan below) so the Drive/Sheets
+          // writes don't hold up the rider's results.
+          deferLog: true
         }, { timeoutMs: 75000 });
 
         if (res.error) {
@@ -2240,6 +2600,19 @@
             outlier: !!s.outlier
           };
         });
+
+        if (stops.length > 0) {
+          // Background archive of this read for the office — not awaited,
+          // and a failure here never affects the rider.
+          api('POST', {
+            action: 'riderLogScan',
+            id: RIDER_ID,
+            eventId: orderEventId || '',
+            image: b64,
+            mimeType: mime,
+            stops: stops
+          }, { timeoutMs: 120000 });
+        }
 
         if (stops.length === 0) {
           showScanStatus(statusEl, 'No addresses found. Try a clearer photo with better lighting.', 'error');
@@ -2844,8 +3217,7 @@
           resultEl.innerHTML = '';
           hideScanStatus(statusEl);
           scanBtn.innerHTML = '📷 Tap to scan route sheet';
-          var fi = scanBtn.parentNode.querySelector('input[type="file"]');
-          if (fi) { fi.value = ''; fi.click(); }
+          scanBtn.click();
         });
         actionsWrap.appendChild(retryBtn);
 
@@ -2941,8 +3313,7 @@
         scanMoreBtn.innerHTML = '📷 Scan additional sheet (append)';
         scanMoreBtn.addEventListener('click', function() {
           _appendMode = true;
-          var fi = scanBtn.parentNode.querySelector('input[type="file"]');
-          if (fi) { fi.value = ''; fi.click(); }
+          scanBtn.click();
         });
         addOpts.appendChild(scanMoreBtn);
 
@@ -3442,9 +3813,10 @@
           } catch (err) { console.error('Geocode fetch error:', stop.address, err); }
         };
 
-        // Batch in groups of 5 to avoid hammering the API
-        for (var bi = 0; bi < needsGeocoding.length; bi += 5) {
-          var batch = needsGeocoding.slice(bi, bi + 5);
+        // Batch in groups of 10 — well inside the Geocoding API's rate limit,
+        // and half the waiting of the old groups of 5 on a long sheet.
+        for (var bi = 0; bi < needsGeocoding.length; bi += 10) {
+          var batch = needsGeocoding.slice(bi, bi + 10);
           await Promise.all(batch.map(geocodeOne));
         }
 
@@ -3657,6 +4029,7 @@
       const idx = allOrders.findIndex(function(o) { return o.eventId === updatedOrder.eventId; });
       if (idx >= 0) allOrders[idx] = updatedOrder;
       else allOrders.push(updatedOrder);
+      setCachedOrders(formatDateKey(currentDate), allOrders);
 
       renderOrderList();
       activeOrder = updatedOrder;

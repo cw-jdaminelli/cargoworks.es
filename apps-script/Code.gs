@@ -200,7 +200,8 @@ function handleAccountOrders(params) {
       reference:     reference,
       status:        String(adminData.status || DEFAULT_STATUS_LABEL),
       paymentStatus: String(adminData.paymentStatus || 'Account'),
-      date:          String((quote.schedule || {}).date || ''),
+      invoicedAt:    String(adminData.invoicedAt || ''),
+      date:         String((quote.schedule || {}).date || ''),
       pickup:        String((stopsArr[0] && stopsArr[0].address) || ''),
       dropoff:       String((stopsArr.length && stopsArr[stopsArr.length - 1].address) || ''),
       // "pickup + N stops" — N excludes only the pickup leg; dropoff counts as
@@ -355,6 +356,7 @@ function doPost(e){
       if (action === 'adminManageRiders') return handleAdminManageRiders(payload);
       if (action === 'urgentRequest') return handleUrgentRequest(payload);
       if (action === 'visionExtract') return handleVisionExtract(payload);
+      if (action === 'riderLogScan') return handleRiderLogScan(payload);
       if (action === 'routeOptimize') return handleRouteOptimize(payload);
       if (action === 'riderCommitStops') return handleRiderCommitStops(payload);
       if (action === 'riderGeocode') return handleRiderGeocode(payload);
@@ -1559,7 +1561,9 @@ function handleVisionExtract(payload) {
     // Archive every successful read (image + extracted stops) so the office
     // can later check what was scanned and how well the read went. Never let
     // a logging failure break the response the rider is waiting on.
-    if (stops.length > 0) {
+    // The rider app sends deferLog and archives through riderLogScan after it
+    // has its results, so the Drive/Sheets writes don't add seconds to the scan.
+    if (stops.length > 0 && !payload.deferLog) {
       try {
         logScanResult({
           riderId: riderId,
@@ -1576,6 +1580,33 @@ function handleVisionExtract(payload) {
 
     return jsonResponse({ stops: stops, count: stops.length }, 200);
 
+  } catch (err) {
+    var msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+// Archives a rider's scan (image + extracted stops) — sent by the rider app
+// as its own request once it already has the scan results (see deferLog above).
+function handleRiderLogScan(payload) {
+  try {
+    var riderId = String(payload.id || '').trim();
+    var rider = getRiderById(riderId);
+    if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+    var imageBase64 = String(payload.image || '').trim();
+    var stops = Array.isArray(payload.stops) ? payload.stops : [];
+    if (!imageBase64 || !stops.length) return jsonResponse({ ok: true, skipped: true }, 200);
+
+    logScanResult({
+      riderId: riderId,
+      riderName: rider.name || '',
+      eventId: String(payload.eventId || ''),
+      imageBase64: imageBase64,
+      mimeType: String(payload.mimeType || 'image/jpeg').trim(),
+      stops: stops
+    });
+    return jsonResponse({ ok: true }, 200);
   } catch (err) {
     var msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
@@ -2688,6 +2719,12 @@ function handleAdminUpdate(payload){
     const paymentStatus = paymentInput ? normalizePaymentStatus(paymentInput, hasPaymentUrl) : '';
     if (paymentInput && !paymentStatus) return jsonResponse({ error: 'Invalid paymentStatus' }, 400);
 
+    // invoiced: true/false — whether this order has been included in a client
+    // invoice. Stored as invoicedAt (ISO timestamp, '' = not invoiced).
+    const invoicedSent = 'invoiced' in payload;
+    const invoiced = payload.invoiced === true || String(payload.invoiced).toLowerCase() === 'true';
+    const prevInvoicedAt = String(adminData.invoicedAt || '');
+
     const riderNameSent = 'riderName' in payload;
     const riderPhoneSent = 'riderPhone' in payload;
     const riderName = cleanOrderText(payload.riderName || '');
@@ -2758,7 +2795,17 @@ function handleAdminUpdate(payload){
       });
       adminData.lastUpdateAt = ts;
     }
-    if ((riderNameSent || riderPhoneSent) && (cleanOrderText(adminData.rider && adminData.rider.name || '') !== prevRiderName || cleanOrderText(adminData.rider && adminData.rider.phone || '') !== prevRiderPhone)) {
+    if (invoicedSent && invoiced !== !!prevInvoicedAt) {
+      adminData.invoicedAt = invoiced ? ts : '';
+      adminData.timeline.push({
+        ts: ts,
+        status: adminData.status || '',
+        message: invoiced ? 'Marked as invoiced' : 'Invoiced mark removed',
+        via: 'dispatcher'
+      });
+      adminData.lastUpdateAt = ts;
+    }
+    if ((riderNameSent || riderPhoneSent) &&(cleanOrderText(adminData.rider && adminData.rider.name || '') !== prevRiderName || cleanOrderText(adminData.rider && adminData.rider.phone || '') !== prevRiderPhone)) {
       adminData.timeline.push({
         ts: ts,
         status: adminData.status || '',
@@ -3234,6 +3281,7 @@ function buildOrderSummary(event){
       title: event.getTitle(),
       status: adminData.status || DEFAULT_STATUS_LABEL,
       paymentStatus: adminData.paymentStatus || '',
+      invoicedAt: cleanOrderText(adminData.invoicedAt || ''),
       paymentUrl: adminData.paymentUrl || payload.paymentUrl || '',
       trackingUrl: adminData.trackingUrl || payload.trackingUrl || '',
       trackingToken: adminData.trackingToken || '',
