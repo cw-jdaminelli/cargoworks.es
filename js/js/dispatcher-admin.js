@@ -702,6 +702,15 @@
     return chip;
   }
 
+  // Timeline timestamps are stored as UTC ISO strings; show them in Barcelona time.
+  const timelineTsFormat = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+  });
+  function formatTimelineTs(iso){
+    const d = new Date(normalizeText(iso));
+    return Number.isNaN(d.getTime()) ? normalizeText(iso) : timelineTsFormat.format(d).replace(',', '');
+  }
+
   function renderTimeline(items){
     if (!Array.isArray(items) || !items.length) {
       const empty = document.createElement('div');
@@ -718,11 +727,18 @@
       return aSafe - bSafe;
     });
 
-    sorted.slice(-7).forEach(function(item){
-      const li = document.createElement('li');
-      const ts = normalizeText(item && item.ts).replace('T', ' ').replace('Z', '');
+    // Repeated taps in the rider app used to log the same update several
+    // times seconds apart; skip an exact repeat within 5 min of the previous.
+    const lastSeen = {};
+    sorted.forEach(function(item){
       const status = normalizeText(item && item.status);
       const msg = normalizeText(item && item.message);
+      const stamp = Date.parse(String(item && item.ts || ''));
+      const prev = lastSeen[msg];
+      lastSeen[msg] = stamp;
+      if (stamp - prev < 5 * 60000) return;
+      const li = document.createElement('li');
+      const ts = formatTimelineTs(item && item.ts);
       li.textContent = (ts ? (ts + ' - ') : '') + (status ? (status + ': ') : '') + msg;
       ul.appendChild(li);
     });

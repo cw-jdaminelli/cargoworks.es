@@ -2211,11 +2211,11 @@
         const failBtn = document.createElement('button');
         failBtn.className = 'btn btn-danger';
         failBtn.textContent = 'Failed';
-        failBtn.addEventListener('click', function() { doCompleteStop(order.eventId, stop.id, 'Failed'); });
+        failBtn.addEventListener('click', function() { doCompleteStop(order.eventId, stop.id, 'Failed', btnRow); });
         const deliveredBtn = document.createElement('button');
         deliveredBtn.className = 'btn btn-success';
         deliveredBtn.textContent = '✓ Delivered';
-        deliveredBtn.addEventListener('click', function() { doCompleteStop(order.eventId, stop.id, 'Delivered'); });
+        deliveredBtn.addEventListener('click', function() { doCompleteStop(order.eventId, stop.id, 'Delivered', btnRow); });
         btnRow.appendChild(failBtn);
         btnRow.appendChild(deliveredBtn);
         row.appendChild(btnRow);
@@ -2257,12 +2257,17 @@
       img.src = url;
     }
 
-    async function doCompleteStop(eventId, stopId, status) {
+    // btnRow holds this stop's Failed/Delivered buttons. They're disabled for
+    // the whole request (Apps Script can take several seconds) so repeated
+    // taps can't send — and log — the same stop update again.
+    async function doCompleteStop(eventId, stopId, status, btnRow) {
       let reason = '';
       if (status === 'Failed') {
         reason = window.prompt('Reason the stop failed:') || '';
         if (!reason.trim()) return;
       }
+      const stopBtns = btnRow ? btnRow.querySelectorAll('.btn') : [];
+      stopBtns.forEach(function(b) { b.disabled = true; });
       setFooterLoading(true);
       const payload = { action: 'riderCompleteStop', id: RIDER_ID, eventId: eventId, stopId: stopId, status: status, reason: reason };
       const podDataUrlForStop = _stopPodMap[stopId];
@@ -2272,7 +2277,12 @@
         payload.podContentType = 'image/jpeg';
       }
       const res = await api('POST', payload);
-      if (res.error) { toast(res.error, 'error'); setFooterLoading(false); return; }
+      if (res.error) {
+        toast(res.error, 'error');
+        setFooterLoading(false);
+        stopBtns.forEach(function(b) { b.disabled = false; });
+        return;
+      }
       toast('Stop marked ' + status + ' ✓', 'success');
       updateAndRerender(res.order);
     }

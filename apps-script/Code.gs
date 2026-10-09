@@ -4476,6 +4476,10 @@ function maybeCompleteRoute(payloadData, adminData, event){
   const route = quote.route || {};
   const stops = Array.isArray(route.stops) ? route.stops : [];
   if (!stops.length) return false;
+  // Already completed: re-running would log a duplicate "auto-completed" entry
+  // and move routeCompletedAt (and the elapsed bill) forward on every later
+  // stop edit or repeated tap.
+  if (adminData.status === 'Delivered' && adminData.routeCompletedAt) return false;
   const doneCount = stops.filter(function(s){ return s && s.status && s.status !== 'Pending'; }).length;
   if (doneCount !== stops.length) return false;
 
@@ -4569,9 +4573,19 @@ function handleRiderCompleteStop(payload){
   const idx = stops.findIndex(function(s){ return s && s.id === stopId; });
   if (idx < 0) return jsonResponse({ error: 'Stop not found' }, 404);
 
-  stops[idx].status = statusInput;
-  stops[idx].completedAt = new Date().toISOString();
-  stops[idx].failureReason = statusInput === 'Failed' ? reason : '';
+  // Same status again (double-tap, or a retry after a slow response that did
+  // go through) is a no-op: keep the original completedAt and don't log it
+  // twice. A POD photo sent along with the repeat is still saved.
+  const isRepeat = stops[idx].status === statusInput;
+  if (isRepeat && !payload.podData && !('notes' in payload)) {
+    return jsonResponse({ ok: true, stop: stops[idx], order: buildOrderSummary(event) }, 200);
+  }
+
+  if (!isRepeat) {
+    stops[idx].status = statusInput;
+    stops[idx].completedAt = new Date().toISOString();
+    stops[idx].failureReason = statusInput === 'Failed' ? reason : '';
+  }
   if ('notes' in payload) stops[idx].notes = cleanOrderText(payload.notes);
 
   if (payload.podData && statusInput === 'Delivered'){
@@ -4588,7 +4602,7 @@ function handleRiderCompleteStop(payload){
   applyOperatorMetadata(adminData, rider.name);
   const stopMsg = rider.name + ' marked stop ' + (idx + 1) + '/' + stops.length + ' (' + stops[idx].address + ') as ' + statusInput +
     (statusInput === 'Failed' ? (': ' + reason) : '');
-  pushAdminTimeline(adminData, adminData.status, stopMsg, 'rider');
+  if (!isRepeat) pushAdminTimeline(adminData, adminData.status, stopMsg, 'rider');
 
   maybeAdvancePickup(payloadData, adminData, event);
   maybeCompleteRoute(payloadData, adminData, event);
