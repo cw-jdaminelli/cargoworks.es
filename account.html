@@ -47,6 +47,8 @@
     table.acct-stops-detail { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
     table.acct-stops-detail th { text-align: left; font-size: 0.68rem; text-transform: uppercase; color: var(--acct-muted); padding: 0.2rem 0.5rem; }
     table.acct-stops-detail td { padding: 0.25rem 0.5rem; border-top: 1px solid var(--acct-border); }
+    .acct-stop-label { display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: 5px; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; background: #f0edf8; color: #6c3fc5; }
+    .acct-route-multistop { color: var(--acct-muted); font-weight: 600; }
     .acct-route { font-size: 0.85rem; color: var(--acct-ink); }
     .acct-route-arrow { color: var(--acct-muted); margin: 0 0.3em; }
     .acct-track-link { color: var(--acct-accent); text-decoration: none; font-weight: 600; font-size: 0.85rem; white-space: nowrap; }
@@ -180,11 +182,17 @@
       return 'acct-badge--default';
     }
 
-    // Stops between pickup and final dropoff — the Route column already shows
-    // the first and last address, so these are the only ones not visible.
-    function extraStops(o) {
+    // Every stop after the pickup, final dropoff included — listed in the
+    // collapsible so each stop's status/notes/POD is visible.
+    function deliveryStops(o) {
       var all = o.stopsDetail || [];
-      return all.length > 2 ? all.slice(1, -1) : [];
+      return all.length > 1 ? all.slice(1) : [];
+    }
+
+    // More than one stop after the pickup — the Route column then shows just
+    // the pickup instead of a single dropoff address.
+    function isMultistop(o) {
+      return deliveryStops(o).length > 1;
     }
 
     function isPaid(o) {
@@ -208,15 +216,18 @@
     function cellHtml(col, o) {
       switch (col.key) {
         case 'ref':
-          var extraCount = extraStops(o).length;
-          var stopsHtml = extraCount
-            ? ' <button type="button" class="acct-badge acct-badge--stops" data-ref="' + escHtml(o.reference) + '">+' + extraCount + (extraCount === 1 ? ' stop' : ' stops') + ' ▾</button>'
+          var stopCount = deliveryStops(o).length;
+          var stopsHtml = stopCount
+            ? ' <button type="button" class="acct-badge acct-badge--stops" data-ref="' + escHtml(o.reference) + '">' + stopCount + (stopCount === 1 ? ' stop' : ' stops') + ' ▾</button>'
             : '';
           return escHtml(o.reference || '—') + stopsHtml;
         case 'date':
           return escHtml(formatDate(o.date) || '—');
         case 'route':
-          return '<span class="acct-route">' + escHtml(o.pickup || '—') + '<span class="acct-route-arrow">→</span>' + escHtml(o.dropoff || '—') + '</span>';
+          var destHtml = isMultistop(o)
+            ?'<span class="acct-route-multistop">Multistop</span>'
+            : escHtml(o.dropoff || '—');
+          return '<span class="acct-route">' + escHtml(o.pickup || '—') + '<span class="acct-route-arrow">→</span>' + destHtml + '</span>';
         case 'staff':
           return escHtml(o.staffName || '—');
         case 'pickupTime':
@@ -277,23 +288,24 @@
         }).join('');
         elBody.appendChild(tr);
 
-        var extras = extraStops(o);
-        if (extras.length) {
+        var stops = deliveryStops(o);
+        if (stops.length) {
           var detailTr = document.createElement('tr');
           detailTr.className = 'acct-stops-detail-row';
           detailTr.setAttribute('data-detail-for', o.reference || '');
           detailTr.style.display = 'none';
           var td = document.createElement('td');
           td.colSpan = columns.length;
-          var rowsHtml = extras.map(function(s, i) {
+          var rowsHtml = stops.map(function(s, i) {
             var label = String(i + 1);
+            var dropoffHtml = i === stops.length - 1 ? '<span class="acct-stop-label">Dropoff</span>' : '';
             var statusHtml = '<span class="acct-badge ' + stopStatusBadgeClass(s.status) + '">' + escHtml(s.status || 'Pending') + '</span>' +
               (s.status === 'Failed' && s.failureReason ? ' <span style="color:#8b0000;">' + escHtml(s.failureReason) + '</span>' : '');
             var podHtml = s.podUrl ? '<a class="acct-track-link" href="' + escHtml(s.podUrl) + '" target="_blank">POD →</a>' : '—';
             var trackHtml = s.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(s.trackingUrl) + '" target="_blank">Track →</a>' : '—';
             return '<tr>' +
               '<td>' + escHtml(label) + '</td>' +
-              '<td>' + escHtml(s.address || '—') + '</td>' +
+              '<td>' + escHtml(s.address || '—') + dropoffHtml + '</td>' +
               '<td>' + escHtml(s.notes || '—') + '</td>' +
               '<td>' + statusHtml + '</td>' +
               '<td>' + podHtml + '</td>' +
