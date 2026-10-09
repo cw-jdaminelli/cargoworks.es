@@ -183,10 +183,19 @@
     }
 
     // Every stop after the pickup, final dropoff included — listed in the
-    // collapsible so each stop's status/notes/POD is visible.
+    // collapsible so each stop's status/notes/POD is visible. Riders work
+    // through stops in any order after pickup, so stops they've completed
+    // come first in the order they actually did them (completedAt is a UTC
+    // ISO string, so it sorts as text); stops still to do follow in the
+    // planned order.
     function deliveryStops(o) {
       var all = o.stopsDetail || [];
-      return all.length > 1 ? all.slice(1) : [];
+      if (all.length < 2) return [];
+      var rest = all.slice(1);
+      var done = rest.filter(function(s) { return s.completedAt; });
+      var todo = rest.filter(function(s) { return !s.completedAt; });
+      done.sort(function(a, b) { return a.completedAt < b.completedAt ? -1 : (a.completedAt > b.completedAt ? 1 : 0); });
+      return done.concat(todo);
     }
 
     // More than one stop after the pickup — the Route column then shows just
