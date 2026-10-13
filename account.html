@@ -254,7 +254,7 @@
           var paidHtml = isPaid(o) ? '<span class="acct-paid">Paid</span>' : '';
           return escHtml(o.total ? 'EUR ' + Number(o.total).toFixed(2) : '—') + invoicedHtml + paidHtml;
         case 'track':
-          return o.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(o.trackingUrl) + '" target="_blank">Track →</a>' : '—';
+          return o.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(publicTrackUrl(o.trackingUrl)) + '" target="_blank">Track →</a>' : '—';
         default:
           return '';
       }
@@ -311,7 +311,7 @@
             var statusHtml = '<span class="acct-badge ' + stopStatusBadgeClass(s.status) + '">' + escHtml(s.status || 'Pending') + '</span>' +
               (s.status === 'Failed' && s.failureReason ? ' <span style="color:#8b0000;">' + escHtml(s.failureReason) + '</span>' : '');
             var podHtml = s.podUrl ? '<a class="acct-track-link" href="' + escHtml(s.podUrl) + '" target="_blank">POD →</a>' : '—';
-            var trackHtml = s.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(s.trackingUrl) + '" target="_blank">Track →</a>' : '—';
+            var trackHtml = s.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(publicTrackUrl(s.trackingUrl)) + '" target="_blank">Track →</a>' : '—';
             return '<tr>' +
               '<td>' + escHtml(label) + '</td>' +
               '<td>' + escHtml(s.address || '—') + dropoffHtml + '</td>' +
@@ -330,6 +330,15 @@
 
     function escHtml(s) {
       return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // Tracking links always point at the live site. Orders created from a
+    // local preview (Live Server / Codespaces) stored the preview's address.
+    function publicTrackUrl(url) {
+      var u = String(url || '');
+      var m = u.match(/^https?:\/\/([^\/?#]+)/i);
+      if (!m || /(^|\.)cargoworks\.es$/i.test(m[1])) return u;
+      return 'https://cargoworks.es' + u.slice(m[0].length);
     }
 
     function filterOrders(query) {
