@@ -3570,22 +3570,13 @@ window.initZonesMap = function initZonesMap(){
       return null;
     }
   }
-  function extractCheckoutSessionId(result){
-    try {
-      if (!result || typeof result !== 'object') return '';
-      const candidates = [
-        result.sessionId,
-        result.session_id,
-        result.id,
-        result.checkoutSessionId,
-        result.checkout_session_id
-      ];
-      for (let i = 0; i < candidates.length; i++) {
-        const value = String(candidates[i] || '').trim();
-        if (value) return value;
-      }
-    } catch(_) {}
-    return '';
+  // An embedded Checkout client secret is "<session id>_secret_<...>".
+  function checkoutSessionIdFromSecret(clientSecret){
+    const match = String(clientSecret || '').match(/^(cs_(?:live|test)_[A-Za-z0-9]+)_secret_/);
+    return match ? match[1] : '';
+  }
+  function waitMs(ms){
+    return new Promise(function(resolve){ setTimeout(resolve, ms); });
   }
   function buildSupportWhatsAppUrl(reference){
     const ref = String(reference || '').trim();
@@ -3689,7 +3680,7 @@ window.initZonesMap = function initZonesMap(){
 
     clearBookingReturnParams();
   }
-  async function renderEmbeddedPayment(clientSecret, trackingUrl, reference, paymentUrl, publishableKey){
+  async function renderEmbeddedPayment(clientSecret, trackingUrl, reference, paymentUrl, publishableKey, paymentSessionId){
     if (!qPaymentMount) return false;
     const stripePublishableKey = String(publishableKey || window.CARGOWORKS_STRIPE_PUBLISHABLE_KEY || '').trim();
     if (!stripePublishableKey || !window.Stripe || !clientSecret) return false;
@@ -3727,10 +3718,20 @@ window.initZonesMap = function initZonesMap(){
     try {
       activeEmbeddedCheckout = await stripe.initEmbeddedCheckout({
         fetchClientSecret: function(){ return Promise.resolve(clientSecret); },
-        onComplete: async function(result){
+        // Stripe calls onComplete with no arguments, so the session id comes
+        // from the booking response (or the client secret) — without it the
+        // backend is never told, the order stays Pending and no confirmation
+        // email goes out.
+        onComplete: async function(){
           try {
-            const sessionId = extractCheckoutSessionId(result);
-            const syncResult = await syncPaymentReturnStatus(reference, 'success', paymentUrl, sessionId);
+            const sessionId = String(paymentSessionId || '').trim() || checkoutSessionIdFromSecret(clientSecret);
+            setBookingStatus(i18n('bookingPaymentConfirming') || 'Payment received - confirming your booking...');
+            let syncResult = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+              if (attempt) await waitMs(2500);
+              syncResult = await syncPaymentReturnStatus(reference, 'success', paymentUrl, sessionId);
+              if (syncResult && String(syncResult.paymentStatus || '') === 'Paid') break;
+            }
             if (syncResult && String(syncResult.paymentStatus || '') === 'Paid') {
               const resolvedTrackingUrl = String(syncResult.trackingUrl || '').trim() || trackingUrl;
               hidePaymentMount();
@@ -3738,7 +3739,10 @@ window.initZonesMap = function initZonesMap(){
               renderBookingConfirmedMessage(reference, resolvedTrackingUrl);
               return;
             }
-            setBookingStatus(i18n('bookingPaymentPending') || 'Payment is still pending for this order.', true);
+            // Checkout finished but we couldn't confirm it yet: don't tell the
+            // customer the payment is pending — the team can confirm it from
+            // the dispatcher.
+            setBookingStatus(i18n('bookingPaymentConfirmingLater', { ref: reference }) || ('We received your payment and are confirming your booking. You will get a confirmation email shortly. If it does not arrive, contact us with your order ID ' + reference + '.'), false);
           } catch(_) {}
         }
       });
@@ -3801,6 +3805,7 @@ window.initZonesMap = function initZonesMap(){
       const paymentUrl = json && json.paymentUrl ? String(json.paymentUrl) : '';
       const paymentClientSecret = json && json.paymentClientSecret ? String(json.paymentClientSecret) : '';
       const paymentMode = json && json.paymentMode ? String(json.paymentMode) : '';
+      const paymentSessionId = json && json.paymentSessionId ? String(json.paymentSessionId) : '';
       const responsePublishableKey = json && json.paymentPublishableKey ? String(json.paymentPublishableKey) : '';
       const publishableKey = String(window.CARGOWORKS_STRIPE_PUBLISHABLE_KEY || responsePublishableKey || '').trim();
       const hasPublishableKey = !!publishableKey;
@@ -3850,14 +3855,14 @@ window.initZonesMap = function initZonesMap(){
         return;
       }
       if (paymentMode === 'embedded' && paymentClientSecret) {
-        const mounted = await renderEmbeddedPayment(paymentClientSecret, trackingUrl, ref, paymentUrl, publishableKey);
+        const mounted = await renderEmbeddedPayment(paymentClientSecret, trackingUrl, ref, paymentUrl, publishableKey, paymentSessionId);
         if (mounted) {
           setBookingStatus(i18n('quotePaymentReady') || 'Payment session ready. Complete payment to confirm your booking.');
           return;
         }
       }
       if (paymentClientSecret && paymentMode !== 'hosted') {
-        const mounted = await renderEmbeddedPayment(paymentClientSecret, trackingUrl, ref, paymentUrl, publishableKey);
+        const mounted = await renderEmbeddedPayment(paymentClientSecret, trackingUrl, ref, paymentUrl, publishableKey, paymentSessionId);
         if (mounted) {
           setBookingStatus(i18n('quotePaymentReady') || 'Payment session ready. Complete payment to confirm your booking.');
           return;
