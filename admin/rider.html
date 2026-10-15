@@ -2514,6 +2514,16 @@
       statusEl.textContent = msg;
       statusEl.className = 'scan-status visible is-' + (type || 'info');
     }
+    // Records how many stops the scanned sheet(s) had on the order, so the job
+    // can be billed per stop even if the full route is never saved to it.
+    function saveScannedStopCount(orderEventId, count) {
+      if (!orderEventId || !(count > 0)) return;
+      api('POST', { action: 'riderSetStopCount', id: RIDER_ID, eventId: orderEventId, count: count })
+        .then(function(res) {
+          if (res && !res.error) toast('📋 ' + count + ' stops recorded on the order', 'success');
+        })
+        .catch(function() {});
+    }
     function hideScanStatus(statusEl) {
       statusEl.className = 'scan-status';
       statusEl.textContent = '';
@@ -2651,6 +2661,7 @@
         hideScanStatus(statusEl);
         renderScanResult(resultEl, stops, scanBtn, statusEl, orderEventId);
         showScanStatus(statusEl, msg, 'success');
+        saveScannedStopCount(orderEventId, stops.length);
 
         scanBtn.disabled = false;
         scanBtn.innerHTML = '📷 Scan another sheet';
@@ -3575,6 +3586,7 @@
         workingStops = workingStops.concat(newStops);
         markDirty();
         rebuildList();
+        saveScannedStopCount(orderEventId, workingStops.length);
         showScanStatus(statusEl, '✓ Appended ' + newStops.length + ' stops — re-optimizing…', 'info');
         setTimeout(function() { doReoptimize(null); }, 200);
       };

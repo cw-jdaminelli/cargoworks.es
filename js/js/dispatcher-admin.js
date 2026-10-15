@@ -198,6 +198,11 @@
   const editElapsedOverride   = document.getElementById('editElapsedOverride');
   const editElapsedManualHint = document.getElementById('editElapsedManualHint');
 
+  // Per-stop billing (route-sheet jobs): stops x rate, before IVA
+  const editPerStopFields     = document.getElementById('editPerStopFields');
+  const editStopCount         = document.getElementById('editStopCount');
+  const editStopRate          = document.getElementById('editStopRate');
+
   // Payment link button
   const editCreatePaymentBtn    = document.getElementById('editCreatePaymentBtn');
   const editCreatePaymentStatus = document.getElementById('editCreatePaymentStatus');
@@ -783,11 +788,12 @@
 
     row('Base', base);
     row('Distance', distance);
-    row('Stops', stops);
+    const perStop = quote.billingMode === 'per_stop';
+    row(perStop ? (safeNumber(quote.stopCount, 0) + ' stops × ' + money(quote.stopRate)) : 'Stops', stops);
     row('Surcharge', surcharge);
     row('Discount', -discount);
     row('Adjustment', adjustment);
-    row('Final total', total);
+    row(perStop ? 'Final total (+ IVA)' : 'Final total', total);
 
     const extra = document.createElement('div');
     const eta = safeNumber(quote.etaMins, 0);
@@ -1170,6 +1176,8 @@
       routeStartedAt: normalizeText(editRouteStartedAt && editRouteStartedAt.value),
       routeCompletedAt: normalizeText(editRouteCompletedAt && editRouteCompletedAt.value),
       elapsedMinutes: normalizeText(editElapsedMinutes && editElapsedMinutes.value),
+      stopCount: normalizeText(editStopCount && editStopCount.value),
+      stopRate: normalizeText(editStopRate && editStopRate.value),
       status: normalizeText(editStatus && editStatus.value),
       paymentStatus: normalizeText(editPaymentStatus && editPaymentStatus.value),
       paymentUrl: normalizeText(editPaymentUrl && editPaymentUrl.value),
@@ -1219,6 +1227,14 @@
       togglePriceNotice(true, 'Elapsed billing: ' + mins + ' min @ ' + rate.toFixed(2) + '/h = ' + total.toFixed(2) + '.');
       return;
     }
+    if (editBillingMode && editBillingMode.value === 'per_stop') {
+      const count = Math.max(0, Math.round(safeNumber(editStopCount && editStopCount.value, 0)));
+      const rate = safeNumber(editStopRate && editStopRate.value, 0);
+      const total = Math.round(count * rate * 100) / 100;
+      if (editPriceTotal) editPriceTotal.value = total.toFixed(2);
+      togglePriceNotice(true, 'Per-stop billing: ' + count + ' stops × EUR ' + rate.toFixed(2) + ' = EUR ' + total.toFixed(2) + ' + IVA.');
+      return;
+    }
     const base = safeNumber(editPriceBase && editPriceBase.value, 0);
     const distance = safeNumber(editPriceDistance && editPriceDistance.value, 0);
     const stops = safeNumber(editPriceStops && editPriceStops.value, 0);
@@ -1243,6 +1259,7 @@
     if (!editBillingMode) return;
     const elapsed = editBillingMode.value === 'elapsed';
     if (editElapsedFields) editElapsedFields.style.display = elapsed ? '' : 'none';
+    if (editPerStopFields) editPerStopFields.style.display = editBillingMode.value === 'per_stop' ? '' : 'none';
     applyPriceOverride(); // re-derive breakdown-fields/get-system-pricing visibility for the new mode
   }
 
@@ -1330,7 +1347,9 @@
     if (editPriceAdjustment) editPriceAdjustment.value = String(safeNumber(breakdown.adjustment, 0));
     if (editPriceTotal) editPriceTotal.value = String(safeNumber(quote && quote.total, 0));
 
-    if (editBillingMode) editBillingMode.value = (quote && quote.billingMode === 'elapsed') ? 'elapsed' : 'flat';
+    if (editBillingMode) editBillingMode.value = (quote && (quote.billingMode === 'elapsed' || quote.billingMode === 'per_stop')) ? quote.billingMode : 'flat';
+    if (editStopCount) editStopCount.value = (quote && quote.stopCount) ? String(safeNumber(quote.stopCount, 0)) : '';
+    if (editStopRate) editStopRate.value = (quote && quote.stopRate) ? String(safeNumber(quote.stopRate, 0)) : '';
     if (editHourlyRate) editHourlyRate.value = String(safeNumber(quote && quote.hourlyRate, 0));
     if (editRouteStartedAt) editRouteStartedAt.value = isoToDatetimeLocal(source && source.routeStartedAt);
     if (editRouteCompletedAt) editRouteCompletedAt.value = isoToDatetimeLocal(source && source.routeCompletedAt);
@@ -1428,6 +1447,8 @@
         billingMode: normalizeText(editBillingMode && editBillingMode.value) || 'flat',
         hourlyRate: safeNumber(editHourlyRate && editHourlyRate.value, 0),
         elapsedMinutes: safeNumber(editElapsedMinutes && editElapsedMinutes.value, 0),
+        stopCount: Math.max(0, Math.round(safeNumber(editStopCount && editStopCount.value, 0))),
+        stopRate: safeNumber(editStopRate && editStopRate.value, 0),
         etaMins: Math.max(15, safeNumber(editEtaMins && editEtaMins.value, 60)),
         totalKm: safeNumber(editTotalKm && editTotalKm.value, 0),
         currency: 'EUR',
@@ -2931,6 +2952,15 @@
       setAccountStatus('✓ ' + (json.accountName || 'Account') + ' — order will appear in their account panel, no payment link needed.', false);
       if (editAccountFieldsWrap) editAccountFieldsWrap.style.display = '';
       if (editPaymentStatus) editPaymentStatus.value = 'Account';
+      // Accounts billed per stop (e.g. TREVOL) switch the order to per-stop
+      // billing at the account's rate when the token is entered.
+      const pricePerStop = safeNumber(json.pricePerStop, 0);
+      if (!silent && pricePerStop > 0 && editBillingMode && editBillingMode.value !== 'per_stop') {
+        editBillingMode.value = 'per_stop';
+        if (editStopRate && !safeNumber(editStopRate.value, 0)) editStopRate.value = String(pricePerStop);
+        applyBillingModeVisibility();
+        recalculatePriceTotal();
+      }
       updateEditorDirtyFromForm();
     } catch (err) {
       setAccountStatus('Could not verify token: ' + ((err && err.message) || 'network error'), true);
@@ -2942,7 +2972,7 @@
   function applyPriceOverride() {
     if (!editPriceOverride) return;
     const manual = editPriceOverride.checked;
-    const elapsed = !!(editBillingMode && editBillingMode.value === 'elapsed');
+    const elapsed = !!(editBillingMode && (editBillingMode.value === 'elapsed' || editBillingMode.value === 'per_stop'));
     if (editPriceBreakdownFields) editPriceBreakdownFields.style.display = (manual || elapsed) ? 'none' : '';
     if (editPriceManualHint) editPriceManualHint.style.display = manual ? 'inline' : 'none';
     if (editGetSystemPricing) editGetSystemPricing.style.display = (manual || elapsed) ? 'none' : '';
@@ -3554,7 +3584,7 @@
     updateEditorDirtyFromForm();
   });
   if (editElapsedOverride) editElapsedOverride.addEventListener('change', function(){ applyElapsedOverride(); recalculatePriceTotal(); });
-  [editHourlyRate, editRouteStartedAt, editRouteCompletedAt, editElapsedMinutes].forEach(function(el){
+  [editHourlyRate, editRouteStartedAt, editRouteCompletedAt, editElapsedMinutes, editStopCount, editStopRate].forEach(function(el){
     if (!el) return;
     el.addEventListener('input', function(){
       if (el === editRouteStartedAt || el === editRouteCompletedAt) recalculateElapsedMinutes();

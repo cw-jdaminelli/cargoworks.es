@@ -201,7 +201,7 @@
     // More than one stop after the pickup — the Route column then shows just
     // the pickup instead of a single dropoff address.
     function isMultistop(o) {
-      return deliveryStops(o).length > 1;
+      return (o.stopCount || 0) > 1 || deliveryStops(o).length > 1;
     }
 
     function isPaid(o) {
@@ -225,6 +225,11 @@
     function cellHtml(col, o) {
       switch (col.key) {
         case 'ref':
+          // Per-stop orders (route sheets) record how many stops there were,
+          // not each stop, so there's no list to open.
+          if (o.stopCount) {
+            return escHtml(o.reference || '—') + ' <span class="acct-badge acct-badge--stops" style="cursor:default">' + o.stopCount + (o.stopCount === 1 ? ' stop' : ' stops') + '</span>';
+          }
           var stopCount = deliveryStops(o).length;
           var stopsHtml = stopCount
             ? ' <button type="button" class="acct-badge acct-badge--stops" data-ref="' + escHtml(o.reference) + '">' + stopCount + (stopCount === 1 ? ' stop' : ' stops') + ' ▾</button>'

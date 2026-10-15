@@ -794,6 +794,7 @@
               <select id="editBillingMode">
                 <option value="flat">Flat rate (zone/distance)</option>
                 <option value="elapsed">Elapsed time (hourly rate)</option>
+                <option value="per_stop">Per stop (count × rate)</option>
               </select>
             </div>
             <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
@@ -823,6 +824,10 @@
               </label>
               <input id="editElapsedMinutes" type="number" step="1" min="0" />
             </div>
+          </div>
+          <div id="editPerStopFields" style="display:none;">
+            <div class="dispatcher-field"><label for="editStopCount">Stops</label><input id="editStopCount" type="number" step="1" min="0" /></div>
+            <div class="dispatcher-field"><label for="editStopRate">Rate per stop (EUR, + IVA)</label><input id="editStopRate" type="number" step="0.01" min="0" /></div>
           </div>
           <div class="dispatcher-field">
             <label for="editPriceTotal" class="field-label-row">
