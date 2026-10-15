@@ -47,6 +47,9 @@
     table.acct-stops-detail { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
     table.acct-stops-detail th { text-align: left; font-size: 0.68rem; text-transform: uppercase; color: var(--acct-muted); padding: 0.2rem 0.5rem; }
     table.acct-stops-detail td { padding: 0.25rem 0.5rem; border-top: 1px solid var(--acct-border); }
+    .acct-note summary { cursor: pointer; color: var(--acct-muted); max-width: 220px; }
+    .acct-note[open] summary { margin-bottom: 0.3rem; }
+    .acct-note-full { white-space: pre-wrap; min-width: 220px; max-width: 420px; }
     .acct-stop-label { display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: 5px; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; background: #f0edf8; color: #6c3fc5; }
     .acct-route-multistop { color: var(--acct-muted); font-weight: 600; }
     .acct-route { font-size: 0.85rem; color: var(--acct-ink); }
@@ -222,6 +225,18 @@
       return pad(d.getDate()) + pad(d.getMonth() + 1) + d.getFullYear();
     }
 
+    // Notes can be very long, so they start collapsed to a one-line preview;
+    // clicking it shows the full text. Opened notes (by order reference) stay
+    // open across the 60s auto-refresh.
+    var openNotes = {};
+    function noteHtml(text, ref) {
+      var full = String(text || '').trim();
+      if (!full) return '—';
+      var firstLine = full.split('\n')[0];
+      var preview = firstLine.length > 40 ? firstLine.slice(0, 40) + '…' : firstLine + (full.indexOf('\n') >= 0 ? ' …' : '');
+      return '<details class="acct-note" data-ref="' + escHtml(ref) + '"' + (openNotes[ref] ? ' open' : '') + '><summary>' + escHtml(preview) + '</summary><div class="acct-note-full">' + escHtml(full) + '</div></details>';
+    }
+
     function cellHtml(col, o) {
       switch (col.key) {
         case 'ref':
@@ -251,7 +266,7 @@
         case 'recipient':
           return escHtml(o.attName || o.attContact || '—');
         case 'notes':
-          return escHtml(o.notes || '—');
+          return noteHtml(o.notes, o.reference);
         case 'status':
           return '<span class="acct-badge ' + statusBadgeClass(o.status) + '">' + escHtml(o.status || '—') + '</span>';
         case 'total':
@@ -320,13 +335,13 @@
             return '<tr>' +
               '<td>' + escHtml(label) + '</td>' +
               '<td>' + escHtml(s.address || '—') + dropoffHtml + '</td>' +
-              '<td>' + escHtml(s.notes || '—') + '</td>' +
+              '<td>' + escHtml(s.customerNote || '—') + '</td>' +
               '<td>' + statusHtml + '</td>' +
               '<td>' + podHtml + '</td>' +
               '<td>' + trackHtml + '</td>' +
             '</tr>';
           }).join('');
-          td.innerHTML = '<table class="acct-stops-detail"><thead><tr><th>#</th><th>Address</th><th>Notes</th><th>Status</th><th>POD</th><th>Track</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+          td.innerHTML = '<table class="acct-stops-detail"><thead><tr><th>#</th><th>Address</th><th>Note</th><th>Status</th><th>POD</th><th>Track</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
           detailTr.appendChild(td);
           elBody.appendChild(detailTr);
         }
@@ -405,6 +420,14 @@
       if (!detailRow) return;
       detailRow.style.display = detailRow.style.display === 'none' ? '' : 'none';
     });
+
+    // `toggle` doesn't bubble, so listen in the capture phase.
+    elBody.addEventListener('toggle', function(e) {
+      var d = e.target;
+      if (!d || !d.classList || !d.classList.contains('acct-note')) return;
+      var ref = d.getAttribute('data-ref') || '';
+      if (d.open) openNotes[ref] = true; else delete openNotes[ref];
+    }, true);
 
     // Load from URL param ?token=X
     var urlToken = new URLSearchParams(location.search).get('token');

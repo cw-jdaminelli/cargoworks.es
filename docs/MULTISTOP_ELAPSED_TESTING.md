@@ -2,8 +2,10 @@
 
 Covers the feature built for B2B accounts (e.g. flowerproject) that need multi-stop
 routes billed by actual elapsed time, with each stop independently tracked
-(own status, own POD, own public tracking link). See the implementation plan
-for full design context.
+(own status, own POD, own public tracking link). The latest implementation
+unifies pickup/dropoff into the same `route.stops` array, so the first stop is
+pickup and the last stop is dropoff, and POD uploads live on stop rows rather
+than on separate pickup/dropoff scalars.
 
 Run each section against the live dispatcher/rider/tracking/account pages once
 `apps-script/Code.gs` has been deployed (pushed to Apps Script + web app
@@ -20,8 +22,10 @@ Check off each item as `[x]` as you go.
       shape is unchanged — no `billingMode`/`hourlyRate`/`elapsedMinutes` fields
       showing up with non-empty/surprising values, `quote.route.stops` stays `[]`.
 - [ ] Edit an existing multi-stop order that predates this feature (stops are
-      plain `{address}` objects with no `id`). Save it. Confirm:
+      plain `{address}` objects with no `id`, or the order still uses legacy
+      `route.pickup`/`route.dropoff` scalars and `adminData.pickupPodUrl`/`adminData.podUrl`). Save it. Confirm:
   - Each stop now has a real `id` and `trackingToken` after this first save.
+  - Pickup/dropoff are migrated into `route.stops[0]` and `route.stops[last]`.
   - If the old stops had `tier`/`priority`/`outlier` set (from a rider route
     commit), those values are preserved, not dropped.
 - [ ] Re-open a multi-stop order and save it again *without* changing anything.
@@ -95,6 +99,9 @@ Check off each item as `[x]` as you go.
     "Elapsed minutes" and the final total.
 - [ ] Check the "Manual override" checkbox next to "Elapsed minutes" — confirm
       typing a value directly no longer gets overwritten by the auto-calc.
+- [ ] Confirm the stop editor now treats pickup as stop 1 and dropoff as stop N,
+      with POD upload/replace controls on each stop row. There should be no
+      separate pickup/dropoff POD UI outside the stops list.
 - [ ] Check the main pricing "Manual override" checkbox — confirm it still
       works for the final total exactly as before, in both flat and elapsed mode.
 - [ ] On a saved multi-stop order, use the "✓ Delivered"/"✗ Failed" buttons next
@@ -126,6 +133,9 @@ Check off each item as `[x]` as you go.
       backdate it (5/10/15/30/60 min ago options).
 - [ ] After starting the route, confirm the section instead shows "Route
       started HH:MM" with an "✎ Edit start time" option that lets you correct it.
+- [ ] Confirm pickup/dropoff are displayed as the first and last stops in the
+      rider's route view, and that POD attachment works consistently on those
+      rows the same as on intermediate stops.
 - [ ] For a Pending stop: attach a photo, then tap "✓ Delivered" — confirm the
       photo uploads and the stop shows Delivered with a "View POD" link.
 - [ ] Tap "✗ Failed" on a stop — confirm you're prompted for a reason and can't

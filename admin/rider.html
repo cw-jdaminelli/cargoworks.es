@@ -408,6 +408,13 @@
       margin-bottom: 3px;
     }
     .order-note-text { font-size: 0.92rem; color: var(--text); line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    /* "Read the notes" gate — must be ticked before the order can progress */
+    .notes-warning { margin: 10px 14px 0; padding: 10px 12px; border-radius: 8px; background: rgba(251,191,36,0.12); border: 1px solid var(--yellow); color: var(--yellow); font-weight: 700; font-size: 0.88rem; }
+    .notes-ack { display: flex; align-items: center; gap: 12px; margin: 10px 14px 14px; padding: 14px; border: 2px solid var(--yellow); border-radius: 10px; font-weight: 700; font-size: 1rem; color: var(--text); cursor: pointer; }
+    .notes-ack input { width: 26px; height: 26px; flex-shrink: 0; accent-color: var(--yellow); }
+    .footer-gate { text-align: center; color: var(--yellow); font-weight: 700; font-size: 0.92rem; padding: 12px; border: 2px dashed var(--yellow); border-radius: 10px; }
+    .stop-customer-note { font-size: 0.82rem; color: var(--text); background: rgba(255,255,255,0.05); border-radius: 6px; padding: 6px 8px; white-space: pre-wrap; word-break: break-word; }
+    .stop-customer-note-input { width: 100%; min-height: 54px; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface, #1a1a2e); color: var(--text); font: inherit; font-size: 0.85rem; resize: vertical; box-sizing: border-box; }
     .card-notes-flag { font-size: 0.72rem; font-weight: 600; color: var(--yellow); white-space: nowrap; }
     .detail-row-label {
       font-size: 0.72rem;
@@ -2019,12 +2026,62 @@
       return items;
     }
 
+    // ── "Read the notes" gate ─────────────────────────────────────────────────
+    // On my active orders with notes, nothing can progress (On My Way, stop
+    // buttons, In Transit) until the rider ticks "I've read the notes". The
+    // tick is remembered per order on this phone, keyed to the notes' content,
+    // so a note added or changed later has to be read and ticked again.
+    const _notesAckFallback = {};
+
+    function notesAckKey(order) {
+      const text = getOrderNotes(order).map(function(n) { return n.label + ':' + n.text; }).join('|');
+      let hash = 5381;
+      for (let i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
+      return 'cwNotesRead:' + order.eventId + ':' + hash.toString(36);
+    }
+
+    function notesAcknowledged(order) {
+      if (!getOrderNotes(order).length) return true;
+      const key = notesAckKey(order);
+      if (_notesAckFallback[key]) return true;
+      try { return localStorage.getItem(key) === '1'; } catch (_) { return false; }
+    }
+
+    function acknowledgeNotes(order) {
+      const key = notesAckKey(order);
+      _notesAckFallback[key] = true;
+      try { localStorage.setItem(key, '1'); } catch (_) {}
+    }
+
+    // Notes the rider still has to confirm before working this order.
+    function notesNeedAck(order) {
+      const finalStatuses = ['Delivered', 'Failed', 'Canceled', 'Delivery rejected'];
+      return order.riderName === RIDER_NAME && finalStatuses.indexOf(order.status) < 0 && !notesAcknowledged(order);
+    }
+
     function buildOrderNotesSection(order) {
       const items = getOrderNotes(order);
       if (!items.length) return null;
+      const needAck = notesNeedAck(order);
+      // My orders' notes collapse once read; tap the title to read them again.
+      const collapsible = order.riderName === RIDER_NAME && !needAck;
+
       const sec = document.createElement('div');
       sec.className = 'detail-section is-notes';
-      sec.innerHTML = '<div class="detail-section-title">📝 Notes</div>';
+      const title = document.createElement('div');
+      title.className = 'detail-section-title' + (collapsible ? ' is-collapsible' : '');
+      const titleLabel = document.createElement('span');
+      titleLabel.textContent = collapsible ? '📝 Notes ✓ read — tap to show' : '📝 Notes';
+      title.appendChild(titleLabel);
+      sec.appendChild(title);
+
+      const content = document.createElement('div');
+      if (needAck) {
+        const warning = document.createElement('div');
+        warning.className = 'notes-warning';
+        warning.textContent = '⚠️ Read these notes before you start. You can\'t continue until you tick the box below.';
+        content.appendChild(warning);
+      }
       items.forEach(function(item) {
         const row = document.createElement('div');
         row.className = 'order-note';
@@ -2036,8 +2093,38 @@
         text.textContent = item.text;
         row.appendChild(label);
         row.appendChild(text);
-        sec.appendChild(row);
+        content.appendChild(row);
       });
+      if (needAck) {
+        const ack = document.createElement('label');
+        ack.className = 'notes-ack';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        ack.appendChild(box);
+        ack.appendChild(document.createTextNode('I\'ve read the notes'));
+        box.addEventListener('change', function() {
+          if (!box.checked) return;
+          acknowledgeNotes(order);
+          toast('Notes read ✓ — you can continue', 'success');
+          renderDetailBody(order);
+          renderActionFooter(order);
+        });
+        content.appendChild(ack);
+      }
+      sec.appendChild(content);
+
+      if (collapsible) {
+        const chevron = document.createElement('span');
+        chevron.textContent = '▸';
+        title.appendChild(chevron);
+        content.style.display = 'none';
+        title.addEventListener('click', function() {
+          const isOpen = content.style.display !== 'none';
+          content.style.display = isOpen ? 'none' : '';
+          chevron.textContent = isOpen ? '▸' : '▾';
+          titleLabel.textContent = isOpen ? '📝 Notes ✓ read — tap to show' : '📝 Notes ✓ read';
+        });
+      }
       return sec;
     }
 
@@ -2132,7 +2219,7 @@
         const isFirst = idx === 0;
         const isLast = idx === stops.length - 1;
         const label = isFirst ? 'Pickup' : (isLast ? 'Dropoff' : ('Stop ' + idx));
-        const actionable = isMine && (isFirst ? order.status === 'OMW' : order.status === 'In transit');
+        const actionable = isMine && !notesNeedAck(order) && (isFirst ? order.status === 'OMW' : order.status === 'In transit');
 
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--border,#333);';
@@ -2151,10 +2238,43 @@
           row.appendChild(notesLine);
         }
 
+        // Recipient contact (from dispatch) — tap the phone to call.
+        if (!isFirst && (stop.recipientName || stop.recipientPhone || stop.addressDetails)) {
+          const contact = document.createElement('div');
+          contact.style.cssText = 'font-size:0.82rem;display:flex;flex-wrap:wrap;gap:4px 12px;';
+          if (stop.recipientName) {
+            const nameEl = document.createElement('span');
+            nameEl.textContent = '👤 ' + stop.recipientName;
+            contact.appendChild(nameEl);
+          }
+          if (stop.recipientPhone) {
+            const phoneEl = document.createElement('a');
+            phoneEl.className = 'maps-link';
+            phoneEl.href = 'tel:' + String(stop.recipientPhone).replace(/[^\d+]/g, '');
+            phoneEl.textContent = '📞 ' + stop.recipientPhone;
+            contact.appendChild(phoneEl);
+          }
+          if (stop.addressDetails) {
+            const detailsEl = document.createElement('span');
+            detailsEl.textContent = '🏢 ' + stop.addressDetails;
+            contact.appendChild(detailsEl);
+          }
+          row.appendChild(contact);
+        }
+
+        // Customer note — the one note per drop that the customer sees on
+        // this stop's tracking (the 📝 note above stays internal).
+        if (!isFirst && stop.customerNote) {
+          const custLine = document.createElement('div');
+          custLine.className = 'stop-customer-note';
+          custLine.textContent = '💬 For customer: ' + stop.customerNote;
+          row.appendChild(custLine);
+        }
+
         if (stop.status && stop.status !== 'Pending') {
           const doneInfo = document.createElement('div');
           doneInfo.style.cssText = 'font-size:0.8rem;' + (stop.status === 'Delivered' ? 'color:var(--green);' : 'color:var(--danger,#d33);');
-          doneInfo.textContent = (stop.status === 'Delivered' ? '✓ Delivered' : ('✗ Failed' + (stop.failureReason ? (': ' + stop.failureReason) : ''))) +
+          doneInfo.textContent = (stop.status === 'Delivered' ? (isFirst ? '✓ Picked up' : '✓ Delivered') : ('✗ Failed' + (stop.failureReason ? (': ' + stop.failureReason) : ''))) +
             (stop.completedAt ? (' — ' + formatIso(stop.completedAt)) : '');
           row.appendChild(doneInfo);
           if (stop.podUrl) {
@@ -2166,11 +2286,25 @@
             podLink.style.fontSize = '0.8rem';
             row.appendChild(podLink);
           }
+          if (isMine && !isFirst) {
+            const noteBtn = document.createElement('button');
+            noteBtn.className = 'btn btn-ghost';
+            noteBtn.style.cssText = 'padding:6px 10px;font-size:0.78rem;align-self:flex-start;';
+            noteBtn.textContent = stop.customerNote ? '✎ Edit note for customer' : '✎ Add note for customer';
+            noteBtn.addEventListener('click', function() { doSaveStopCustomerNote(order, stop, noteBtn); });
+            row.appendChild(noteBtn);
+          }
           sec.appendChild(row);
           return;
         }
 
+        // While the route is underway the rider can write this drop's customer
+        // note and send it right away — not only together with Delivered.
+        const routeUnderway = ['OMW', 'Picked up', 'In transit'].indexOf(order.status) >= 0;
+        const noteCtl = (isMine && !isFirst && routeUnderway && !notesNeedAck(order)) ? buildStopNoteControls(order, stop) : null;
+
         if (!actionable) {
+          if (noteCtl) row.appendChild(noteCtl.el);
           sec.appendChild(row);
           return;
         }
@@ -2206,16 +2340,26 @@
         row.appendChild(podInput);
         row.appendChild(podPreview);
 
+        // The customer note typed here is also saved with Delivered/Failed.
+        if (noteCtl) row.appendChild(noteCtl.el);
+        function noteExtra() {
+          if (!noteCtl) return null;
+          const value = noteCtl.value();
+          return value !== (stop.customerNote || '') ? { customerNote: value } : null;
+        }
+
         const btnRow = document.createElement('div');
         btnRow.className = 'btn-row';
         const failBtn = document.createElement('button');
         failBtn.className = 'btn btn-danger';
         failBtn.textContent = 'Failed';
-        failBtn.addEventListener('click', function() { doCompleteStop(order.eventId, stop.id, 'Failed', btnRow); });
+        failBtn.addEventListener('click', function() { doCompleteStop(order.eventId, stop.id, 'Failed', btnRow, isFirst, noteExtra()); });
+        // The pickup leg is still stored as "Delivered" (stops only have
+        // Pending/Delivered/Failed); only the label changes.
         const deliveredBtn = document.createElement('button');
         deliveredBtn.className = 'btn btn-success';
-        deliveredBtn.textContent = '✓ Delivered';
-        deliveredBtn.addEventListener('click', function() { doCompleteStop(order.eventId, stop.id, 'Delivered', btnRow); });
+        deliveredBtn.textContent = isFirst ? '✓ Picked up' : '✓ Delivered';
+        deliveredBtn.addEventListener('click', function() { doCompleteStop(order.eventId, stop.id, 'Delivered', btnRow, isFirst, noteExtra()); });
         btnRow.appendChild(failBtn);
         btnRow.appendChild(deliveredBtn);
         row.appendChild(btnRow);
@@ -2260,16 +2404,16 @@
     // btnRow holds this stop's Failed/Delivered buttons. They're disabled for
     // the whole request (Apps Script can take several seconds) so repeated
     // taps can't send — and log — the same stop update again.
-    async function doCompleteStop(eventId, stopId, status, btnRow) {
+    async function doCompleteStop(eventId, stopId, status, btnRow, isPickup, extra) {
       let reason = '';
       if (status === 'Failed') {
-        reason = window.prompt('Reason the stop failed:') || '';
+        reason = window.prompt(isPickup ? 'Reason the pickup failed:' : 'Reason the stop failed:') || '';
         if (!reason.trim()) return;
       }
       const stopBtns = btnRow ? btnRow.querySelectorAll('.btn') : [];
       stopBtns.forEach(function(b) { b.disabled = true; });
       setFooterLoading(true);
-      const payload = { action: 'riderCompleteStop', id: RIDER_ID, eventId: eventId, stopId: stopId, status: status, reason: reason };
+      const payload = Object.assign({ action: 'riderCompleteStop', id: RIDER_ID, eventId: eventId, stopId: stopId, status: status, reason: reason }, extra || {});
       const podDataUrlForStop = _stopPodMap[stopId];
       if (podDataUrlForStop) {
         payload.podData = podDataUrlForStop;
@@ -2283,7 +2427,111 @@
         stopBtns.forEach(function(b) { b.disabled = false; });
         return;
       }
-      toast('Stop marked ' + status + ' ✓', 'success');
+      toast(isPickup ? (status === 'Delivered' ? 'Picked up ✓' : 'Pickup marked Failed ✓') : ('Stop marked ' + status + ' ✓'), 'success');
+      updateAndRerender(res.order);
+    }
+
+    // Customer note box for one drop: always shown on that stop's tracking when
+    // sent; optionally also sent by WhatsApp (from this phone) and/or email,
+    // when dispatch has the recipient's phone/email.
+    function buildStopNoteControls(order, stop) {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+      const input = document.createElement('textarea');
+      input.className = 'stop-customer-note-input';
+      input.placeholder = 'Note for the customer (optional) — shown on their tracking page';
+      input.value = stop.customerNote || '';
+      wrap.appendChild(input);
+
+      const opts = document.createElement('div');
+      opts.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:0.82rem;';
+      function channelBox(label, available) {
+        if (!available) return null;
+        const lab = document.createElement('label');
+        lab.style.cssText = 'display:inline-flex;align-items:center;gap:5px;';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.style.cssText = 'width:18px;height:18px;';
+        lab.appendChild(box);
+        lab.appendChild(document.createTextNode('also ' + label));
+        opts.appendChild(lab);
+        return box;
+      }
+      const waBox = channelBox('WhatsApp', !!stopWhatsAppPhone(stop.recipientPhone));
+      const emailBox = channelBox('email', !!String(stop.recipientEmail || '').trim());
+      const sendBtn = document.createElement('button');
+      sendBtn.className = 'btn btn-ghost';
+      sendBtn.style.cssText = 'padding:6px 12px;font-size:0.8rem;margin-left:auto;';
+      sendBtn.textContent = '📣 Send note now';
+      sendBtn.addEventListener('click', function() {
+        doSendStopNote(order, stop, input.value.trim(), { whatsapp: !!(waBox && waBox.checked), email: !!(emailBox && emailBox.checked) }, sendBtn);
+      });
+      opts.appendChild(sendBtn);
+      wrap.appendChild(opts);
+      return { el: wrap, value: function() { return input.value.trim(); } };
+    }
+
+    // wa.me needs the country code; Spanish numbers are often typed without it.
+    function stopWhatsAppPhone(value) {
+      let digits = String(value || '').replace(/\D/g, '');
+      if (digits.indexOf('00') === 0) digits = digits.slice(2);
+      if (digits.length === 9 && /^[6789]/.test(digits)) digits = '34' + digits;
+      return digits;
+    }
+
+    // Same message the backend emails (buildStopNoteText in Code.gs).
+    function stopNoteMessage(order, stop, note) {
+      const lines = [stop.recipientName ? ('Hola ' + stop.recipientName + ',') : 'Hola,', '', note];
+      if (order.reference && stop.id && stop.trackingToken) {
+        lines.push('', 'Tracking: https://cargoworks.es/tracking.html?ref=' + encodeURIComponent(order.reference) +
+          '&stop=' + encodeURIComponent(stop.id) + '&t=' + encodeURIComponent(stop.trackingToken));
+      }
+      lines.push('', 'Cargoworks');
+      return lines.join('\n');
+    }
+
+    async function doSendStopNote(order, stop, note, channels, btn) {
+      if (!note) { toast('Write the note first', 'error'); return; }
+      // Open WhatsApp straight from the tap — phones block it if we wait for
+      // the server first.
+      const phone = stopWhatsAppPhone(stop.recipientPhone);
+      if (channels.whatsapp && phone) {
+        try { window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(stopNoteMessage(order, stop, note)), '_blank'); } catch (_) {}
+      }
+      btn.disabled = true;
+      const res = await api('POST', {
+        action: 'sendStopNote', id: RIDER_ID, eventId: order.eventId, stopId: stop.id,
+        customerNote: note, channels: channels
+      });
+      if (res.error) {
+        toast(res.error, 'error');
+        btn.disabled = false;
+        return;
+      }
+      const sent = res.sent || {};
+      const via = ['tracking'].concat(sent.email ? ['email'] : [], channels.whatsapp && phone ? ['WhatsApp'] : []);
+      const problems = sent.errors || [];
+      toast('Note sent ✓ (' + via.join(' + ') + ')' + (problems.length ? ' — ' + problems.join('; ') : ''), problems.length ? 'error' : 'success');
+      updateAndRerender(res.order);
+    }
+
+    // Edits the customer note on a stop that's already Delivered/Failed:
+    // re-sends the stop's current status (a no-op for the status itself) with
+    // the new note. A Failed stop needs its reason again, so that's sent too.
+    async function doSaveStopCustomerNote(order, stop, btn) {
+      const next = window.prompt('Note for the customer (shown on their tracking page):', stop.customerNote || '');
+      if (next == null) return;
+      btn.disabled = true;
+      const res = await api('POST', {
+        action: 'riderCompleteStop', id: RIDER_ID, eventId: order.eventId, stopId: stop.id,
+        status: stop.status, reason: stop.failureReason || '-', customerNote: next.trim()
+      });
+      if (res.error) {
+        toast(res.error, 'error');
+        btn.disabled = false;
+        return;
+      }
+      toast('Note saved ✓', 'success');
       updateAndRerender(res.order);
     }
 
@@ -3651,11 +3899,14 @@
           return;
         }
 
-        mapInstance = L.map(mapEl, { zoomControl: true, attributionControl: false });
+        mapInstance = L.map(mapEl, { zoomControl: true });
+        mapInstance.attributionControl.setPrefix(false);
 
-        // Light high-contrast tile layer (readable in daylight)
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-          maxZoom: 19
+        // OpenStreetMap tiles (CARTO's free basemaps now require an API key
+        // and only serve a watermark). OSM's tile policy requires the credit.
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap contributors'
         }).addTo(mapInstance);
 
         var latlngs = [];
@@ -3910,6 +4161,15 @@
         return;
       }
 
+      // Notes not confirmed yet — no progression until they're read.
+      if (notesNeedAck(order)) {
+        const gate = document.createElement('div');
+        gate.className = 'footer-gate';
+        gate.textContent = '⬆️ Read the notes at the top and tick "I\'ve read the notes" to continue.';
+        footer.appendChild(gate);
+        return;
+      }
+
       // My order — show progression buttons based on status
       if (status === 'Assigned') {
         const omwBtn = document.createElement('button');
@@ -3934,7 +4194,7 @@
         // up" the moment that stop is marked Delivered.
         const info = document.createElement('div');
         info.style.cssText = 'text-align:center;color:var(--text-muted);font-size:0.82rem;padding:8px;';
-        info.textContent = 'Mark the Pickup stop above as Delivered/Failed once you have the cargo.';
+        info.textContent = 'Mark the Pickup stop above as Picked up once you have the cargo (or Failed).';
         footer.appendChild(info);
       }
 

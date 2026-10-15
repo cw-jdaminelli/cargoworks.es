@@ -9,6 +9,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CARGOWORKS - Dispatcher Workspace</title>
   <link rel="stylesheet" href="../css/effects/layout.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <!-- defer: route maps are only drawn when an order's 🗺 Map is opened -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
   <style>
     :root {
       --dispatch-ink: #182335;
@@ -134,6 +139,26 @@
     .span-6 { grid-column: span 6; }
     .span-8 { grid-column: span 8; }
     .span-12 { grid-column: span 12; }
+
+    /* Controls: three labelled rows — Load (what to fetch), Filter (narrow it
+       down; Apply fetches the matches), View (sort + who's operating). */
+    .dc-controls { display: flex; flex-direction: column; align-items: stretch; }
+    .dc-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.4rem 0.7rem; padding: 0.4rem 0; border-top: 1px solid var(--dispatch-border); }
+    .dc-row:first-child { border-top: none; padding-top: 0.1rem; }
+    .dc-row-title { flex: 0 0 3.2rem; align-self: center; font-size: 0.66rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dispatch-accent); }
+    .dc-inline { display: flex; align-items: center; gap: 0.25rem; }
+    .dc-inline .btn, .dc-row > .dispatcher-field > .btn { padding: 0.3rem 0.52rem; font-size: 0.72rem; white-space: nowrap; }
+    .dc-inline .btn.dc-icon { padding: 0.3rem 0.5rem; font-weight: 800; }
+    .dc-row .dispatcher-field input.dc-w-date { width: 8.6rem; }
+    .dc-row .dispatcher-field input.dc-w-ref { width: 10.5rem; }
+    .dc-row .dispatcher-field input.dc-w-account { width: 9rem; }
+    .dc-w-select { width: 7.6rem; }
+    .dc-grow { flex: 1 1 11rem; }
+    .dc-push-right { margin-left: auto; }
+    @media (max-width: 700px) {
+      .dc-row-title, .dc-grow { flex-basis: 100%; }
+      .dc-push-right { margin-left: 0; }
+    }
 
     .dispatcher-orders {
       display: grid;
@@ -435,6 +460,48 @@
     }
     .stop-badge--ok { background: #e6f4ea; color: #2b6e3a; }
     .stop-badge--fail { background: #fdecea; color: #8b0000; }
+    .stop-drag-handle { flex: 0 0 auto; cursor: grab; color: var(--dispatch-muted); font-size: 1rem; line-height: 1; padding: 0 0.15rem; user-select: none; }
+    .stop-drag-handle:active { cursor: grabbing; }
+    .stop-row.is-dragging { opacity: 0.45; }
+    .stop-row.drag-over-top { box-shadow: inset 0 3px 0 var(--dispatch-accent); }
+    .stop-row.drag-over-bottom { box-shadow: inset 0 -3px 0 var(--dispatch-accent); }
+
+    /* Editor opened inside an order card (no pop-up) */
+    .dispatcher-modal-card.is-inline { width: 100%; max-height: none; overflow: visible; box-shadow: none; border: 2px solid var(--dispatch-accent); padding: 0.75rem; }
+    /* Sections keep their natural height (the stops section is tall), and the
+       stops get a full-width row under customer / account / timing. */
+    .dispatcher-modal-sections { align-items: start; }
+    .dispatcher-section { align-content: start; }
+    #secRoute { grid-column: span 12; order: 1; }
+    #secCargo, #secPricing, #secDelivery, #secAdmin { order: 2; }
+    .dispatcher-card.is-editing { padding: 0; border: none; box-shadow: none; background: transparent; }
+    .dispatcher-card.is-editing > :not(.dispatcher-modal-card) { display: none; }
+
+    /* Fields changed since the editor opened — check before saving */
+    .dispatcher-modal-card .is-changed { background: #fff4cc !important; border-color: #e0a800 !important; box-shadow: 0 0 0 2px rgba(224, 168, 0, 0.22); }
+    .stop-row.is-new-stop { border-color: #e0a800 !important; background: #fffbea; }
+    .stop-row.is-moved { box-shadow: inset 3px 0 0 #e0a800; }
+    .editor-change-count { font-size: 0.75rem; font-weight: 700; color: #8a6400; }
+
+    /* Splitting stops off into a new order */
+    .stop-split-pick { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.7rem; color: var(--dispatch-muted); cursor: pointer; white-space: nowrap; }
+    .stop-split-pick input { width: auto !important; margin: 0; }
+    .stop-split-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; padding: 0.45rem 0.55rem; margin: 0.2rem 0 0.4rem; border: 1px dashed var(--dispatch-accent); border-radius: 8px; background: rgba(240, 123, 57, 0.06); font-size: 0.75rem; }
+    .stop-split-bar .stop-split-label { font-weight: 700; }
+    .stop-split-bar input { width: auto !important; }
+    .stop-split-bar input[type="text"] { flex: 1 1 110px; min-width: 0; }
+    .editor-routes-banner ul { font-size: 0.8rem; }
+
+    /* Route map under an order's stops (card and editor) */
+    .stops-map-toggle-row { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
+    .stops-map-toggle-row .btn { padding: 0.15rem 0.5rem; font-size: 0.72rem; }
+    .stops-map-panel { display: grid; gap: 0.3rem; margin-top: 0.3rem; }
+    .stops-map { height: 230px; border-radius: 10px; border: 1px solid var(--dispatch-border); background: #eef1f5; overflow: hidden; }
+    .stops-map-summary { font-size: 0.72rem; color: var(--dispatch-muted); }
+    .stops-map-summary .is-warn { color: #a5560f; }
+    .stop-pin { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--dispatch-ink); color: #fff; font: 700 11px/1 sans-serif; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); }
+    .stop-pin--pickup { background: var(--dispatch-accent); }
+    .stop-pin--done { background: var(--dispatch-ok); }
     /* ── Inline label actions ────────────────────────────────────────── */
     .field-label-row {
       display: flex;
@@ -556,93 +623,111 @@
       </div>
 
       <div class="dispatcher-controls-wrap">
-      <div class="dispatcher-grid-controls" aria-label="Dispatcher controls">
-        <div class="dispatcher-field span-2">
-          <label for="dispatcherDate">Date</label>
-          <input id="dispatcherDate" type="date" />
-        </div>
-        <div class="dispatcher-field span-2">
-          <label for="dispatcherOperator">Operator</label>
-          <input id="dispatcherOperator" type="text" placeholder="Dispatcher name" />
-        </div>
-        <div class="dispatcher-field span-4">
-          <label for="dispatcherKeyword">Quick search</label>
-          <input id="dispatcherKeyword" type="text" placeholder="Reference, customer, route, notes" />
-        </div>
-        <div class="dispatcher-field span-2">
-          <label for="dispatcherFilterStatus">Status</label>
-          <select id="dispatcherFilterStatus"><option value="">Any status</option></select>
-        </div>
-        <div class="dispatcher-field span-2">
-          <label for="dispatcherFilterPayment">Payment</label>
-          <select id="dispatcherFilterPayment">
-            <option value="">Any payment</option>
-            <option value="Pending">Pending</option>
-            <option value="Paid">Paid</option>
-            <option value="Failed">Failed</option>
-            <option value="Account">Account (unpaid)</option>
-          </select>
+      <div class="dispatcher-grid-controls dc-controls" aria-label="Dispatcher controls">
+        <!-- Load: which orders to fetch -->
+        <div class="dc-row">
+          <span class="dc-row-title">Load</span>
+          <div class="dispatcher-field">
+            <label for="dispatcherDate">Day</label>
+            <div class="dc-inline">
+              <button id="dispatcherPrevDay" class="btn btn--ghost dc-icon" type="button" title="Previous day">‹</button>
+              <input id="dispatcherDate" class="dc-w-date" type="date" />
+              <button id="dispatcherNextDay" class="btn btn--ghost dc-icon" type="button" title="Next day">›</button>
+              <button id="dispatcherLoad" class="btn btn--ghost" type="button" title="Load the day in the box">Load</button>
+              <button id="dispatcherToday" class="btn btn--ghost" type="button">Today</button>
+              <button id="dispatcherYesterday" class="btn btn--ghost" type="button">Yesterday</button>
+            </div>
+          </div>
+          <div class="dispatcher-field">
+            <label for="dispatcherSearchInput">Reference</label>
+            <div class="dc-inline">
+              <input id="dispatcherSearchInput" class="dc-w-ref" type="text" placeholder="CW-DDMMYYYY-XXXX" />
+              <button id="dispatcherSearchButton" class="btn btn--ghost" type="button">Find</button>
+            </div>
+          </div>
+          <div class="dispatcher-field">
+            <label for="dispatcherAccountInput">Account</label>
+            <div class="dc-inline">
+              <input id="dispatcherAccountInput" class="dc-w-account" type="text" list="dispatcherAccountList" placeholder="BIZ-NAME" autocomplete="off" />
+              <button id="dispatcherLoadAccount" class="btn btn--ghost" type="button">Load account</button>
+            </div>
+            <datalist id="dispatcherAccountList"></datalist>
+          </div>
+          <div class="dispatcher-field">
+            <label>&nbsp;</label>
+            <button id="dispatcherLoadAll" class="btn btn--ghost" type="button" title="Every order ever (can be slow); use Filter with From/To instead when possible">All orders</button>
+          </div>
         </div>
 
-        <div class="dispatcher-field span-2">
-          <label for="dispatcherFilterUpdates">Updates</label>
-          <select id="dispatcherFilterUpdates"><option value="">Any updates</option></select>
-        </div>
-        <div class="dispatcher-field span-2">
-          <label for="dispatcherFromDate">From</label>
-          <input id="dispatcherFromDate" type="date" />
-        </div>
-        <div class="dispatcher-field span-2">
-          <label for="dispatcherToDate">To</label>
-          <input id="dispatcherToDate" type="date" />
-        </div>
-        <div class="dispatcher-field span-2">
-          <label for="dispatcherSort">Sort</label>
-          <select id="dispatcherSort">
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-            <option value="time-asc">Time ascending</option>
-            <option value="time-desc">Time descending</option>
-            <option value="status">Status A-Z</option>
-            <option value="customer">Customer A-Z</option>
-            <option value="reference">Reference A-Z</option>
-          </select>
-        </div>
-        <div class="dispatcher-field span-2">
-          <label for="dispatcherSearchInput">Reference lookup</label>
-          <input id="dispatcherSearchInput" type="text" placeholder="CW-DDMMYYYY-XXXX" />
-        </div>
-        <div class="dispatcher-field span-2">
-          <label>Load controls</label>
-          <div class="dispatcher-inline-actions">
-            <button id="dispatcherLoad" class="btn btn--ghost" type="button">Day</button>
-            <button id="dispatcherLoadAll" class="btn btn--ghost" type="button">All</button>
-            <button id="dispatcherToday" class="btn btn--ghost" type="button">Today</button>
+        <!-- Filter: Apply loads the orders matching all of these -->
+        <div class="dc-row">
+          <span class="dc-row-title">Filter</span>
+          <div class="dispatcher-field dc-grow">
+            <label for="dispatcherKeyword">Search</label>
+            <input id="dispatcherKeyword" type="text" placeholder="Reference, customer, route, notes — Enter to search" />
+          </div>
+          <div class="dispatcher-field dc-w-select">
+            <label for="dispatcherFilterStatus">Status</label>
+            <select id="dispatcherFilterStatus"><option value="">Any status</option></select>
+          </div>
+          <div class="dispatcher-field dc-w-select">
+            <label for="dispatcherFilterPayment">Payment</label>
+            <select id="dispatcherFilterPayment">
+              <option value="">Any payment</option>
+              <option value="Pending">Pending</option>
+              <option value="Paid">Paid</option>
+              <option value="Failed">Failed</option>
+              <option value="Account">Account (unpaid)</option>
+            </select>
+          </div>
+          <div class="dispatcher-field dc-w-select">
+            <label for="dispatcherFilterInvoiced">Invoiced</label>
+            <select id="dispatcherFilterInvoiced">
+              <option value="">Any</option>
+              <option value="yes">Invoiced</option>
+              <option value="no">Not invoiced</option>
+            </select>
+          </div>
+          <div class="dispatcher-field dc-w-select">
+            <label for="dispatcherFilterUpdates">Updates</label>
+            <select id="dispatcherFilterUpdates"><option value="">Any updates</option></select>
+          </div>
+          <div class="dispatcher-field">
+            <label for="dispatcherFromDate">From</label>
+            <input id="dispatcherFromDate" class="dc-w-date" type="date" />
+          </div>
+          <div class="dispatcher-field">
+            <label for="dispatcherToDate">To</label>
+            <input id="dispatcherToDate" class="dc-w-date" type="date" />
+          </div>
+          <div class="dispatcher-field">
+            <label>&nbsp;</label>
+            <div class="dc-inline">
+              <button id="dispatcherApplyFilters" class="btn" type="button" title="Load the orders matching these filters (From/To, or the last 6 months to 2 months ahead if empty)">Apply</button>
+              <button id="dispatcherClearFilters" class="btn btn--ghost" type="button">Clear</button>
+            </div>
           </div>
         </div>
-        <div class="dispatcher-field span-2">
-          <label>Filter controls</label>
-          <div class="dispatcher-inline-actions">
-            <button id="dispatcherApplyFilters" class="btn btn--ghost" type="button">Apply</button>
-            <button id="dispatcherClearFilters" class="btn btn--ghost" type="button">Clear</button>
-            <button id="dispatcherSearchButton" class="btn btn--ghost" type="button">Find</button>
+
+        <!-- View -->
+        <div class="dc-row">
+          <span class="dc-row-title">View</span>
+          <div class="dispatcher-field dc-w-select">
+            <label for="dispatcherSort">Sort</label>
+            <select id="dispatcherSort">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="time-asc">Time ascending</option>
+              <option value="time-desc">Time descending</option>
+              <option value="status">Status A-Z</option>
+              <option value="customer">Customer A-Z</option>
+              <option value="reference">Reference A-Z</option>
+            </select>
           </div>
-        </div>
-        <div class="dispatcher-field span-4">
-          <label for="dispatcherAccountInput">Account orders</label>
-          <div class="dispatcher-inline-actions dispatcher-account-row">
-            <input id="dispatcherAccountInput" type="text" list="dispatcherAccountList" placeholder="BIZ-NAME" autocomplete="off" />
-            <button id="dispatcherLoadAccount" class="btn btn--ghost" type="button">Load account</button>
+          <div class="dispatcher-field dc-push-right">
+            <label for="dispatcherOperator">Operator (you)</label>
+            <input id="dispatcherOperator" class="dc-w-account" type="text" placeholder="Dispatcher name" />
           </div>
-          <datalist id="dispatcherAccountList"></datalist>
-        </div>
-        <div class="dispatcher-field span-2">
-          <label for="dispatcherFilterInvoiced">Invoiced</label>
-          <select id="dispatcherFilterInvoiced">
-            <option value="">Any</option>
-            <option value="yes">Invoiced</option>
-            <option value="no">Not invoiced</option>
-          </select>
         </div>
       </div>
       </div><!-- /.dispatcher-controls-wrap -->

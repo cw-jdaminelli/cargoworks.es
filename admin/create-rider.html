@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cargoworks — Create Rider</title>
+  <script>
+    window.CARGOWORKS_BOOKING_API = "https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec";
+  </script>
   <style>
     body {
       font-family: system-ui, sans-serif;
@@ -103,13 +106,9 @@
   <h1>Cargoworks — Rider Management</h1>
 
   <div style="display:flex;flex-direction:column;gap:4px;">
-    <label>Apps Script URL</label>
-    <input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/…/exec">
-  </div>
-
-  <div style="display:flex;flex-direction:column;gap:4px;">
     <label>Admin Token</label>
     <input type="password" id="adminToken" placeholder="Your ADMIN_TOKEN from Script Properties">
+    <div style="font-size:.72rem;color:#555;">Remembered in this browser after the first successful request.</div>
   </div>
 
   <hr>
@@ -137,19 +136,34 @@
 </div>
 
 <script>
+  const API_URL = window.CARGOWORKS_BOOKING_API;
+  const savedTokenKey = 'cwRiderAdminToken';
+
+  // Prefill the token remembered here, or the one the dispatcher was unlocked
+  // with in this tab (same admin token).
+  (function prefillToken() {
+    let token = '';
+    try { token = localStorage.getItem(savedTokenKey) || sessionStorage.getItem('cwDispatcherToken') || ''; } catch (_) {}
+    document.getElementById('adminToken').value = token;
+  })();
+
   async function post(action, extra) {
-    const url = document.getElementById('apiUrl').value.trim();
     const token = document.getElementById('adminToken').value.trim();
-    if (!url || !token) { alert('Fill in the URL and token first.'); return null; }
+    if (!token) { alert('Enter the admin token first.'); return null; }
     try {
       // Send as form-encoded with payload field — avoids CORS preflight on Apps Script
       const payload = JSON.stringify(Object.assign({ action: 'adminManageRiders', token: token }, extra));
-      const res = await fetch(url, {
+      const res = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'payload=' + encodeURIComponent(payload)
       });
-      return await res.json();
+      const json = await res.json();
+      try {
+        if (json && json.error === 'Unauthorized') localStorage.removeItem(savedTokenKey);
+        else if (json && !json.error) localStorage.setItem(savedTokenKey, token);
+      } catch (_) {}
+      return json;
     } catch (e) {
       return { error: String(e) };
     }
@@ -177,7 +191,6 @@
       return;
     }
 
-    const baseUrl = document.getElementById('apiUrl').value.trim().replace('script.google.com/macros/s/', '').split('/exec')[0];
     const riderUrl = 'https://cargoworks.es/admin/rider.html?id=' + res.id;
     document.getElementById('resultId').textContent = res.id;
     document.getElementById('resultUrl').textContent = riderUrl;

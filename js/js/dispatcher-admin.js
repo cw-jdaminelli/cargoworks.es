@@ -17,6 +17,7 @@
   // 'Account' = business-account order not yet paid. It must be selectable on
   // the card, otherwise a quick save silently flips account orders to 'Pending'.
   const PAYMENT_STATUS_VALUES = ['Pending', 'Paid', 'Failed', 'Account'];
+  const UPDATES_PREFERENCE_VALUES = ['email', 'whatsapp', 'none'];
   const knownAccountsKey = 'cwDispatcherKnownAccounts';
 
   let _ridersCache = []; // { id, name, active }
@@ -43,6 +44,7 @@
       const json = await res.json();
       if (json.riders) {
         _ridersCache = json.riders.filter(function(r){ return r.active !== false; });
+        refreshRiderSuggestions();
         _ridersLoadedAt = Date.now();
       }
     } catch(_) {}
@@ -58,6 +60,9 @@
   const loadBtn = document.getElementById('dispatcherLoad');
   const loadAllBtn = document.getElementById('dispatcherLoadAll');
   const todayBtn = document.getElementById('dispatcherToday');
+  const yesterdayBtn = document.getElementById('dispatcherYesterday');
+  const prevDayBtn = document.getElementById('dispatcherPrevDay');
+  const nextDayBtn = document.getElementById('dispatcherNextDay');
   const searchInput = document.getElementById('dispatcherSearchInput');
   const searchBtn = document.getElementById('dispatcherSearchButton');
   const logSheetBtn = document.getElementById('dispatcherLogSheet');
@@ -150,7 +155,9 @@
   const importExtractBtn = document.getElementById('importExtractBtn');
   const importClearBtn   = document.getElementById('importClearBtn');
   const importStatus     = document.getElementById('importStatus');
-  const importApiKey     = 'cwAnthropicKey'; // sessionStorage key
+  // Quick Import used to keep a pasted Anthropic key here; it now runs in the
+  // backend, so drop any key left over in this browser.
+  try { sessionStorage.removeItem('cwAnthropicKey'); } catch(_) {}
 
   // Stop quick-add refs
   const stopsQuickAddToggle = document.getElementById('stopsQuickAddToggle');
@@ -236,6 +243,10 @@
   let lastReference = '';
   let lastAccount = '';
   let filterTimer = null;
+  // Bumped by every order load; a load whose response arrives after a newer
+  // one started is dropped, so a slow earlier request can't overwrite it.
+  let loadSeq = 0;
+  let loadedDayKey = '';
   // Orders ticked on their card checkbox (by eventId), for the bulk actions bar.
   const selectedEventIds = new Set();
   let bulkBusy = false;
@@ -399,6 +410,14 @@
     return y + '-' + m + '-' + day;
   }
 
+  // YYYY-MM-DD moved by `days` (local calendar days).
+  function shiftDateKey(dateKey, days){
+    const parts = String(dateKey || '').split('-').map(Number);
+    const d = parts.length === 3 && parts[0] ? new Date(parts[0], parts[1] - 1, parts[2]) : new Date();
+    d.setDate(d.getDate() + days);
+    return formatDateKey(d);
+  }
+
   function dateKeyFromReference(ref){
     const match = String(ref || '').toUpperCase().match(/^CW-(\d{8})-/);
     if (!match) return '';
@@ -485,7 +504,15 @@
       method: 'POST',
       body: form
     });
-    const json = await res.json();
+    // Google answers with an HTML error page (not JSON) when a request fails
+    // outright, most often because it ran too long.
+    const text = await res.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (_) {
+      throw new Error('The server didn\'t answer properly (the request may have taken too long). Try a shorter date range with From/To.');
+    }
     if (!res.ok || (json && json.error)) {
       throw new Error((json && json.error) || 'Request failed');
     }
@@ -560,6 +587,10 @@
     return list;
   }
 
+  // Keep in sync with adminOrderSearchText() in Code.gs, which applies the same
+  // match server-side. The timeline is left out on purpose: its entries name
+  // whoever touched the order ("Order edited by X"), so searching a dispatcher
+  // or rider name would match nearly every order.
   function orderSearchText(order){
     const bits = [];
     bits.push(order.reference || '');
@@ -586,14 +617,23 @@
       });
     }
 
-    if (Array.isArray(order.timeline)) {
-      order.timeline.forEach(function(item){
-        bits.push(item && item.status ? String(item.status) : '');
-        bits.push(item && item.message ? String(item.message) : '');
-      });
-    }
-
     return bits.join(' | ').toLowerCase();
+  }
+
+  // The non-date filters, sent with range loads so the server only returns
+  // matching orders. filterOrders() still applies them locally as well.
+  function serverFilterParams(){
+    return {
+      keyword: normalizeText(keywordInput && keywordInput.value),
+      status: normalizeText(filterStatus && filterStatus.value),
+      updates: normalizeText(filterUpdates && filterUpdates.value),
+      payment: normalizeText(filterPayment && filterPayment.value),
+      invoiced: normalizeText(filterInvoiced && filterInvoiced.value)
+    };
+  }
+
+  function hasServerFilters(params){
+    return Object.keys(params).some(function(key){ return !!params[key]; });
   }
 
   function filterOrders(){
@@ -650,9 +690,13 @@
     }
   }
 
+  // Known values are always listed so filters can be set before anything is
+  // loaded; any other value found in loaded orders is appended after them.
   function refreshFilterOptions(){
-    const statuses = Array.from(new Set(allOrders.map(function(order){ return normalizeText(order && order.status); }).filter(Boolean))).sort();
-    const updates = Array.from(new Set(allOrders.map(function(order){ return normalizeText(order && order.updatesPreference); }).filter(Boolean))).sort();
+    const loadedStatuses = allOrders.map(function(order){ return normalizeText(order && order.status); }).filter(Boolean).sort();
+    const loadedUpdates = allOrders.map(function(order){ return normalizeText(order && order.updatesPreference); }).filter(Boolean).sort();
+    const statuses = Array.from(new Set(ORDER_STATUS_VALUES.concat(loadedStatuses)));
+    const updates = Array.from(new Set(UPDATES_PREFERENCE_VALUES.concat(loadedUpdates)));
     setSelectOptions(filterStatus, statuses, 'Any status');
     setSelectOptions(filterUpdates, updates, 'Any updates');
     rememberAccounts(allOrders);
@@ -862,7 +906,7 @@
       return;
     }
     if (loadMode === 'all') {
-      await loadAll(true);
+      await loadAll(true, { defaultRange: lastAllUsedDefaultRange });
       return;
     }
     if (loadMode === 'reference' || loadMode === 'reference-fallback') {
@@ -877,23 +921,27 @@
   }
 
   async function loadDay(dateKey, quiet){
-    const normalizedDate = normalizeDateKey(dateKey);
+    const normalizedDate = plausibleDateKey(dateKey);
     if (!normalizedDate) {
       setStatus('Choose a valid date.', true);
       return;
     }
 
+    const seq = ++loadSeq;
     try {
-      if (!quiet) setStatus('Loading day...');
+      if (!quiet) setStatus('Loading ' + formatDateForUi(normalizedDate) + '...');
       const orders = await fetchOrders({ date: normalizedDate });
+      if (seq !== loadSeq) return;
       allOrders = orders;
       loadMode = 'day';
+      loadedDayKey = normalizedDate;
       loadLabel = formatDateForUi(normalizedDate);
       if (dateInput) dateInput.value = normalizedDate;
       refreshFilterOptions();
       applyFilters();
-      if (!quiet) setStatus('Loaded ' + orders.length + ' order(s).');
+      if (!quiet) setStatus('Loaded ' + orders.length + ' order(s) for ' + formatDateForUi(normalizedDate) + '.');
     } catch (err) {
+      if (seq !== loadSeq) return;
       allOrders = [];
       renderOrders([]);
       setSummary('No data yet.');
@@ -901,19 +949,51 @@
     }
   }
 
-  async function loadAll(quiet){
+  // Scanning every order since 2020 can run past Apps Script's time limit, so
+  // searches with no From/To cover this window instead (same as the client's
+  // account panel); set From/To to search other dates.
+  const DEFAULT_SEARCH_DAYS_BACK = 180;
+  const DEFAULT_SEARCH_DAYS_AHEAD = 60;
+  let lastAllUsedDefaultRange = false;
+
+  // From/To as entered, or the default window when both are empty and
+  // `useDefault` is set. Returns null (after reporting) for invalid dates.
+  function searchRange(useDefault){
     const fromRaw = normalizeText(filterFromDate && filterFromDate.value);
     const toRaw = normalizeText(filterToDate && filterToDate.value);
-    const from = normalizeDateKey(fromRaw);
-    const to = normalizeDateKey(toRaw);
+    const from = plausibleDateKey(fromRaw);
+    const to = plausibleDateKey(toRaw);
     if ((fromRaw && !from) || (toRaw && !to)) {
       setStatus('Choose valid From/To dates.', true);
-      return;
+      return null;
     }
+    if (!from && !to && useDefault) {
+      const today = formatDateKey(new Date());
+      return { from: shiftDateKey(today, -DEFAULT_SEARCH_DAYS_BACK), to: shiftDateKey(today, DEFAULT_SEARCH_DAYS_AHEAD), isDefault: true };
+    }
+    return { from: from, to: to, isDefault: false };
+  }
 
+  function defaultRangeNote(range){
+    return range.isDefault
+      ? (' (' + formatDateForUi(range.from) + ' – ' + formatDateForUi(range.to) + '; set From/To to search other dates)')
+      : '';
+  }
+
+  async function loadAll(quiet, options){
+    const range = searchRange(!!(options && options.defaultRange));
+    if (!range) return;
+    const from = range.from;
+    const to = range.to;
+    lastAllUsedDefaultRange = range.isDefault;
+
+    const filters = serverFilterParams();
+    const filtered = hasServerFilters(filters);
+    const seq = ++loadSeq;
     try {
-      if (!quiet) setStatus('Loading all orders...');
-      const orders = await fetchOrders({ scope: 'all', from: from, to: to });
+      if (!quiet) setStatus(filtered ? 'Loading matching orders...' : 'Loading all orders...');
+      const orders = await fetchOrders(Object.assign({ scope: 'all', from: from, to: to }, filters));
+      if (seq !== loadSeq) return;
       allOrders = orders;
       loadMode = 'all';
       loadLabel = from || to
@@ -921,9 +1001,10 @@
         : 'all';
       refreshFilterOptions();
       applyFilters();
-      if (!quiet) setStatus('Loaded ' + orders.length + ' total order(s).');
+      if (!quiet) setStatus((filtered ? ('Found ' + filterOrders().length + ' matching order(s)') : ('Loaded ' + orders.length + ' total order(s)')) + defaultRangeNote(range) + '.');
     } catch (err) {
       allOrders = [];
+      if (seq !== loadSeq) return;
       renderOrders([]);
       setSummary('No data yet.');
       setStatus(err && err.message ? err.message : 'Could not load all orders.', true);
@@ -939,14 +1020,21 @@
     lastReference = cleanRef;
 
     const dateKey = dateKeyFromReference(cleanRef);
+    const seq = ++loadSeq;
     try {
       if (!quiet) setStatus('Searching...');
       let orders = [];
       if (dateKey) {
         orders = await fetchOrders({ date: dateKey, ref: cleanRef });
+        if (seq !== loadSeq) return;
       }
       if (!orders.length) {
-        orders = await fetchOrders({ scope: 'all', ref: cleanRef });
+        // Not on the reference's own date (it encodes the booking date, the
+        // delivery can be later): search around it rather than all of time,
+        // which can run past the server's time limit.
+        const base = dateKey || formatDateKey(new Date());
+        orders = await fetchOrders({ scope: 'all', ref: cleanRef, from: shiftDateKey(base, -30), to: shiftDateKey(base, 180) });
+        if (seq !== loadSeq) return;
         loadMode = 'reference-fallback';
       } else {
         loadMode = 'reference';
@@ -958,6 +1046,7 @@
       if (dateInput && dateKey) dateInput.value = dateKey;
       if (!quiet) setStatus(allOrders.length ? 'Search complete.' : 'No matches.');
     } catch (err) {
+      if (seq !== loadSeq) return;
       allOrders = [];
       renderOrders([]);
       setSummary('No data yet.');
@@ -965,26 +1054,23 @@
     }
   }
 
-  // Loads every order placed on one business account (respecting the From/To
-  // dates if set), so they can all be managed on one screen.
+  // Loads the orders placed on one business account within From/To (or the
+  // default search window when both are empty), so they can all be managed
+  // on one screen.
   async function loadAccount(token, quiet){
     const cleanToken = normalizeText(token).toUpperCase();
     if (!cleanToken) {
       setStatus('Enter an account token (e.g. BIZ-NAME).', true);
       return;
     }
-    const fromRaw = normalizeText(filterFromDate && filterFromDate.value);
-    const toRaw = normalizeText(filterToDate && filterToDate.value);
-    const from = normalizeDateKey(fromRaw);
-    const to = normalizeDateKey(toRaw);
-    if ((fromRaw && !from) || (toRaw && !to)) {
-      setStatus('Choose valid From/To dates.', true);
-      return;
-    }
+    const range = searchRange(true);
+    if (!range) return;
 
+    const seq = ++loadSeq;
     try {
       if (!quiet) setStatus('Loading account orders...');
-      const orders = await fetchOrders({ scope: 'all', from: from, to: to });
+      const orders = await fetchOrders(Object.assign({ scope: 'all', from: range.from, to: range.to, account: cleanToken }, serverFilterParams()));
+      if (seq !== loadSeq) return;
       rememberAccounts(orders);
       allOrders = orders.filter(function(order){
         return normalizeText(order && order.accountToken).toUpperCase() === cleanToken;
@@ -996,8 +1082,9 @@
       if (accountInput) accountInput.value = cleanToken;
       refreshFilterOptions();
       applyFilters();
-      if (!quiet) setStatus(allOrders.length ? ('Loaded ' + allOrders.length + ' order(s) for ' + cleanToken + '.') : ('No orders found for ' + cleanToken + '.'));
+      if (!quiet) setStatus((allOrders.length ? ('Loaded ' + allOrders.length + ' order(s) for ' + cleanToken) : ('No orders found for ' + cleanToken)) + defaultRangeNote(range) + '.');
     } catch (err) {
+      if (seq !== loadSeq) return;
       allOrders = [];
       renderOrders([]);
       setSummary('No data yet.');
@@ -1152,7 +1239,9 @@
       accountDropoffTime: normalizeText(editAccountDropoffTime && editAccountDropoffTime.value),
       accountAttName: normalizeText(editAccountAttName && editAccountAttName.value),
       accountAttContact: normalizeText(editAccountAttContact && editAccountAttContact.value),
-      stops: JSON.stringify(editorState.stopsModel.map(function(s){ return [s.id, s.address, s.tier, s.notes]; })),
+      stops: JSON.stringify(editorState.stopsModel.map(function(s){
+        return [s.id, s.address, s.tier, s.notes, s.customerNote || '', s.recipientName || '', s.recipientPhone || '', s.recipientEmail || '', s.addressDetails || ''];
+      })),
       notes: normalizeText(editNotes && editNotes.value),
       date: normalizeText(editScheduleDate && editScheduleDate.value),
       time: normalizeText(editScheduleTime && editScheduleTime.value),
@@ -1197,6 +1286,7 @@
     if (!editorState.open) return;
     const now = editorModelSnapshot();
     setEditorDirty(now !== editorState.snapshot);
+    refreshChangedHighlights();
   }
 
   function setEditorFeedback(msg, isError){
@@ -1268,15 +1358,374 @@
     if (editElapsedManualHint) editElapsedManualHint.style.display = editElapsedOverride.checked ? 'inline' : 'none';
   }
 
-  function closeEditor(force){
+  // ── Inline editor ──────────────────────────────────────────────────────────
+  // The editor (form + actions) opens inside the order's own card instead of a
+  // pop-up; new orders and duplicates get a temporary card at the top of the
+  // list. The same editor element is moved between cards, so re-rendering the
+  // list parks it first and mounts it again afterwards.
+  const editorCard = editorModal ? editorModal.querySelector('.dispatcher-modal-card') : null;
+  let editorNewCardEl = null;
+
+  function parkEditor(){
+    if (!editorCard || !editorModal) return;
+    if (editorCard.parentNode !== editorModal) editorModal.appendChild(editorCard);
+    editorCard.classList.remove('is-inline');
+    if (ordersWrap) {
+      Array.prototype.forEach.call(ordersWrap.querySelectorAll('.dispatcher-card.is-editing'), function(c){ c.classList.remove('is-editing'); });
+    }
+    if (editorNewCardEl && editorNewCardEl.parentNode) editorNewCardEl.parentNode.removeChild(editorNewCardEl);
+  }
+
+  function mountEditorInline(scroll){
+    if (!editorCard || !ordersWrap || !editorState.open) return;
+    let host = null;
+    if (editorState.mode === 'edit' && editorState.sourceEventId) {
+      host = Array.prototype.find.call(ordersWrap.querySelectorAll('.dispatcher-card'), function(c){
+        return c.dataset && c.dataset.eventId === editorState.sourceEventId;
+      }) || null;
+    }
+    if (!host) {
+      if (!editorNewCardEl) {
+        editorNewCardEl = document.createElement('article');
+        editorNewCardEl.className = 'dispatcher-card dispatcher-card--new';
+      }
+      ordersWrap.insertBefore(editorNewCardEl, ordersWrap.firstChild);
+      host = editorNewCardEl;
+    }
+    host.classList.add('is-editing');
+    host.appendChild(editorCard);
+    editorCard.classList.add('is-inline');
+    if (scroll && typeof window.scrollTo === 'function' && host.getBoundingClientRect) {
+      const header = document.querySelector('.dispatcher-header');
+      const offset = (header ? header.getBoundingClientRect().height : 0) + 16;
+      window.scrollTo({ top: Math.max(0, host.getBoundingClientRect().top + (window.scrollY || 0) - offset), behavior: 'smooth' });
+    }
+  }
+
+  // ── Changed-field highlighting ─────────────────────────────────────────────
+  // Every field that differs from how the editor opened is highlighted (and
+  // counted next to Save) so edits can be double-checked before saving. Stops
+  // compare against the stop as loaded (_orig/_origIndex, set in openEditor).
+  const editorFormEl = document.getElementById('dispatcherEditorForm');
+  const STOP_TRACKED_FIELDS = ['address', 'tier', 'customerNote', 'recipientName', 'recipientPhone', 'recipientEmail', 'addressDetails'];
+  let editorChangeCountEl = null;
+
+  function editorBaselineControls(){
+    if (!editorFormEl) return [];
+    return Array.prototype.filter.call(editorFormEl.querySelectorAll('input, select, textarea'), function(el){
+      if (el.type === 'file' || el.type === 'button') return false;
+      return !(el.closest && el.closest('#editStopsList, #importPanel, #stopsQuickPanel, .stop-split-bar'));
+    });
+  }
+
+  function controlValue(el){
+    return (el.type === 'checkbox' || el.type === 'radio') ? (el.checked ? '1' : '0') : String(el.value || '');
+  }
+
+  function markEditorBaseline(){
+    editorBaselineControls().forEach(function(el){
+      el.dataset.initial = controlValue(el);
+      el.classList.remove('is-changed');
+    });
+  }
+
+  function stopFieldIsChanged(stop, field){
+    return editorState.mode !== 'create' && !!stop._orig && normalizeText(stop[field]) !== normalizeText(stop._orig[field]);
+  }
+
+  // Original stops whose order relative to each other changed (new stops
+  // inserted in between don't count as moving the others).
+  function movedStops(){
+    const present = (editorState.stopsModel || []).filter(function(s){ return s._orig; });
+    const sorted = present.slice().sort(function(a, b){ return a._origIndex - b._origIndex; });
+    return present.filter(function(s, i){ return sorted[i] !== s; });
+  }
+
+  function stopChangeCount(){
+    if (editorState.mode === 'create') return 0;
+    const model = editorState.stopsModel || [];
+    let n = movedStops().length;
+    model.forEach(function(stop){
+      if (!stop._orig) { n++; return; }
+      STOP_TRACKED_FIELDS.forEach(function(f){ if (stopFieldIsChanged(stop, f)) n++; });
+    });
+    const ids = model.map(function(s){ return s.id; }).filter(Boolean);
+    n += (editorState.origStopIds || []).filter(function(id){ return ids.indexOf(id) < 0; }).length;
+    return n;
+  }
+
+  function refreshChangedHighlights(){
+    if (!editorState.open) return;
+    let count = 0;
+    editorBaselineControls().forEach(function(el){
+      const changed = el.dataset.initial !== undefined && controlValue(el) !== el.dataset.initial;
+      el.classList.toggle('is-changed', changed);
+      if (changed) count++;
+    });
+    count += stopChangeCount();
+    if (!editorChangeCountEl && editorCard) {
+      editorChangeCountEl = document.createElement('span');
+      editorChangeCountEl.className = 'editor-change-count';
+      const actions = editorCard.querySelector('.dispatcher-modal-actions');
+      if (actions) actions.insertBefore(editorChangeCountEl, actions.querySelector('.dispatcher-action-group'));
+    }
+    if (editorChangeCountEl) {
+      editorChangeCountEl.textContent = count ? ('✎ ' + count + ' change' + (count === 1 ? '' : 's') + ' highlighted — check before saving') : '';
+    }
+  }
+
+  // ── Split into routes ──────────────────────────────────────────────────────
+  // An order can become several orders, one per rider/time window. The editor
+  // holds the current one; the others wait in pendingRoutes and, after a
+  // save, the next opens pre-filled as a new order to check and save. Filled
+  // by the extraction box ("routes") or the "Split selected stops" bar.
+  let pendingRoutes = [];
+  let routesBannerEl = null;
+  const splitSelection = new Set();
+
+  // Order-level fields every route of a split shares.
+  function sharedRouteFields(){
+    return [editCustomerName, editCustomerEmail, editCustomerPhone, editUpdatesPreference,
+      editAccountToken, editAccountStaffName, editAccountPickupTime, editAccountDropoffTime,
+      editAccountAttName, editAccountAttContact, editCargoType, editLoadType, editVehicleType,
+      editPackageCount, editWeightKg, editVolumeM3, editBillingMode, editHourlyRate, editScheduleDate]
+      .filter(Boolean).map(function(el){ return [el, el.value]; });
+  }
+
+  // A pending stop copied into another order: same address, notes and contact,
+  // but no id/token/status, so it's a fresh stop there.
+  function stopForNewRoute(s){
+    return Object.assign(blankStopEntry(), {
+      address: s.address || '', tier: s.tier || '', notes: s.notes || '', customerNote: s.customerNote || '',
+      recipientName: s.recipientName || '', recipientPhone: s.recipientPhone || '',
+      recipientEmail: s.recipientEmail || '', addressDetails: s.addressDetails || ''
+    });
+  }
+
+  function minutesBetween(start, end){
+    const a = /^(\d{1,2}):(\d{2})/.exec(String(start || ''));
+    const b = /^(\d{1,2}):(\d{2})/.exec(String(end || ''));
+    if (!a || !b) return 0;
+    const mins = (Number(b[1]) * 60 + Number(b[2])) - (Number(a[1]) * 60 + Number(a[2]));
+    return mins > 0 ? Math.max(15, mins) : 0;
+  }
+
+  // Matches a name (as typed or as the AI read it) to a registered rider, since
+  // the rider app only shows an order to the rider whose name matches exactly.
+  // "me"/"yo" means whoever is operating, if they're also a rider.
+  function resolveRiderName(raw){
+    const name = normalizeText(raw);
+    if (!name) return { name: '' };
+    const isSelf = /^(me|myself|yo|mi|mí|jo)$/i.test(name);
+    const wanted = (isSelf ? normalizeText(currentOperator()) : name).toLowerCase();
+    const riders = _ridersCache || [];
+    const match = riders.find(function(r){ return normalizeText(r.name).toLowerCase() === wanted; })
+      || riders.find(function(r){ return normalizeText(r.name).toLowerCase().indexOf(wanted) === 0; });
+    if (match) return { name: match.name };
+    return {
+      name: isSelf ? '' : name,
+      warning: isSelf
+        ? 'Couldn\'t tell which rider "' + name + '" is — set your name in Operator or pick a rider.'
+        : 'Rider "' + name + '" isn\'t a registered rider — pick one from the list.'
+    };
+  }
+
+  function renderRoutesBanner(){
+    if (!editorCard) return;
+    if (!routesBannerEl) {
+      routesBannerEl = document.createElement('div');
+      routesBannerEl.className = 'dispatcher-notice editor-routes-banner';
+      editorCard.insertBefore(routesBannerEl, editorFormEl || null);
+    }
+    routesBannerEl.innerHTML = '';
+    const warning = editorState.routeWarning;
+    routesBannerEl.classList.toggle('is-visible', !!(pendingRoutes.length || warning));
+    if (warning) {
+      const w = document.createElement('div');
+      w.textContent = '⚠️ ' + warning;
+      routesBannerEl.appendChild(w);
+    }
+    if (!pendingRoutes.length) return;
+    const head = document.createElement('div');
+    head.style.fontWeight = '700';
+    head.textContent = 'Split order — after you save this one, ' + (pendingRoutes.length === 1 ? 'this route opens' : 'these routes open one by one') + ' for you to check and save:';
+    routesBannerEl.appendChild(head);
+    const list = document.createElement('ul');
+    list.style.cssText = 'margin:0.2rem 0 0;padding-left:1.1rem;';
+    pendingRoutes.forEach(function(r){
+      const li = document.createElement('li');
+      li.textContent = r.label + ' — ' + (r.riderName || 'no rider yet') + ', ' +
+        (r.startTime || 'same time') + (r.endTime ? ('–' + r.endTime) : '') + ', ' +
+        r.stops.length + ' stop' + (r.stops.length === 1 ? '' : 's') + (r.warning ? (' ⚠️ ' + r.warning) : '');
+      list.appendChild(li);
+    });
+    routesBannerEl.appendChild(list);
+  }
+
+  function updateSaveLabel(){
+    if (editorSave) editorSave.textContent = pendingRoutes.length ? 'Save & open next route' : 'Save order';
+  }
+
+  function queueRoute(route){
+    pendingRoutes.push(route);
+    renderRoutesBanner();
+    updateSaveLabel();
+  }
+
+  // Opens a queued route as a new order, pre-filled. Fields start from a blank
+  // new order, so everything filled in here shows as highlighted to check.
+  function openRouteDraft(route){
+    openEditor('create', null);
+    if (importPanel) importPanel.style.display = 'none';
+    route.shared.forEach(function(pair){ pair[0].value = pair[1]; });
+    if (editScheduleDate && route.date) editScheduleDate.value = route.date;
+    if (editScheduleTime && route.startTime) editScheduleTime.value = route.startTime;
+    if (editEtaMins && route.etaMins) editEtaMins.value = String(route.etaMins);
+    if (editRiderName) editRiderName.value = route.riderName || '';
+    if (editNotes) editNotes.value = route.notes || '';
+    if (editInternalNotes) editInternalNotes.value = route.internalNote || '';
+    if (editSaveNote) editSaveNote.value = 'Created as ' + route.label;
+    editorState.stopsModel = [blankStopEntry(route.pickup || '')].concat(route.stops.map(stopForNewRoute));
+    editorState.routeWarning = route.warning || '';
+    applyBillingModeVisibility();
+    resetAccountStatus();
+    if (editAccountToken && editAccountToken.value) verifyAccountToken(true);
+    renderStopsList();
+    updateMapsRouteLink();
+    autoCalcStopsFee();
+    if (editorTitle) editorTitle.textContent = 'New order — ' + route.label;
+    updateEditorDirtyFromForm();
+    renderRoutesBanner();
+    updateSaveLabel();
+  }
+
+  // Extraction replies with `routes` when the pasted text asks to split the
+  // order (e.g. "the 18:00–19:00 deliveries go to Alex as a second route").
+  // Route 1 stays in this editor; the others are queued.
+  function applyImportedRoutes(d){
+    const routes = Array.isArray(d && d.routes)
+      ? d.routes.filter(function(r){ return r && Array.isArray(r.deliveries) && r.deliveries.length; })
+      : [];
+    if (routes.length < 2) return;
+    const model = editorState.stopsModel;
+    const deliveryEntries = model.slice(1);
+    const owner = {};
+    routes.forEach(function(r, ri){
+      r.deliveries.map(Number).forEach(function(k){
+        if (k >= 1 && k <= deliveryEntries.length && owner[k] === undefined) owner[k] = ri;
+      });
+    });
+    // Anything the reply left out stays on route 1.
+    const perRoute = routes.map(function(){ return []; });
+    deliveryEntries.forEach(function(entry, i){ perRoute[owner[i + 1] === undefined ? 0 : owner[i + 1]].push(entry); });
+    if (!perRoute[0].length) return;
+
+    const count = routes.length;
+    const first = routes[0];
+    const firstRider = resolveRiderName(first.riderName);
+    editorState.stopsModel = [model[0]].concat(perRoute[0]);
+    if (editRiderName && firstRider.name) editRiderName.value = firstRider.name;
+    if (editScheduleDate && first.scheduleDate) editScheduleDate.value = first.scheduleDate;
+    if (editScheduleTime && first.startTime) editScheduleTime.value = first.startTime;
+    if (editEtaMins && minutesBetween(first.startTime, first.endTime)) editEtaMins.value = String(minutesBetween(first.startTime, first.endTime));
+    const allNotes = editNotes ? editNotes.value : '';
+    if (editNotes && first.notes) editNotes.value = first.notes;
+    if (editInternalNotes) editInternalNotes.value = (editInternalNotes.value ? editInternalNotes.value + '\n' : '') + 'Route 1 of ' + count + ' (split order)';
+    editorState.routeWarning = firstRider.warning || '';
+
+    const shared = sharedRouteFields();
+    routes.slice(1).forEach(function(r, i){
+      const rider = resolveRiderName(r.riderName);
+      queueRoute({
+        label: 'Route ' + (i + 2) + ' of ' + count,
+        shared: shared,
+        pickup: model[0].address,
+        stops: perRoute[i + 1],
+        riderName: rider.name,
+        warning: rider.warning || (perRoute[i + 1].length ? '' : 'no stops matched this route'),
+        date: r.scheduleDate || '',
+        startTime: r.startTime || '',
+        endTime: r.endTime || '',
+        etaMins: minutesBetween(r.startTime, r.endTime),
+        notes: r.notes || allNotes,
+        internalNote: 'Route ' + (i + 2) + ' of ' + count + ' (split order)'
+      });
+    });
+    if (editorTitle) editorTitle.textContent = 'Create new order — Route 1 of ' + count;
+    renderStopsList();
+    updateMapsRouteLink();
+    autoCalcStopsFee();
+    updateEditorDirtyFromForm();
+  }
+
+  // "Split selected stops": moves the ticked pending drops out of this order
+  // into a queued new order with its own rider and time window.
+  function splitSelectedStops(riderRaw, startTime, endTime){
+    const model = editorState.stopsModel || [];
+    const selected = model.filter(function(s){ return splitSelection.has(s); });
+    if (!selected.length) return;
+    const remaining = model.filter(function(s){ return !splitSelection.has(s); });
+    if (remaining.length < 2) {
+      setEditorFeedback('Keep at least one delivery in this order.', true);
+      return;
+    }
+    const rider = resolveRiderName(riderRaw);
+    const ref = normalizeText(editorState.order && editorState.order.reference);
+    splitSelection.clear();
+    editorState.stopsModel = remaining;
+    queueRoute({
+      label: 'New route' + (ref ? (' split from ' + ref) : ''),
+      shared: sharedRouteFields(),
+      pickup: remaining[0].address,
+      stops: selected,
+      riderName: rider.name,
+      warning: rider.warning || '',
+      date: '',
+      startTime: startTime || '',
+      endTime: endTime || '',
+      etaMins: minutesBetween(startTime, endTime),
+      notes: editNotes ? editNotes.value : '',
+      internalNote: ref ? ('Split from ' + ref) : 'Split order'
+    });
+    renderStopsList();
+    updateMapsRouteLink();
+    autoCalcStopsFee();
+    updateEditorDirtyFromForm();
+    setEditorFeedback(selected.length + ' stop' + (selected.length === 1 ? '' : 's') + ' moved to a new order — save this one, then check the new route.');
+  }
+
+  // Registered riders as suggestions for the editor's rider field, so the name
+  // matches what the rider app looks for.
+  function refreshRiderSuggestions(){
+    if (!editRiderName) return;
+    let list = document.getElementById('dispatcherRiderList');
+    if (!list) {
+      list = document.createElement('datalist');
+      list.id = 'dispatcherRiderList';
+      document.body.appendChild(list);
+      editRiderName.setAttribute('list', 'dispatcherRiderList');
+    }
+    list.innerHTML = '';
+    (_ridersCache || []).forEach(function(r){
+      const opt = document.createElement('option');
+      opt.value = r.name;
+      list.appendChild(opt);
+    });
+  }
+
+  function closeEditor(force, keepRoutes){
     if (!editorModal) return;
-    if (!force && editorState.dirty) {
-      const ok = window.confirm('Discard unsaved changes?');
+    if (!force && (editorState.dirty || pendingRoutes.length)) {
+      const ok = window.confirm(pendingRoutes.length
+        ? ('Discard this order and the ' + pendingRoutes.length + ' route' + (pendingRoutes.length === 1 ? '' : 's') + ' waiting after it?')
+        : 'Discard unsaved changes?');
       if (!ok) return;
     }
+    if (!keepRoutes) pendingRoutes = [];
+    splitSelection.clear();
+    editorState.routeWarning = '';
     stopCameraStream();
-    editorModal.classList.remove('is-open');
-    editorModal.setAttribute('aria-hidden', 'true');
+    parkEditor();
     editorState.open = false;
     editorState.order = null;
     editorState.sourceEventId = '';
@@ -1287,6 +1736,12 @@
 
   function openEditor(mode, order){
     if (!editorModal) return;
+    if (editorState.open) {
+      if ((editorState.dirty || pendingRoutes.length) && !window.confirm('Discard the changes to the order you are editing?')) return;
+      pendingRoutes = [];
+      splitSelection.clear();
+      parkEditor();
+    }
 
     const normalizedMode = mode || 'edit';
     const source = order || null;
@@ -1298,7 +1753,7 @@
     if (editorTitle) {
       editorTitle.textContent = normalizedMode === 'create'
         ? 'Create new order'
-        : (normalizedMode === 'duplicate' ? 'Duplicate order' : 'Edit order');
+        : ((normalizedMode === 'duplicate' ? 'Duplicate order' : 'Edit order') + (source && source.reference ? (' ' + normalizeText(source.reference)) : ''));
     }
     if (editorSubtitle) {
       editorSubtitle.textContent = normalizedMode === 'create'
@@ -1402,15 +1857,35 @@
     editorState.mode = normalizedMode;
     editorState.order = source;
     editorState.sourceEventId = normalizeText(source && source.eventId);
+    // _customerNoteOriginal lets the save send a stop's customer note only when
+    // it was changed here, so a rider's note added meanwhile isn't overwritten.
+    // A duplicate is a new run, so its customer notes start blank.
+    // _orig/_origIndex: the stop as loaded, for highlighting what changed.
     editorState.stopsModel = modeCreate
       ? [blankStopEntry(), blankStopEntry()]
-      : (Array.isArray(route.stops) ? route.stops.map(function(s){ return Object.assign({}, s); }) : []);
+      : (Array.isArray(route.stops) ? route.stops.map(function(s, idx){
+        const copy = Object.assign({}, s);
+        if (modeDuplicate) copy.customerNote = '';
+        copy._customerNoteOriginal = copy.customerNote || '';
+        copy._orig = {};
+        STOP_TRACKED_FIELDS.forEach(function(f){ copy._orig[f] = copy[f] || ''; });
+        copy._origIndex = idx;
+        return copy;
+      }) : []);
+    editorState.origStopIds = editorState.stopsModel.map(function(s){ return s.id; }).filter(Boolean);
+    editorState.routeWarning = '';
+    splitSelection.clear();
+    if (splitBarEl) Array.prototype.forEach.call(splitBarEl.querySelectorAll('input'), function(i){ i.value = ''; });
+    refreshRiderSuggestions();
     renderStopsList();
     editorState.snapshot = editorModelSnapshot();
     setEditorDirty(false);
 
-    editorModal.classList.add('is-open');
-    editorModal.setAttribute('aria-hidden', 'false');
+    mountEditorInline(true);
+    markEditorBaseline();
+    refreshChangedHighlights();
+    renderRoutesBanner();
+    updateSaveLabel();
   }
 
   function collectEditorOrderData(){
@@ -1440,7 +1915,16 @@
           // The unified list: index 0 is pickup, the last index is dropoff,
           // everything between is an intermediate stop — all saved the same way.
           stops: editorState.stopsModel.filter(function(s){ return normalizeText(s.address); }).map(function(s){
-            return { id: s.id || '', address: normalizeText(s.address), tier: normalizeText(s.tier), priority: !!s.priority, outlier: !!s.outlier };
+            const out = {
+              id: s.id || '', address: normalizeText(s.address), tier: normalizeText(s.tier), priority: !!s.priority, outlier: !!s.outlier,
+              // Contact details are only edited here (riders can't), so always sent.
+              recipientName: normalizeText(s.recipientName), recipientPhone: normalizeText(s.recipientPhone),
+              recipientEmail: normalizeText(s.recipientEmail), addressDetails: normalizeText(s.addressDetails)
+            };
+            // Only send the customer note when it's new or edited here (see openEditor).
+            const note = normalizeText(s.customerNote);
+            if (editorState.mode !== 'edit' || !s.id || note !== normalizeText(s._customerNoteOriginal)) out.customerNote = note;
+            return out;
           })
         },
         total: total,
@@ -1538,9 +2022,18 @@
       }
 
       const order = res && res.order ? res.order : null;
+      const savedMode = editorState.mode;
       if (order) upsertOrderInState(order, true);
-      closeEditor(true);
-      setStatus(editorState.mode === 'create' ? 'Order created.' : (editorState.mode === 'duplicate' ? 'Order duplicated.' : 'Order saved.'));
+      closeEditor(true, true);
+      const savedMsg = savedMode === 'create' ? 'Order created.' : (savedMode === 'duplicate' ? 'Order duplicated.' : 'Order saved.');
+      // A split order: open the next route, pre-filled, to check and save.
+      if (pendingRoutes.length) {
+        const next = pendingRoutes.shift();
+        openRouteDraft(next);
+        setStatus(savedMsg + ' Now check ' + next.label + '.');
+      } else {
+        setStatus(savedMsg);
+      }
     } catch (err) {
       setEditorFeedback(err && err.message ? err.message : 'Save failed.', true);
     }
@@ -1630,6 +2123,55 @@
     }
   }
 
+  function canCheckStripePayment(order){
+    const payment = normalizeText(order && order.paymentStatus);
+    if (payment !== 'Pending' && payment !== 'Failed') return false;
+    return !!(order.hasStripeSession || /stripe\.com/i.test(normalizeText(order.paymentUrl)));
+  }
+
+  async function checkStripePayment(order, btn){
+    if (!order || !order.eventId) return;
+    const ref = normalizeText(order.reference) || 'this order';
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Checking Stripe...';
+    setStatus('Checking Stripe for ' + ref + '...');
+    try {
+      const res = await postAdmin({
+        action: 'adminCheckStripePayment',
+        eventId: order.eventId,
+        reference: normalizeText(order.reference),
+        operator: currentOperator()
+      });
+      if (res && res.found) {
+        let msg = 'Paid in Stripe \u2713 \u2014 ';
+        if (res.confirmationEmailSent) msg += 'confirmation sent to the customer.';
+        else if (res.confirmationEmailSentAt) msg += 'the customer already had their confirmation.';
+        else msg += 'but the confirmation email could NOT be sent. Contact the customer.';
+        const emailFailed = !res.confirmationEmailSent && !res.confirmationEmailSentAt;
+        if (res.order) upsertOrderInState(res.order);
+        setStatus(ref + ': ' + msg, emailFailed);
+        showToast(msg, emailFailed);
+      } else {
+        const msg = (res && res.message) || ('No completed payment found in Stripe for ' + ref + '.');
+        setStatus(msg, true);
+        showToast(msg, true);
+      }
+    } catch (err) {
+      const raw = err && err.message ? err.message : 'Stripe check failed.';
+      const msg = /unknown action/i.test(raw)
+        ? 'The backend doesn\'t have the Stripe check yet. Redeploy Code.gs (Manage deployments \u2192 New version) and try again.'
+        : raw;
+      setStatus(msg, true);
+      showToast(msg, true);
+    } finally {
+      if (btn.isConnected) {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    }
+  }
+
   async function cardCompleteStop(order, stop, status){
     if (!order.eventId || !stop.id) return;
     let reason = '';
@@ -1666,7 +2208,7 @@
     row.appendChild(addr);
 
     const badge = document.createElement('span');
-    badge.innerHTML = stopStatusBadgeHtml(stop.status);
+    badge.innerHTML = stopStatusBadgeHtml(stop.status, isFirst);
     row.appendChild(badge);
 
     if (stop.status === 'Failed' && stop.failureReason) {
@@ -1681,6 +2223,13 @@
       notesEl.style.cssText = 'color:var(--dispatch-muted);font-style:italic;';
       notesEl.textContent = '📝 ' + stop.notes;
       row.appendChild(notesEl);
+    }
+
+    if (stop.customerNote) {
+      const custEl = document.createElement('span');
+      custEl.title = 'Note for customer (shown on tracking)';
+      custEl.textContent = '💬 ' + stop.customerNote;
+      row.appendChild(custEl);
     }
 
     if (stop.podUrl) {
@@ -1744,9 +2293,9 @@
       notesBtn.type = 'button';
       notesBtn.className = 'btn btn--ghost';
       notesBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
-      notesBtn.textContent = stop.notes ? '✎ Edit note' : '✎ Add note';
+      notesBtn.textContent = stop.notes ? '✎ Edit internal note' : '✎ Add internal note';
       notesBtn.addEventListener('click', async function(){
-        const next = window.prompt('Note for this stop:', stop.notes || '');
+        const next = window.prompt('Internal note for this stop (rider and dispatch only, never shown on tracking):', stop.notes || '');
         if (next == null) return;
         try {
           await postAdmin({
@@ -1770,7 +2319,7 @@
       deliveredBtn.type = 'button';
       deliveredBtn.className = 'btn btn--ghost';
       deliveredBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
-      deliveredBtn.textContent = '✓ Delivered';
+      deliveredBtn.textContent = isFirst ? '✓ Picked up' : '✓ Delivered';
       deliveredBtn.addEventListener('click', function(){ cardCompleteStop(order, stop, 'Delivered'); });
 
       const failedBtn = document.createElement('button');
@@ -1789,7 +2338,15 @@
 
   function renderOrders(orders){
     if (!ordersWrap) return;
+    // The inline editor lives inside a card; take it out before the list is
+    // rebuilt and put it back (into the same order's card) afterwards.
+    parkEditor();
     ordersWrap.innerHTML = '';
+    renderOrderCards(orders);
+    if (editorState.open) mountEditorInline(false);
+  }
+
+  function renderOrderCards(orders){
 
     // Only orders on screen can stay ticked, so bulk actions never touch hidden orders.
     const visibleIds = new Set(orders.map(function(order){ return order.eventId; }));
@@ -1807,6 +2364,7 @@
     orders.forEach(function(order){
       const card = document.createElement('article');
       card.className = 'dispatcher-card';
+      if (order.eventId) card.dataset.eventId = order.eventId;
 
       const top = document.createElement('div');
       top.className = 'dispatcher-card-top';
@@ -1878,6 +2436,21 @@
         order.route.stops.forEach(function(stop, stopIdx){
           stopsWrap.appendChild(buildCardStopRow(order, stop, stopIdx, order.route.stops.length));
         });
+
+        // Route map (opened on demand) and Optimize, under the stops.
+        if (order.route.stops.length >= 2) {
+          const pendingDrops = order.route.stops.slice(1).filter(function(s){ return !s.status || s.status === 'Pending'; }).length;
+          const mapPanel = buildStopsMapPanel(function(){ return order.route.stops; }, {
+            onOptimize: pendingDrops >= 2 ? function(btn){ optimizeOrderInEditor(order, btn); } : null,
+            onToggle: function(isOpen){
+              if (isOpen) openCardMaps.add(order.eventId);
+              else openCardMaps.delete(order.eventId);
+            }
+          });
+          stopsWrap.appendChild(mapPanel.el);
+          // Stays open across list redraws.
+          if (order.eventId && openCardMaps.has(order.eventId)) mapPanel.setOpen(true);
+        }
 
         card.appendChild(stopsWrap);
       }
@@ -2051,7 +2624,8 @@
       const fullEditBtn = document.createElement('button');
       fullEditBtn.type = 'button';
       fullEditBtn.className = 'btn btn--ghost';
-      fullEditBtn.textContent = 'Full edit';
+      fullEditBtn.textContent = 'Edit';
+      fullEditBtn.title = 'Edit every detail of this order right here';
 
       const duplicateBtn = document.createElement('button');
       duplicateBtn.type = 'button';
@@ -2068,6 +2642,18 @@
       actionsWrap.appendChild(fullEditBtn);
       actionsWrap.appendChild(duplicateBtn);
       actionsWrap.appendChild(cancelBtn);
+
+      // Web bookings paid by card that never got marked Paid (the customer's
+      // page didn't report back) — ask Stripe directly.
+      if (canCheckStripePayment(order)) {
+        const stripeCheckBtn = document.createElement('button');
+        stripeCheckBtn.type = 'button';
+        stripeCheckBtn.className = 'btn btn--ghost';
+        stripeCheckBtn.textContent = 'Check Stripe payment';
+        stripeCheckBtn.title = 'Ask Stripe whether this order was paid. If it was, the order is marked Paid and the customer is emailed their booking confirmation.';
+        stripeCheckBtn.addEventListener('click', function(){ checkStripePayment(order, stripeCheckBtn); });
+        actionsWrap.appendChild(stripeCheckBtn);
+      }
 
       quick.appendChild(actionsWrap);
 
@@ -2232,92 +2818,23 @@
       return;
     }
 
-    // API key — prompt once per session
-    let apiKey = sessionStorage.getItem(importApiKey) || '';
-    if (!apiKey) {
-      apiKey = window.prompt('Enter your Anthropic API key to enable Quick Import.\nStored for this browser session only.') || '';
-      if (!apiKey) { setImportStatus('API key required.', true); return; }
-      sessionStorage.setItem(importApiKey, apiKey.trim());
-      apiKey = apiKey.trim();
-    }
-
     setImportStatus('Extracting order details…');
     if (importExtractBtn) importExtractBtn.disabled = true;
 
-    const today = formatDateKey(new Date());
-
-    const systemPrompt =
-      'You are a logistics dispatcher assistant for a cargo bike delivery company in Barcelona. ' +
-      'Extract order details from the provided content and return ONLY a valid JSON object. ' +
-      'No explanation, no markdown, no preamble — just the raw JSON.';
-
-    const userPrompt =
-      'Extract order details and return ONLY this JSON (use null for any field you cannot determine):\n' +
-      '{\n' +
-      '  "customerName": string,\n' +
-      '  "customerPhone": string,\n' +
-      '  "customerEmail": string,\n' +
-      '  "pickupAddress": string,\n' +
-      '  "dropoffAddress": string,\n' +
-      '  "stops": string (one address per line, empty string if none),\n' +
-      '  "scheduleDate": string (YYYY-MM-DD; interpret "today"/"hoy"/"hoje" as ' + today + '),\n' +
-      '  "scheduleTime": string (HH:MM 24h format),\n' +
-      '  "notes": string (customer instructions or special requirements),\n' +
-      '  "cargoType": string,\n' +
-      '  "packageCount": number or null,\n' +
-      '  "weightKg": number or null,\n' +
-      '  "internalNotes": string (any operational info not for the customer)\n' +
-      '}\n\n' +
-      'Today\'s date: ' + today + '.\n' +
-      (text ? 'Text content:\n' + text : '');
-
-    // Build message content
-    const contentBlocks = [];
-    if (image) {
-      contentBlocks.push({ type: 'image', source: { type: 'base64', media_type: importImageMime, data: image } });
-    }
-    contentBlocks.push({ type: 'text', text: userPrompt });
-
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type':         'application/json',
-          'x-api-key':            apiKey,
-          'anthropic-version':    '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-          model:      'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          system:     systemPrompt,
-          messages:   [{ role: 'user', content: contentBlocks }]
-        })
+      // Extraction runs in the backend (adminExtractOrder) so the Anthropic key
+      // stays in Apps Script instead of each dispatcher's browser.
+      const res = await postAdmin({
+        action: 'adminExtractOrder',
+        text: text,
+        image: image || '',
+        mimeType: importImageMime || ''
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(function(){ return {}; });
-        if (res.status === 401) {
-          sessionStorage.removeItem(importApiKey); // clear bad key
-          setImportStatus('Invalid API key — cleared. Try again.', true);
-        } else {
-          setImportStatus('API error ' + res.status + ': ' + (err.error && err.error.message || 'unknown'), true);
-        }
-        return;
-      }
-
-      const data   = await res.json();
-      const raw    = (data.content || []).map(function(b){ return b.type === 'text' ? b.text : ''; }).join('');
-      const clean  = raw.replace(/```json|```/g, '').trim();
-      let parsed;
-      try { parsed = JSON.parse(clean); }
-      catch(_) { setImportStatus('Could not parse response. Try again.', true); return; }
-
-      applyImportedFields(parsed);
+      applyImportedFields(res.order);
       setImportStatus('✓ Fields populated — review and adjust before saving.');
 
     } catch(err) {
-      setImportStatus('Request failed: ' + (err.message || err), true);
+      setImportStatus(err && err.message ? err.message : 'Extraction failed.', true);
     } finally {
       if (importExtractBtn) importExtractBtn.disabled = false;
     }
@@ -2335,6 +2852,22 @@
     // seeds 2 blank entries in create mode) rather than standalone inputs.
     if (!editorState.stopsModel.length) editorState.stopsModel.push(blankStopEntry(), blankStopEntry());
     if (d.pickupAddress) editorState.stopsModel[0].address = String(d.pickupAddress);
+    // `deliveries` (one per address, with the recipient's details; the last is
+    // the dropoff) — older extraction replies used dropoffAddress + stops.
+    const deliveries = Array.isArray(d.deliveries) ? d.deliveries.filter(function(x){ return x && normalizeText(x.address); }) : [];
+    function withContact(entry, x) {
+      ['recipientName', 'recipientPhone', 'recipientEmail', 'addressDetails'].forEach(function(field){
+        if (x[field] != null && x[field] !== '') entry[field] = String(x[field]);
+      });
+      entry.address = String(x.address);
+      return entry;
+    }
+    if (deliveries.length) {
+      withContact(editorState.stopsModel[editorState.stopsModel.length - 1], deliveries[deliveries.length - 1]);
+      deliveries.slice(0, -1).forEach(function(x){
+        editorState.stopsModel.splice(editorState.stopsModel.length - 1, 0, withContact(blankStopEntry(), x));
+      });
+    }
     if (d.dropoffAddress) editorState.stopsModel[editorState.stopsModel.length - 1].address = String(d.dropoffAddress);
     if (d.stops) {
       const stopLines = Array.isArray(d.stops)
@@ -2343,6 +2876,9 @@
       stopLines.forEach(function(addr){ addStopToModel(addr); });
     }
     renderStopsList();
+    updateEditorDirtyFromForm();
+    updateMapsRouteLink();
+    autoCalcStopsFee();
     fill(editNotes,          d.notes);
     fill(editScheduleDate,   d.scheduleDate);
     fill(editScheduleTime,   d.scheduleTime);
@@ -2350,6 +2886,10 @@
     fill(editInternalNotes,  d.internalNotes);
     if (editPackageCount && d.packageCount != null) editPackageCount.value = String(d.packageCount);
     if (editWeightKg     && d.weightKg     != null) editWeightKg.value     = String(d.weightKg);
+    applyImportedRoutes(d);
+    renderRoutesBanner();
+    updateSaveLabel();
+    updateEditorDirtyFromForm();
   }
 
   // ── Structured stops list ────────────────────────────────────────────────
@@ -2361,8 +2901,10 @@
   // of the main Save flow) so a stale re-save of this form can never clobber a
   // rider's already-recorded delivery.
 
-  function stopStatusBadgeHtml(status) {
-    if (status === 'Delivered') return '<span class="stop-badge stop-badge--ok">✓ Delivered</span>';
+  // Stops only have Pending/Delivered/Failed; on the pickup leg "Delivered"
+  // means the cargo was collected.
+  function stopStatusBadgeHtml(status, isPickup) {
+    if (status === 'Delivered') return '<span class="stop-badge stop-badge--ok">' + (isPickup ? '✓ Picked up' : '✓ Delivered') + '</span>';
     if (status === 'Failed') return '<span class="stop-badge stop-badge--fail">✗ Failed</span>';
     return '<span class="stop-badge">Pending</span>';
   }
@@ -2374,9 +2916,106 @@
       '&stop=' + encodeURIComponent(stop.id) + '&t=' + encodeURIComponent(stop.trackingToken);
   }
 
+  // Index of the stop row being dragged in the editor (null when idle).
+  let dragStopIdx = null;
+
+  // Index 0 is the pickup and stays first; every drop after it can move,
+  // including the last one (whichever stop ends up last becomes the dropoff).
+  function moveStopInModel(fromIdx, toIdx) {
+    if (fromIdx < 1 || toIdx < 1 || fromIdx === toIdx) return;
+    const moved = editorState.stopsModel.splice(fromIdx, 1)[0];
+    editorState.stopsModel.splice(toIdx, 0, moved);
+    renderStopsList();
+    updateEditorDirtyFromForm();
+    updateMapsRouteLink();
+    autoCalcStopsFee();
+  }
+
+  function clearStopDragMarks() {
+    if (!editStopsList) return;
+    Array.prototype.forEach.call(editStopsList.children, function(r){
+      r.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+  }
+
+  // Rows accept a dragged drop above or below themselves; the pickup row only
+  // below, so nothing can be placed before it.
+  function attachStopDropTarget(row, idx) {
+    function dropAbove(e) {
+      if (idx === 0) return false;
+      const rect = row.getBoundingClientRect();
+      return e.clientY < rect.top + rect.height / 2;
+    }
+    row.addEventListener('dragover', function(e){
+      if (dragStopIdx === null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const above = dropAbove(e);
+      row.classList.toggle('drag-over-top', above);
+      row.classList.toggle('drag-over-bottom', !above);
+    });
+    row.addEventListener('dragleave', function(){
+      row.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+    row.addEventListener('drop', function(e){
+      if (dragStopIdx === null) return;
+      e.preventDefault();
+      const from = dragStopIdx;
+      dragStopIdx = null;
+      clearStopDragMarks();
+      const target = dropAbove(e) ? idx : idx + 1;
+      moveStopInModel(from, target > from ? target - 1 : target);
+    });
+  }
+
+  // Highlights a stop field that differs from the stop as loaded, live as it's typed.
+  function trackStopInput(input, stop, field){
+    input.classList.toggle('is-changed', stopFieldIsChanged(stop, field));
+    input.addEventListener('input', function(){
+      input.classList.toggle('is-changed', stopFieldIsChanged(stop, field));
+    });
+  }
+
+  // Shown under the stops while any are ticked "Split": moves them to a new
+  // order with its own rider and time window (see splitSelectedStops).
+  let splitBarEl = null;
+  function renderSplitBar(){
+    if (!editStopsList || !editStopsList.parentNode) return;
+    if (!splitBarEl) {
+      splitBarEl = document.createElement('div');
+      splitBarEl.className = 'stop-split-bar';
+      const label = document.createElement('span');
+      label.className = 'stop-split-label';
+      const rider = document.createElement('input');
+      rider.type = 'text';
+      rider.placeholder = 'Rider';
+      rider.setAttribute('list', 'dispatcherRiderList');
+      const start = document.createElement('input');
+      start.type = 'time';
+      start.title = 'Start time';
+      const to = document.createElement('span');
+      to.textContent = 'to';
+      const end = document.createElement('input');
+      end.type = 'time';
+      end.title = 'End time (optional)';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn';
+      btn.textContent = 'Split off';
+      btn.addEventListener('click', function(){ splitSelectedStops(rider.value, start.value, end.value); });
+      [label, rider, start, to, end, btn].forEach(function(el){ splitBarEl.appendChild(el); });
+      splitBarEl._label = label;
+      editStopsList.parentNode.insertBefore(splitBarEl, editStopsList.nextSibling);
+    }
+    const count = (editorState.stopsModel || []).filter(function(s){ return splitSelection.has(s); }).length;
+    splitBarEl.style.display = count ? '' : 'none';
+    splitBarEl._label.textContent = 'Move ' + count + ' stop' + (count === 1 ? '' : 's') + ' to a new order:';
+  }
+
   function renderStopsList() {
     if (!editStopsList) return;
     editStopsList.innerHTML = '';
+    const moved = movedStops();
     editorState.stopsModel.forEach(function(stop, idx) {
       const isFirst = idx === 0;
       const isLast = idx === editorState.stopsModel.length - 1;
@@ -2385,9 +3024,38 @@
       const row = document.createElement('div');
       row.className = 'stop-row';
       row.style.cssText = 'border:1px solid var(--dispatch-border,#ddd);border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.35rem;';
+      // When editing an existing order, mark stops that were added or moved.
+      if (editorState.mode !== 'create') {
+        row.classList.toggle('is-new-stop', !stop._orig);
+        row.classList.toggle('is-moved', moved.indexOf(stop) >= 0);
+      }
+      attachStopDropTarget(row, idx);
 
       const topRow = document.createElement('div');
       topRow.style.cssText = 'display:flex;gap:0.35rem;align-items:center;';
+
+      // Drag handle on every drop; dragging only from the handle keeps text
+      // selection in the address/tier inputs working.
+      if (!isFirst) {
+        const handle = document.createElement('span');
+        handle.className = 'stop-drag-handle';
+        handle.textContent = '⠿';
+        handle.title = 'Drag to reorder';
+        handle.draggable = true;
+        handle.addEventListener('dragstart', function(e){
+          dragStopIdx = idx;
+          row.classList.add('is-dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(idx));
+          if (e.dataTransfer.setDragImage) e.dataTransfer.setDragImage(row, 12, 12);
+        });
+        handle.addEventListener('dragend', function(){
+          dragStopIdx = null;
+          row.classList.remove('is-dragging');
+          clearStopDragMarks();
+        });
+        topRow.appendChild(handle);
+      }
 
       if (isPinned) {
         const roleLabel = document.createElement('span');
@@ -2407,6 +3075,7 @@
         updateMapsRouteLink();
         autoCalcStopsFee();
       });
+      trackStopInput(addrInput, stop, 'address');
       topRow.appendChild(addrInput);
       if (isPinned) attachAddressLookup(addrInput);
 
@@ -2430,6 +3099,7 @@
           stop.tier = tierInput.value;
           updateEditorDirtyFromForm();
         });
+        trackStopInput(tierInput, stop, 'tier');
         topRow.appendChild(tierInput);
 
         const removeBtn = document.createElement('button');
@@ -2443,6 +3113,7 @@
             const ok = window.confirm('This stop is already ' + stop.status + '. Removing it will break its public tracking link and unlink its POD photo. Continue?');
             if (!ok) return;
           }
+          splitSelection.delete(stop);
           editorState.stopsModel.splice(idx, 1);
           renderStopsList();
           updateEditorDirtyFromForm();
@@ -2452,13 +3123,33 @@
         topRow.appendChild(removeBtn);
       }
 
+      // Tick pending drops to move them to a new order (another rider/time).
+      if (!isFirst && (!stop.status || stop.status === 'Pending')) {
+        const splitLab = document.createElement('label');
+        splitLab.className = 'stop-split-pick';
+        splitLab.title = 'Tick stops to move them to a new order for another rider or time';
+        const splitBox = document.createElement('input');
+        splitBox.type = 'checkbox';
+        splitBox.checked = splitSelection.has(stop);
+        splitBox.addEventListener('change', function(){
+          if (splitBox.checked) splitSelection.add(stop);
+          else splitSelection.delete(stop);
+          renderSplitBar();
+        });
+        splitLab.appendChild(splitBox);
+        splitLab.appendChild(document.createTextNode('Split'));
+        topRow.appendChild(splitLab);
+      }
+
       row.appendChild(topRow);
+
+      if (!isFirst) row.appendChild(buildStopRecipientControls(stop));
 
       const metaRow = document.createElement('div');
       metaRow.style.cssText = 'display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.3rem;font-size:0.72rem;';
 
       const badge = document.createElement('span');
-      badge.innerHTML = stopStatusBadgeHtml(stop.status);
+      badge.innerHTML = stopStatusBadgeHtml(stop.status, isFirst);
       metaRow.appendChild(badge);
 
       if (stop.status === 'Failed' && stop.failureReason) {
@@ -2480,9 +3171,9 @@
         notesBtn.type = 'button';
         notesBtn.className = 'btn btn--ghost';
         notesBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
-        notesBtn.textContent = stop.notes ? '✎ Edit note' : '✎ Add note';
+        notesBtn.textContent = stop.notes ? '✎ Edit internal note' : '✎ Add internal note';
         notesBtn.addEventListener('click', async function(){
-          const next = window.prompt('Note for this stop:', stop.notes || '');
+          const next = window.prompt('Internal note for this stop (rider and dispatch only, never shown on tracking):', stop.notes || '');
           if (next == null) return;
           try {
             const res = await postAdmin({
@@ -2585,7 +3276,7 @@
         deliveredBtn.type = 'button';
         deliveredBtn.className = 'btn btn--ghost';
         deliveredBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
-        deliveredBtn.textContent = '✓ Delivered';
+        deliveredBtn.textContent = isFirst ? '✓ Picked up' : '✓ Delivered';
         deliveredBtn.addEventListener('click', function(){ completeStopFromDispatcher(stop, idx, 'Delivered'); });
 
         const failedBtn = document.createElement('button');
@@ -2607,6 +3298,152 @@
       row.appendChild(metaRow);
       editStopsList.appendChild(row);
     });
+    renderSplitBar();
+    ensureEditorMapPanel();
+    refreshChangedHighlights();
+  }
+
+  // Under each drop: the recipient's contact details (internal — rider and
+  // dispatch only, never on tracking) and the customer note, which shows on
+  // that stop's tracking and can be sent now, optionally also by WhatsApp
+  // and/or email to the recipient.
+  function buildStopRecipientControls(stop) {
+    const wrap = document.createElement('div');
+
+    const noteRow = document.createElement('div');
+    noteRow.style.cssText = 'display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap;margin-top:0.3rem;font-size:0.72rem;';
+    const custNote = document.createElement('input');
+    custNote.type = 'text';
+    custNote.placeholder = 'Note for customer (shown on their tracking)';
+    custNote.value = stop.customerNote || '';
+    custNote.style.cssText = 'flex:1 1 220px;min-width:0;font-size:0.78rem;';
+    custNote.addEventListener('input', function(){
+      stop.customerNote = custNote.value;
+      updateEditorDirtyFromForm();
+    });
+    trackStopInput(custNote, stop, 'customerNote');
+    function channelBox(label) {
+      const lab = document.createElement('label');
+      lab.style.cssText = 'display:inline-flex;align-items:center;gap:0.2rem;white-space:nowrap;cursor:pointer;';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      lab.appendChild(box);
+      lab.appendChild(document.createTextNode(label));
+      return { label: lab, box: box };
+    }
+    const wa = channelBox('WhatsApp');
+    const em = channelBox('Email');
+    const sendBtn = document.createElement('button');
+    sendBtn.type = 'button';
+    sendBtn.className = 'btn btn--ghost';
+    sendBtn.style.cssText = 'padding:0.1rem 0.45rem;font-size:0.72rem;';
+    sendBtn.textContent = '📣 Send note now';
+    // Sending writes to the saved order, so it needs a saved stop on an order
+    // being edited (not a duplicate, whose stops still point at the original).
+    const canSend = editorState.mode === 'edit' && !!editorState.sourceEventId && !!stop.id;
+    function refreshChannels() {
+      wa.box.disabled = !normalizeText(stop.recipientPhone);
+      em.box.disabled = !normalizeText(stop.recipientEmail);
+      if (wa.box.disabled) wa.box.checked = false;
+      if (em.box.disabled) em.box.checked = false;
+      wa.label.title = wa.box.disabled ? 'Add a phone number to send by WhatsApp' : '';
+      em.label.title = em.box.disabled ? 'Add an email to send by email' : '';
+    }
+    sendBtn.disabled = !canSend;
+    sendBtn.title = canSend ? 'Shows the note on this stop\'s tracking now' : 'Save the order first';
+    sendBtn.addEventListener('click', function(){
+      sendStopNoteFromEditor(stop, { whatsapp: wa.box.checked, email: em.box.checked }, sendBtn);
+    });
+    noteRow.appendChild(custNote);
+    noteRow.appendChild(wa.label);
+    noteRow.appendChild(em.label);
+    noteRow.appendChild(sendBtn);
+
+    const contactRow = document.createElement('div');
+    contactRow.style.cssText = 'display:flex;gap:0.3rem;flex-wrap:wrap;margin-top:0.3rem;';
+    [['recipientName', 'Recipient name', 'text', '1 1 120px'],
+     ['recipientPhone', 'Phone', 'tel', '1 1 100px'],
+     ['recipientEmail', 'Email', 'email', '1 1 140px'],
+     ['addressDetails', 'Floor, door, buzzer…', 'text', '1 1 100%']].forEach(function(spec){
+      const input = document.createElement('input');
+      input.type = spec[2];
+      input.placeholder = spec[1];
+      input.value = stop[spec[0]] || '';
+      input.style.cssText = 'flex:' + spec[3] + ';min-width:0;font-size:0.75rem;';
+      input.addEventListener('input', function(){
+        stop[spec[0]] = input.value;
+        updateEditorDirtyFromForm();
+        refreshChannels();
+      });
+      trackStopInput(input, stop, spec[0]);
+      contactRow.appendChild(input);
+    });
+
+    refreshChannels();
+    wrap.appendChild(contactRow);
+    wrap.appendChild(noteRow);
+    return wrap;
+  }
+
+  // WhatsApp/email digits for wa.me: Spanish numbers are often typed without +34.
+  function stopWhatsAppPhone(value) {
+    let digits = String(value || '').replace(/\D/g, '');
+    if (digits.indexOf('00') === 0) digits = digits.slice(2);
+    if (digits.length === 9 && /^[6789]/.test(digits)) digits = '34' + digits;
+    return digits;
+  }
+
+  // Same message the backend emails (buildStopNoteText in Code.gs).
+  function stopNoteMessage(stop, note, reference) {
+    const lines = [stop.recipientName ? ('Hola ' + normalizeText(stop.recipientName) + ',') : 'Hola,', '', note];
+    if (reference && stop.id && stop.trackingToken) {
+      lines.push('', 'Tracking: https://cargoworks.es/tracking.html?ref=' + encodeURIComponent(reference) +
+        '&stop=' + encodeURIComponent(stop.id) + '&t=' + encodeURIComponent(stop.trackingToken));
+    }
+    lines.push('', 'Cargoworks');
+    return lines.join('\n');
+  }
+
+  async function sendStopNoteFromEditor(stop, channels, btn) {
+    const note = normalizeText(stop.customerNote);
+    if (!note) {
+      setEditorFeedback('Write the customer note first.', true);
+      return;
+    }
+    // Open WhatsApp right away, while the click still counts as the user's —
+    // browsers block windows opened after waiting on the server.
+    const phone = stopWhatsAppPhone(stop.recipientPhone);
+    if (channels.whatsapp && phone) {
+      const reference = normalizeText(editorState.order && editorState.order.reference);
+      try { window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(stopNoteMessage(stop, note, reference)), '_blank'); } catch(_) {}
+    }
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    try {
+      const res = await postAdmin({
+        action: 'sendStopNote',
+        eventId: editorState.sourceEventId,
+        stopId: stop.id,
+        customerNote: note,
+        recipientName: normalizeText(stop.recipientName),
+        recipientPhone: normalizeText(stop.recipientPhone),
+        recipientEmail: normalizeText(stop.recipientEmail),
+        channels: channels,
+        operator: currentOperator()
+      });
+      if (res && res.stop) stop._customerNoteOriginal = res.stop.customerNote || '';
+      if (res && res.order) editorState.order = res.order;
+      const sent = (res && res.sent) || {};
+      const via = ['tracking'].concat(sent.email ? ['email'] : [], channels.whatsapp && phone ? ['WhatsApp'] : []);
+      const problems = sent.errors || [];
+      setEditorFeedback('✓ Note sent (' + via.join(' + ') + ')' + (problems.length ? ' — ' + problems.join('; ') : ''), problems.length > 0);
+    } catch (err) {
+      setEditorFeedback('Send failed: ' + ((err && err.message) || err), true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
   }
 
   async function completeStopFromDispatcher(stop, idx, status) {
@@ -2616,7 +3453,7 @@
     }
     let reason = '';
     if (status === 'Failed') {
-      reason = window.prompt('Reason the stop failed:') || '';
+      reason = window.prompt(idx === 0 ? 'Reason the pickup failed:' : 'Reason the stop failed:') || '';
       if (!reason.trim()) return;
     }
     try {
@@ -2812,7 +3649,8 @@
   function blankStopEntry(address, tier) {
     return {
       id: '', address: address || '', tier: tier || '', priority: false, outlier: false,
-      status: 'Pending', podUrl: '', podAt: '', notes: '', trackingToken: '', completedAt: '', failureReason: ''
+      status: 'Pending', podUrl: '', podAt: '', notes: '', customerNote: '', trackingToken: '', completedAt: '', failureReason: '',
+      recipientName: '', recipientPhone: '', recipientEmail: '', addressDetails: ''
     };
   }
 
@@ -3148,6 +3986,260 @@
     return null; // ZERO_RESULTS
   }
 
+  // ── Route maps + optimize ─────────────────────────────────────────────────
+  // A small Leaflet map of an order's stops (under the stops on its card and
+  // in the editor) and a nearest-neighbour + 2-opt optimizer. Distances are
+  // straight-line, not actual bike routes.
+  const GEO_CACHE_KEY = 'cwGeoCache';
+  let geoCache = null;
+  const openCardMaps = new Set();
+  let editorMapPanel = null;
+  let editorMapTimer = null;
+
+  function geoCacheStore(){
+    if (!geoCache) {
+      try { geoCache = JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || '{}') || {}; } catch(_) { geoCache = {}; }
+    }
+    return geoCache;
+  }
+
+  // Each address is looked up once per browser, then served from the cache.
+  async function geocodeCached(address){
+    const key = normalizeText(address).toLowerCase().replace(/\s+/g, ' ');
+    if (!key) return null;
+    const cache = geoCacheStore();
+    if (cache[key]) return cache[key];
+    const res = await _spGeocode(address);
+    const lat = Number(res && res.lat);
+    const lng = Number(res && res.lng);
+    if (!res || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    cache[key] = { lat: lat, lng: lng };
+    try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(cache)); } catch(_) {}
+    return cache[key];
+  }
+
+  // Coordinates for every stop (null where the address wasn't found), 4 lookups at a time.
+  async function geocodeStops(stops){
+    const out = stops.map(function(){ return null; });
+    let next = 0;
+    async function worker(){
+      while (next < stops.length) {
+        const i = next++;
+        try { out[i] = await geocodeCached(stops[i] && stops[i].address); } catch(_) { out[i] = null; }
+      }
+    }
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    return out;
+  }
+
+  // Straight-line km along the points in order, skipping ones with no coordinates.
+  function routeKm(coords){
+    let km = 0;
+    let prev = null;
+    coords.forEach(function(c){
+      if (!c) return;
+      if (prev) km += _spHaversine(prev.lat, prev.lng, c.lat, c.lng);
+      prev = c;
+    });
+    return km;
+  }
+
+  // The order the stops should be visited in, as indexes into `stops`:
+  // pickup first; completed stops next as they happened; pending priority
+  // stops; then the other pending drops chained nearest-neighbour and tidied
+  // with 2-opt; stops whose address wasn't found go last in their old order.
+  function optimizeStopOrder(stops, coords){
+    const all = stops.map(function(s, i){ return i; });
+    const isDone = function(i){ return !!(stops[i].status && stops[i].status !== 'Pending'); };
+    const drops = all.slice(1);
+    const done = drops.filter(isDone);
+    const pending = drops.filter(function(i){ return !isDone(i); });
+    const priority = pending.filter(function(i){ return stops[i].priority; });
+    const normal = pending.filter(function(i){ return !stops[i].priority && coords[i]; });
+    const noCoords = pending.filter(function(i){ return !stops[i].priority && !coords[i]; });
+    const dist = function(a, b){ return _spHaversine(coords[a].lat, coords[a].lng, coords[b].lat, coords[b].lng); };
+
+    const anchors = [0].concat(done, priority).filter(function(i){ return coords[i]; });
+    const anchor = anchors.length ? anchors[anchors.length - 1] : null;
+    const remaining = normal.slice();
+    const path = anchor === null ? [] : [anchor];
+    let current = anchor;
+    while (remaining.length) {
+      let best = 0;
+      if (current !== null) {
+        let bestD = Infinity;
+        remaining.forEach(function(i, k){ const d = dist(current, i); if (d < bestD) { bestD = d; best = k; } });
+      }
+      current = remaining.splice(best, 1)[0];
+      path.push(current);
+    }
+    // 2-opt on the open path (first point fixed, last free).
+    for (let pass = 0, improved = true; improved && pass < 50; pass++) {
+      improved = false;
+      for (let i = 1; i < path.length - 1; i++) {
+        for (let k = i + 1; k < path.length; k++) {
+          const a = path[i - 1], b = path[i], c = path[k], e = path[k + 1];
+          const before = dist(a, b) + (e !== undefined ? dist(c, e) : 0);
+          const after = dist(a, c) + (e !== undefined ? dist(b, e) : 0);
+          if (after < before - 1e-9) {
+            const seg = path.slice(i, k + 1).reverse();
+            path.splice.apply(path, [i, seg.length].concat(seg));
+            improved = true;
+          }
+        }
+      }
+    }
+    const chained = anchor === null ? path : path.slice(1);
+    let order = [0].concat(done, priority, chained, noCoords);
+    const beforeKm = routeKm(all.map(function(i){ return coords[i]; }));
+    let afterKm = routeKm(order.map(function(i){ return coords[i]; }));
+    // Only suggest a new order if it's meaningfully shorter (>50 m).
+    if (afterKm >= beforeKm - 0.05) { order = all; afterKm = beforeKm; }
+    return {
+      indexOrder: order,
+      beforeKm: beforeKm,
+      afterKm: afterKm,
+      changed: order.some(function(v, k){ return v !== k; })
+    };
+  }
+
+  function drawStopsMap(el, stops, coords){
+    if (typeof L === 'undefined') {
+      el.textContent = 'Loading map…';
+      setTimeout(function(){ if (el.isConnected) drawStopsMap(el, stops, coords); }, 500);
+      return;
+    }
+    if (el._leafletMap) { el._leafletMap.remove(); el._leafletMap = null; }
+    el.textContent = '';
+    const map = L.map(el, { zoomControl: true, scrollWheelZoom: false });
+    map.attributionControl.setPrefix(false);
+    el._leafletMap = map;
+    // OpenStreetMap tiles (CARTO's free basemaps now require an API key);
+    // OSM's tile policy requires the credit.
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
+    const latlngs = [];
+    stops.forEach(function(stop, idx){
+      const c = coords[idx];
+      if (!c) return;
+      const done = !!(stop.status && stop.status !== 'Pending');
+      const cls = idx === 0 ? 'stop-pin stop-pin--pickup' : (done ? 'stop-pin stop-pin--done' : 'stop-pin');
+      const icon = L.divIcon({ className: '', html: '<div class="' + cls + '">' + (idx === 0 ? 'P' : idx) + '</div>', iconSize: [22, 22], iconAnchor: [11, 11] });
+      L.marker([c.lat, c.lng], { icon: icon, title: (idx === 0 ? 'Pickup: ' : (idx + '. ')) + (stop.address || '') }).addTo(map);
+      latlngs.push([c.lat, c.lng]);
+    });
+    if (latlngs.length > 1) L.polyline(latlngs, { color: '#f07b39', weight: 3, opacity: 0.85 }).addTo(map);
+    if (latlngs.length) map.fitBounds(latlngs, { padding: [24, 24], maxZoom: 16 });
+    else map.setView([41.3902, 2.1542], 13);
+    setTimeout(function(){ map.invalidateSize(); }, 0);
+  }
+
+  // "🗺 Map" toggle plus its panel. getStops() gives the stops to draw (read
+  // on every refresh); opts.onOptimize adds "✨ Optimize route"; opts.onToggle
+  // hears open/close.
+  function buildStopsMapPanel(getStops, opts){
+    const options = opts || {};
+    const wrap = document.createElement('div');
+    const row = document.createElement('div');
+    row.className = 'stops-map-toggle-row';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'btn btn--ghost';
+    toggle.textContent = '🗺 Map';
+    row.appendChild(toggle);
+    if (options.onOptimize) {
+      const optimizeBtn = document.createElement('button');
+      optimizeBtn.type = 'button';
+      optimizeBtn.className = 'btn btn--ghost';
+      optimizeBtn.textContent = '✨ Optimize route';
+      optimizeBtn.title = 'Reorder the pending stops for a shorter route and open the order to check it';
+      optimizeBtn.addEventListener('click', function(){ options.onOptimize(optimizeBtn); });
+      row.appendChild(optimizeBtn);
+    }
+    const panel = document.createElement('div');
+    panel.className = 'stops-map-panel';
+    panel.style.display = 'none';
+    const mapEl = document.createElement('div');
+    mapEl.className = 'stops-map';
+    const summary = document.createElement('div');
+    summary.className = 'stops-map-summary';
+    panel.appendChild(mapEl);
+    panel.appendChild(summary);
+    wrap.appendChild(row);
+    wrap.appendChild(panel);
+
+    let open = false;
+    let drawSeq = 0;
+    async function refresh(){
+      if (!open) return;
+      const seq = ++drawSeq;
+      const stops = getStops().filter(function(s){ return normalizeText(s && s.address); });
+      summary.textContent = 'Looking up addresses…';
+      const coords = await geocodeStops(stops);
+      if (!open || seq !== drawSeq) return;
+      drawStopsMap(mapEl, stops, coords);
+      const missing = stops.filter(function(s, i){ return !coords[i]; }).map(function(s){ return s.address; });
+      summary.textContent = '≈ ' + routeKm(coords).toFixed(1) + ' km straight line';
+      if (missing.length) {
+        const warn = document.createElement('span');
+        warn.className = 'is-warn';
+        warn.textContent = ' · Not found on the map: ' + missing.join(', ');
+        summary.appendChild(warn);
+      }
+    }
+    function setOpen(next){
+      open = !!next;
+      panel.style.display = open ? '' : 'none';
+      toggle.textContent = open ? '🗺 Hide map' : '🗺 Map';
+      if (options.onToggle) options.onToggle(open);
+      if (open) refresh();
+    }
+    toggle.addEventListener('click', function(){ setOpen(!open); });
+    return { el: wrap, setOpen: setOpen, refresh: refresh, isOpen: function(){ return open; } };
+  }
+
+  // Under the editor's stops; redrawn (debounced) whenever the stops are re-rendered.
+  function ensureEditorMapPanel(){
+    if (!editStopsList || !editStopsList.parentNode) return;
+    if (!editorMapPanel) {
+      editorMapPanel = buildStopsMapPanel(function(){ return editorState.stopsModel || []; });
+      const after = (splitBarEl && splitBarEl.parentNode === editStopsList.parentNode) ? splitBarEl : editStopsList;
+      editStopsList.parentNode.insertBefore(editorMapPanel.el, after.nextSibling);
+    }
+    if (editorMapPanel.isOpen()) {
+      if (editorMapTimer) clearTimeout(editorMapTimer);
+      editorMapTimer = setTimeout(editorMapPanel.refresh, 400);
+    }
+  }
+
+  // "✨ Optimize route" on a card: opens the order in the editor with its
+  // stops reordered (moved ones highlighted) for checking before Save.
+  async function optimizeOrderInEditor(order, btn){
+    const stops = (order && order.route && Array.isArray(order.route.stops)) ? order.route.stops : [];
+    if (stops.length < 3) return;
+    let coords;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Optimizing…'; }
+    try {
+      coords = await geocodeStops(stops);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '✨ Optimize route'; }
+    }
+    const result = optimizeStopOrder(stops, coords);
+    openEditor('edit', order);
+    if (!editorState.open || editorState.sourceEventId !== order.eventId) return;
+    const model = editorState.stopsModel;
+    if (result.changed && model.length === stops.length) {
+      editorState.stopsModel = result.indexOrder.map(function(i){ return model[i]; });
+      renderStopsList();
+      updateMapsRouteLink();
+      autoCalcStopsFee();
+      updateEditorDirtyFromForm();
+      setEditorFeedback('Reordered for a shorter route: ' + result.beforeKm.toFixed(1) + ' → ' + result.afterKm.toFixed(1) + ' km (straight line). Check the highlighted stops and Save.');
+    } else {
+      setEditorFeedback('This is already the shortest order found (' + result.beforeKm.toFixed(1) + ' km straight line) — nothing changed.');
+    }
+    if (editorMapPanel) editorMapPanel.setOpen(true);
+  }
+
   // Determine cargo rate from cargo type text (mirrors map.js getCargoAdjustment)
   function _spCargoRate(cargoTypeText, stopCount) {
     if (stopCount >= 5) return { rate: 0.20, label: 'large (auto, ≥5 stops)' };
@@ -3453,6 +4545,18 @@
   function onControlChange(){
     if (filterTimer) window.clearTimeout(filterTimer);
     filterTimer = window.setTimeout(applyFilters, 140);
+    if (loadMode === 'none') setStatus('Press Apply (or Enter in Quick search) to load matching orders.');
+  }
+
+  // Fetches orders for the From/To range (every date if both are empty) and
+  // applies the remaining filters to them, so filters can be set first and
+  // loaded in one step. An account view stays on that account.
+  function loadWithFilters(){
+    if (loadMode === 'account' && lastAccount) {
+      loadAccount(lastAccount, false);
+      return;
+    }
+    loadAll(false, { defaultRange: true });
   }
 
   if (tokenButton) tokenButton.addEventListener('click', handleGate);
@@ -3479,6 +4583,48 @@
     if (dateInput) dateInput.value = today;
     loadDay(today, false);
   });
+  if (yesterdayBtn) yesterdayBtn.addEventListener('click', function(){
+    const yesterday = shiftDateKey(formatDateKey(new Date()), -1);
+    if (dateInput) dateInput.value = yesterday;
+    loadDay(yesterday, false);
+  });
+  // ‹ › step the Date by one day from what's shown (today if empty) and load
+  // it. The box updates right away so quick repeated taps keep stepping.
+  [[prevDayBtn, -1], [nextDayBtn, 1]].forEach(function(pair){
+    if (!pair[0]) return;
+    pair[0].addEventListener('click', function(){
+      const base = dateInput && dateInput.value ? dateInput.value : formatDateKey(new Date());
+      const next = shiftDateKey(base, pair[1]);
+      if (dateInput) dateInput.value = next;
+      loadDay(next, false);
+    });
+  });
+  // Picking a date in the Day box loads it — but only once it's a complete,
+  // plausible date (typing a year passes through 0002, 0020, 0202…) and the
+  // typing has paused; Enter or leaving the box loads it right away.
+  let dayPickTimer = null;
+  function plausibleDateKey(value){
+    const key = normalizeDateKey(value);
+    const year = Number(String(key).slice(0, 4));
+    return key && year >= 2020 && year <= 2100 ? key : '';
+  }
+  function loadPickedDay(){
+    if (dayPickTimer) { window.clearTimeout(dayPickTimer); dayPickTimer = null; }
+    const key = plausibleDateKey(dateInput && dateInput.value);
+    if (key && !(loadMode === 'day' && loadedDayKey === key)) loadDay(key, false);
+  }
+  if (dateInput) {
+    ['input', 'change'].forEach(function(evt){
+      dateInput.addEventListener(evt, function(){
+        if (dayPickTimer) window.clearTimeout(dayPickTimer);
+        dayPickTimer = window.setTimeout(loadPickedDay, 700);
+      });
+    });
+    dateInput.addEventListener('blur', function(){ if (dayPickTimer) loadPickedDay(); });
+    dateInput.addEventListener('keydown', function(e){
+      if (e.key === 'Enter') { e.preventDefault(); loadPickedDay(); }
+    });
+  }
   if (searchBtn) searchBtn.addEventListener('click', function(){
     const ref = buildReferenceFromSuffix(searchInput && searchInput.value);
     loadByReference(ref, false);
@@ -3503,15 +4649,30 @@
 
   if (logSheetBtn) logSheetBtn.addEventListener('click', openLogSheet);
   if (newOrderBtn) newOrderBtn.addEventListener('click', handleNewOrder);
-  if (applyFiltersBtn) applyFiltersBtn.addEventListener('click', applyFilters);
+  if (applyFiltersBtn) applyFiltersBtn.addEventListener('click', loadWithFilters);
   if (clearFiltersBtn) clearFiltersBtn.addEventListener('click', clearFilters);
+  if (keywordInput) keywordInput.addEventListener('keydown', function(e){
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loadWithFilters();
+    }
+  });
+  refreshFilterOptions();
 
-  [keywordInput, filterStatus, filterUpdates, filterPayment, filterInvoiced, filterFromDate, filterToDate, sortSelect]
+  [keywordInput, filterStatus, filterUpdates, filterPayment, filterInvoiced, sortSelect]
     .forEach(function(control){
       if (!control) return;
       const eventName = control.tagName === 'INPUT' ? 'input' : 'change';
       control.addEventListener(eventName, onControlChange);
     });
+  // From/To only re-filter once cleared or a complete, plausible date — not
+  // on every keystroke while a year is being typed.
+  [filterFromDate, filterToDate].forEach(function(control){
+    if (!control) return;
+    control.addEventListener('change', function(){
+      if (!control.value || plausibleDateKey(control.value)) onControlChange();
+    });
+  });
 
   [editorClose, editorCloseBottom].forEach(function(btn){
     if (!btn) return;

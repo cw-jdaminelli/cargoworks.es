@@ -116,6 +116,37 @@
     });
   }
 
+  // Timestamps are stored in UTC; show them as DDMMYYYY HH:MM in Barcelona time.
+  const tsFormat = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  });
+  function formatTs(iso){
+    const d = new Date(String(iso || ''));
+    if (Number.isNaN(d.getTime())) return String(iso || '');
+    const p = {};
+    tsFormat.formatToParts(d).forEach(function(part){ p[part.type] = part.value; });
+    return p.day + p.month + p.year + ' ' + p.hour + ':' + p.minute;
+  }
+
+  // Billing changes, notification receipts and order edits are timeline
+  // entries too, but they say nothing about where the delivery is.
+  const NOT_DELIVERY_UPDATE = /^(Payment status changed|Marked as invoiced|Invoiced mark removed|Confirmation email|Update sent via|Update email could not|WhatsApp update|Order edited by)/i;
+
+  function latestDeliveryUpdate(timeline){
+    return sortByTimestamp(timeline).find(function(item){
+      const msg = String(item && item.message || '').trim();
+      return msg && !NOT_DELIVERY_UPDATE.test(msg);
+    }) || null;
+  }
+
+  // Route stops only have Pending/Delivered/Failed; on the pickup leg
+  // "Delivered" means the cargo was collected.
+  function localizeStopStatus(status, isPickup){
+    const value = status || 'Pending';
+    return localizeOrderStatus(isPickup && value === 'Delivered' ? 'Picked up' : value);
+  }
+
   function buildLink(url, label){
     if (!url) return document.createTextNode('-');
     const a = document.createElement('a');
@@ -268,7 +299,7 @@
     ul.className = 'tracking-timeline';
     sortByTimestamp(items).forEach(function(item){
       const li = document.createElement('li');
-      const ts = item && item.ts ? String(item.ts).replace('T', ' ').replace('Z', '') : '';
+      const ts = item && item.ts ? formatTs(item.ts) : '';
       const status = localizeOrderStatus(item && item.status ? String(item.status) : '');
       const msg = item && item.message ? String(item.message) : '';
       li.textContent = (ts ? (ts + ' - ') : '') + (status ? (status + ': ') : '') + msg;
@@ -288,7 +319,7 @@
     list.forEach(function(item){
       const note = document.createElement('p');
       note.className = 'tracking-notes-item';
-      const ts = item && item.ts ? String(item.ts).replace('T', ' ').replace('Z', '') : '';
+      const ts = item && item.ts ? formatTs(item.ts) : '';
       const status = localizeOrderStatus(item && item.status ? String(item.status) : '');
       const message = item && item.message ? String(item.message) : '';
       note.textContent = (ts ? (ts + ' - ') : '') + (status ? (status + ': ') : '') + message;
@@ -297,9 +328,10 @@
     return wrap;
   }
 
-  function renderDeliveryNote(noteText){
-    const note = String(noteText || '').trim();
-    if (!note) return null;
+  function renderDeliveryNote(entry){
+    const message = String(entry && entry.message || '').trim();
+    if (!message) return null;
+    const note = (entry.ts ? (formatTs(entry.ts) + ' - ') : '') + message;
     const wrap = document.createElement('div');
     wrap.className = 'tracking-delivery-note';
     const title = document.createElement('h3');
@@ -405,7 +437,7 @@
     const stopsBlock = renderRouteStops(order.stops || []);
     if (stopsBlock) detailsEl.appendChild(stopsBlock);
 
-    const deliveryNote = renderDeliveryNote(order.deliveryNote || '');
+    const deliveryNote = renderDeliveryNote(latestDeliveryUpdate(order.timeline || []));
     if (deliveryNote) detailsEl.appendChild(deliveryNote);
 
     const notesBlock = renderDispatcherNotes(order.dispatcherNotes || []);
@@ -431,12 +463,15 @@
       const row = document.createElement('div');
       row.className = 'tracking-stop-row';
       row.appendChild(summaryItem(label, stop && stop.address));
-      row.appendChild(summaryItem(i18n('trackingLabelStatus') || 'Status', localizeOrderStatus((stop && stop.status) || 'Pending')));
+      row.appendChild(summaryItem(i18n('trackingLabelStatus') || 'Status', localizeStopStatus(stop && stop.status, isFirst)));
+      if (stop && stop.customerNote) {
+        row.appendChild(summaryItem(i18n('trackingLabelStopNote') || 'Note', stop.customerNote));
+      }
       if (stop && stop.podUrl) {
         row.appendChild(linkRow(
           i18n('trackingLabelPod') || 'POD',
           stop.podUrl,
-          i18n('trackingLinkPod') || 'Open proof of delivery',
+          isFirst ? (i18n('trackingLinkPickupPhoto') || 'Open pickup photo') : (i18n('trackingLinkPod') || 'Open proof of delivery'),
           { includeLink: true, includeShare: false }
         ));
       }
@@ -458,7 +493,8 @@
     summary.className = 'tracking-summary';
     summary.appendChild(summaryItem(i18n('trackingLabelReference') || 'Reference', String(stop.reference || '-')));
     summary.appendChild(summaryItem(i18n('trackingLabelStop') || 'Stop', (stop.stopIndex || '-') + ' / ' + (stop.stopCount || '-')));
-    summary.appendChild(summaryItem(i18n('trackingLabelStatus') || 'Status', localizeOrderStatus(stop.status || '-')));
+    const isPickup = Number(stop.stopIndex) === 1;
+    summary.appendChild(summaryItem(i18n('trackingLabelStatus') || 'Status', localizeStopStatus(stop.status, isPickup)));
     const when = stop.schedule && stop.schedule.time ? stop.schedule.time : '-';
     summary.appendChild(summaryItem(i18n('trackingLabelPickupTime') || 'Scheduled', when));
     detailsEl.appendChild(summary);
@@ -475,13 +511,15 @@
     addrRow.appendChild(addrValue);
     detailsEl.appendChild(addrRow);
 
+    if (stop.customerNote) detailsEl.appendChild(summaryItem(i18n('trackingLabelStopNote') || 'Note', stop.customerNote));
+
     if (stop.podUrl) {
       const links = document.createElement('div');
       links.className = 'tracking-links';
       links.appendChild(linkRow(
         i18n('trackingLabelPod') || 'POD',
         stop.podUrl,
-        i18n('trackingLinkPod') || 'Open proof of delivery',
+        isPickup ? (i18n('trackingLinkPickupPhoto') || 'Open pickup photo') : (i18n('trackingLinkPod') || 'Open proof of delivery'),
         { includeLink: true, includeShare: false }
       ));
       detailsEl.appendChild(links);

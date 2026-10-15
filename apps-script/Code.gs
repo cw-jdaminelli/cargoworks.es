@@ -165,8 +165,29 @@ function handleValidateAccountToken(params) {
   return jsonResponse({
     valid: true,
     accountName: String(config.name || ''),
-    requires: buildAccountRequires(config)
+    requires: buildAccountRequires(config),
+    pricePerStop: accountPricePerStop(config)
   }, 200);
+}
+
+// Accounts billed per delivery stop (e.g. route-sheet jobs) set
+// "pricePerStop" (EUR, before IVA) in their ACCOUNT_TOKENS entry. 0 = not.
+function accountPricePerStop(config){
+  return Math.max(0, safeNumber(config && config.pricePerStop, 0));
+}
+
+// Per-stop billing: the total is stops x rate (before IVA, like every account
+// total), carried in the breakdown's "stops" line.
+function applyPerStopPricing(quote){
+  const count = Math.max(0, Math.round(safeNumber(quote.stopCount, 0)));
+  const rate = Math.max(0, safeNumber(quote.stopRate, 0));
+  const total = Math.round(count * rate * 100) / 100;
+  quote.billingMode = 'per_stop';
+  quote.stopCount = count;
+  quote.stopRate = rate;
+  quote.total = total;
+  quote.breakdown = { base: 0, distance: 0, stops: total, surcharge: 0, discount: 0, adjustment: 0, total: total };
+  return quote;
 }
 
 function handleAccountOrders(params) {
@@ -207,6 +228,9 @@ function handleAccountOrders(params) {
       // "pickup + N stops" — N excludes only the pickup leg; dropoff counts as
       // the final stop (matches how customers already talk about a route).
       stops:         Math.max(0, stopsArr.length - 1),
+      // Per-stop orders record how many stops the route sheet had instead of
+      // listing every stop (see applyPerStopPricing).
+      stopCount:     quote.billingMode === 'per_stop' ? Math.max(0, Math.round(safeNumber(quote.stopCount, 0))) : 0,
       stopsDetail:   stopsArr.map(function(s){
         return {
           id: String(s.id || ''),
@@ -215,13 +239,14 @@ function handleAccountOrders(params) {
           failureReason: String(s.failureReason || ''),
           podUrl: String(s.podUrl || ''),
           podAt: String(s.podAt || ''),
-          notes: String(s.notes || ''),
+          // Only the customer-facing note; the stop's internal `notes` stay out.
+          customerNote: String(s.customerNote || ''),
           completedAt: String(s.completedAt || ''),
           trackingUrl: (s.id && s.trackingToken) ? buildStopTrackingUrl(payload, reference, s.id, s.trackingToken) : ''
         };
       }),
       total:         Number(quote.total || 0),
-      trackingUrl:   String(payload.trackingUrl || adminData.trackingUrl || ''),
+      trackingUrl:   publicTrackingUrl(payload.trackingUrl || adminData.trackingUrl || ''),
       staffName:     String(payload.staffName   || ''),
       pickupTime:    String(payload.pickupTime  || ''),
       dropoffTime:   String(payload.dropoffTime || ''),
@@ -356,9 +381,12 @@ function doPost(e){
       if (action === 'adminManageRiders') return handleAdminManageRiders(payload);
       if (action === 'urgentRequest') return handleUrgentRequest(payload);
       if (action === 'visionExtract') return handleVisionExtract(payload);
+      if (action === 'adminExtractOrder') return handleAdminExtractOrder(payload);
+      if (action === 'sendStopNote') return handleSendStopNote(payload);
       if (action === 'riderLogScan') return handleRiderLogScan(payload);
       if (action === 'routeOptimize') return handleRouteOptimize(payload);
       if (action === 'riderCommitStops') return handleRiderCommitStops(payload);
+      if (action === 'riderSetStopCount') return handleRiderSetStopCount(payload);
       if (action === 'riderGeocode') return handleRiderGeocode(payload);
       if (action === 'riderGeocodeCandidates') return handleRiderGeocodeCandidates(payload);
       if (action === 'urgentAccept') return handleUrgentAccept(payload);
@@ -438,6 +466,10 @@ function doPost(e){
       attContact:   String(payload.attContact   || '').trim()
     });
     const adminData = buildDefaultAdminData(enrichedPayload, payment, trackingUrl, updatesPreference, trackingToken);
+    // Kept so the payment can be re-checked with Stripe later (dispatcher
+    // "Check Stripe payment") even if the customer's page never reports back.
+    if (payment && payment.id) adminData.stripeSessionId = String(payment.id);
+    if (payment && payment.retrySessionId) adminData.stripeRetrySessionId = String(payment.retrySessionId);
     if (isAccountOrder) {
       adminData.paymentStatus = 'Account';
       adminData.paymentMode   = 'account';
@@ -482,6 +514,7 @@ function doPost(e){
       paymentUrl: payment && payment.url,
       paymentClientSecret: payment && payment.clientSecret,
       paymentMode: payment && payment.mode,
+      paymentSessionId: payment && payment.id ? payment.id : '',
       paymentPublishableKey: publishableKey,
       whatsappUrl: whatsappUrl,
       trackingUrl: trackingUrl,
@@ -709,13 +742,30 @@ function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference,
   };
 }
 
+// Customer-facing links always point at the live site. sourceUrl is the page
+// the order was placed from, which can be a local preview (Live Server /
+// Codespaces) whose address means nothing to the customer.
+const PUBLIC_SITE_ORIGIN = 'https://cargoworks.es';
+
+function publicSiteOrigin(sourceUrl){
+  const match = String(sourceUrl || '').trim().match(/^https?:\/\/([^\/?#]+)/i);
+  if (match && /(^|\.)cargoworks\.es$/i.test(match[1])) return match[0];
+  return PUBLIC_SITE_ORIGIN;
+}
+
+// Rewrites a stored link whose address isn't the live site (orders created
+// from a preview before publicSiteOrigin existed).
+function publicTrackingUrl(url){
+  const value = String(url || '').trim();
+  const match = value.match(/^https?:\/\/[^\/?#]+/i);
+  if (!match) return value;
+  return publicSiteOrigin(match[0]) + value.slice(match[0].length);
+}
+
 function buildTrackingUrl(payload, shortRef, trackingToken){
   try {
-    const sourceUrl = String(payload && payload.sourceUrl || '').trim();
-    const originMatch = sourceUrl.match(/^https?:\/\/[^/]+/i);
-    const origin = originMatch ? originMatch[0] : '';
-    const base = origin || 'https://cargoworks.es';
-    return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(shortRef);
+    const base = publicSiteOrigin(payload && payload.sourceUrl);
+    return base + '/tracking.html?ref=' + encodeURIComponent(shortRef);
   } catch (err) {
     return 'https://cargoworks.es/tracking.html?ref=' + encodeURIComponent(shortRef);
   }
@@ -723,11 +773,8 @@ function buildTrackingUrl(payload, shortRef, trackingToken){
 
 function buildStopTrackingUrl(payload, shortRef, stopId, stopToken){
   try {
-    const sourceUrl = String(payload && payload.sourceUrl || '').trim();
-    const originMatch = sourceUrl.match(/^https?:\/\/[^/]+/i);
-    const origin = originMatch ? originMatch[0] : '';
-    const base = origin || 'https://cargoworks.es';
-    return base.replace(/\/$/, '') + '/tracking.html?ref=' + encodeURIComponent(shortRef) + '&stop=' + encodeURIComponent(stopId) + '&t=' + encodeURIComponent(stopToken);
+    const base = publicSiteOrigin(payload && payload.sourceUrl);
+    return base + '/tracking.html?ref=' + encodeURIComponent(shortRef) + '&stop=' + encodeURIComponent(stopId) + '&t=' + encodeURIComponent(stopToken);
   } catch (err) {
     return 'https://cargoworks.es/tracking.html?ref=' + encodeURIComponent(shortRef) + '&stop=' + encodeURIComponent(stopId) + '&t=' + encodeURIComponent(stopToken);
   }
@@ -826,12 +873,14 @@ function createStripeSession(payload, shortRef, trackingToken){
     if (embeddedAttempt.ok && embeddedAttempt.session) {
       const embeddedSession = embeddedAttempt.session;
       let retryPaymentUrl = String(embeddedSession.url || '').trim();
+      let retrySessionId = '';
       let retryPaymentError = '';
       // Embedded sessions may not expose a public URL. Create a hosted retry URL for tracking and payment recovery.
       if (!retryPaymentUrl) {
         const hostedRetryAttempt = createStripeCheckoutSession(secret, hostedBody);
         if (hostedRetryAttempt.ok && hostedRetryAttempt.session) {
           retryPaymentUrl = String(hostedRetryAttempt.session.url || '').trim();
+          retrySessionId = String(hostedRetryAttempt.session.id || '').trim();
         } else {
           retryPaymentError = String(hostedRetryAttempt.error || '').trim();
         }
@@ -841,6 +890,7 @@ function createStripeSession(payload, shortRef, trackingToken){
         url: retryPaymentUrl,
         clientSecret: embeddedSession.client_secret || '',
         mode: 'embedded',
+        retrySessionId: retrySessionId,
         embeddedError: retryPaymentError
       };
     }
@@ -941,8 +991,55 @@ function verifyStripeSessionForReference(reference, sessionId){
     paymentStatus: paymentStatus,
     paymentStatusRaw: paymentStatusRaw,
     sessionStatusRaw: sessionStatusRaw,
-    sessionId: String(session.id || '').trim()
+    sessionId: String(session.id || '').trim(),
+    amountTotal: Number(session.amount_total || 0) || 0,
+    currency: String(session.currency || '').trim().toUpperCase()
   };
+}
+
+// Checkout Session id ("cs_live_..."/"cs_test_...") from an embedded client
+// secret ("cs_live_..._secret_...") or a hosted checkout URL
+// ("https://checkout.stripe.com/c/pay/cs_live_...#...").
+function stripeSessionIdFromText(value){
+  const match = String(value || '').match(/\b(cs_(?:live|test)_[A-Za-z0-9]+?)(?:_secret_|[^A-Za-z0-9_]|$)/);
+  return match ? match[1] : '';
+}
+
+// Paid Checkout Sessions carrying this order's reference in their metadata,
+// created since `sinceDate`. Used when no session id was stored with the order.
+function findPaidStripeSessionsByReference(reference, sinceDate){
+  const secret = getStripeSecret();
+  if (!secret) return { ok: false, error: 'Stripe verification unavailable', sessions: [] };
+  const expectedRef = normalizeReference(reference);
+  const createdGte = Math.floor(((sinceDate ? sinceDate.getTime() : Date.now()) - (24 * 60 * 60 * 1000)) / 1000);
+  const found = [];
+  let startingAfter = '';
+  for (let page = 0; page < 5; page++) {
+    let url = 'https://api.stripe.com/v1/checkout/sessions?limit=100&status=complete&created[gte]=' + createdGte;
+    if (startingAfter) url += '&starting_after=' + encodeURIComponent(startingAfter);
+    const resp = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: { 'Authorization': 'Bearer ' + secret },
+      muteHttpExceptions: true
+    });
+    const status = resp.getResponseCode();
+    let json = null;
+    try { json = JSON.parse(resp.getContentText()); } catch(_) { json = null; }
+    if (status < 200 || status >= 300 || !json) {
+      const errMsg = (json && json.error && json.error.message) ? json.error.message : ('HTTP ' + status);
+      return { ok: false, error: 'Stripe error: ' + String(errMsg).slice(0, 200), sessions: found };
+    }
+    const data = Array.isArray(json.data) ? json.data : [];
+    data.forEach(function(session){
+      const ref = normalizeReference(session && session.metadata && session.metadata.reference || '');
+      if (ref && ref === expectedRef && String(session.payment_status || '').toLowerCase() === 'paid') {
+        found.push(String(session.id || ''));
+      }
+    });
+    if (!json.has_more || !data.length) break;
+    startingAfter = String(data[data.length - 1].id || '');
+  }
+  return { ok: true, sessions: found };
 }
 
 function getStripeSecret(){
@@ -1290,6 +1387,7 @@ function buildStopTrackingPayload(stop, allStops, summary){
     podUrl: stop.podUrl || '',
     podAt: stop.podAt || '',
     completedAt: stop.completedAt || '',
+    customerNote: stop.customerNote || '',
     schedule: summary.schedule,
     orderStatus: summary.status
   };
@@ -1339,11 +1437,54 @@ function handleAdminList(params){
         return normalizeReference(order && order.reference) === refFilter;
       });
     }
+    const filters = {
+      keyword: String(params.keyword || '').trim().toLowerCase(),
+      status: String(params.status || '').trim(),
+      payment: String(params.payment || '').trim(),
+      updates: String(params.updates || '').trim(),
+      invoiced: String(params.invoiced || '').trim(),
+      account: String(params.account || '').trim().toUpperCase()
+    };
+    orders = orders.filter(function(order){ return adminOrderMatchesFilters(order, filters); });
     return jsonResponse({ orders: orders }, 200);
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
   }
+}
+
+// Same text the dispatcher's Quick search matches against (orderSearchText in
+// dispatcher-admin.js) — keep the two in sync. The timeline is left out: its
+// entries name whoever touched the order, so a dispatcher or rider name would
+// match nearly every order.
+function adminOrderSearchText(order){
+  const customer = order.customer || {};
+  const schedule = order.schedule || {};
+  const stops = (order.route && Array.isArray(order.route.stops)) ? order.route.stops : [];
+  const bits = [
+    order.reference, order.title, order.status, order.paymentStatus, order.updatesPreference,
+    order.notes, order.internalNotes, order.riderName, order.riderPhone,
+    schedule.date, schedule.time,
+    customer.name, customer.email, customer.phone
+  ];
+  stops.forEach(function(stop){
+    if (stop && stop.address) bits.push(stop.address);
+  });
+  return bits.map(function(b){ return String(b || ''); }).join(' | ').toLowerCase();
+}
+
+// Optional adminList filters (all empty = no filtering), mirroring the
+// dispatcher's filter controls so a range load only returns matching orders.
+function adminOrderMatchesFilters(order, filters){
+  if (!order) return false;
+  if (filters.status && cleanOrderText(order.status) !== filters.status) return false;
+  if (filters.payment && cleanOrderText(order.paymentStatus) !== filters.payment) return false;
+  if (filters.updates && cleanOrderText(order.updatesPreference) !== filters.updates) return false;
+  if (filters.invoiced === 'yes' && !order.invoicedAt) return false;
+  if (filters.invoiced === 'no' && order.invoicedAt) return false;
+  if (filters.account && cleanOrderText(order.accountToken).toUpperCase() !== filters.account) return false;
+  if (filters.keyword && adminOrderSearchText(order).indexOf(filters.keyword) === -1) return false;
+  return true;
 }
 
 function handleAdminSheetInfo(params){
@@ -1379,6 +1520,141 @@ function handleAdminBackfill(params){
   }
 }
 
+
+// ── Claude API calls ──────────────────────────────────────────────────────────
+
+// POSTs one Messages API request. Returns { data } on success, or
+// { errorResponse } (a ready jsonResponse) on an HTTP or unreadable-body error.
+// `label` names the feature in user-facing error messages.
+function callAnthropicMessages(apiKey, requestBody, extraHeaders, label) {
+  var headers = Object.assign({
+    'Content-Type': 'application/json',
+    'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01'
+  }, extraHeaders || {});
+  var response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: headers,
+    payload: JSON.stringify(requestBody),
+    muteHttpExceptions: true
+  });
+
+  var statusCode = response.getResponseCode();
+  var rawBody = response.getContentText();
+  var data = null;
+  try { data = JSON.parse(rawBody); } catch (parseErr) { data = null; }
+
+  if (statusCode < 200 || statusCode >= 300) {
+    var apiErrMsg = (data && data.error && data.error.message) ? data.error.message : rawBody.slice(0, 200);
+    if (statusCode === 429) {
+      return { errorResponse: jsonResponse({ error: label + ' is rate-limited right now. Please try again in a moment.', detail: apiErrMsg }, 429) };
+    }
+    if (statusCode === 529 || statusCode === 503) {
+      return { errorResponse: jsonResponse({ error: label + ' is temporarily overloaded. Please try again in a moment.', detail: apiErrMsg }, 503) };
+    }
+    return { errorResponse: jsonResponse({ error: label + ' error (' + statusCode + ')', detail: apiErrMsg }, 502) };
+  }
+  if (!data) return { errorResponse: jsonResponse({ error: label + ' returned an unreadable response' }, 502) };
+  if (data.error) return { errorResponse: jsonResponse({ error: data.error.message || 'API error' }, 500) };
+  return { data: data };
+}
+
+// ── Order extract (dispatcher Quick Import) ───────────────────────────────────
+
+// Reads a pasted customer message and/or a screenshot and returns the order
+// fields for the dispatcher's New order form. Runs server-side so the
+// Anthropic key stays in Script Properties instead of each dispatcher's browser.
+function handleAdminExtractOrder(payload) {
+  try {
+    if (!isAdminAuthorized(String(payload.token || '').trim())) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
+    }
+
+    var text = String(payload.text || '').trim();
+    var imageBase64 = String(payload.image || '').trim();
+    var mimeType = String(payload.mimeType || 'image/jpeg').trim();
+    if (!text && !imageBase64) return jsonResponse({ error: 'Paste a message or add an image first.' }, 400);
+
+    var apiKey = String(PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY') || '').trim();
+    if (!apiKey) return jsonResponse({ error: 'Anthropic API key not configured' }, 500);
+
+    var today = formatDateKey(new Date());
+
+    var systemPrompt =
+      'You are a logistics dispatcher assistant for a cargo bike delivery company in Barcelona. ' +
+      'Extract order details from the provided content and return ONLY a valid JSON object. ' +
+      'No explanation, no markdown, no preamble — just the raw JSON.';
+
+    var userPrompt =
+      'Extract order details and return ONLY this JSON (use null for any field you cannot determine):\n' +
+      '{\n' +
+      '  "customerName": string,\n' +
+      '  "customerPhone": string,\n' +
+      '  "customerEmail": string,\n' +
+      '  "pickupAddress": string,\n' +
+      '  "deliveries": [ one object per delivery address, in delivery order (the last one is the final dropoff):\n' +
+      '    { "address": string, "recipientName": string, "recipientPhone": string, "recipientEmail": string,\n' +
+      '      "addressDetails": string (floor, door, staircase, buzzer, access instructions) } ],\n' +
+      '  "routes": [] — leave EMPTY unless the text asks to split the order into separate routes/orders\n' +
+      '    (e.g. "the 18:00-19:00 deliveries go to Alex as a second route"). When it does, one object per route, in order:\n' +
+      '    { "riderName": string or null (as written, e.g. "Alex"; "me" if the writer means themself),\n' +
+      '      "scheduleDate": string or null (YYYY-MM-DD), "startTime": string (HH:MM), "endTime": string or null (HH:MM),\n' +
+      '      "deliveries": [ numbers: 1-based positions in the deliveries list that belong to this route ],\n' +
+      '      "notes": string or null (only the customer notes/instructions that belong to this route) } ],\n' +
+      '  "scheduleDate": string (YYYY-MM-DD; interpret "today"/"hoy"/"hoje" as ' + today + '),\n' +
+      '  "scheduleTime": string (HH:MM 24h format),\n' +
+      '  "notes": string (customer instructions or special requirements),\n' +
+      '  "cargoType": string,\n' +
+      '  "packageCount": number or null,\n' +
+      '  "weightKg": number or null,\n' +
+      '  "internalNotes": string (any operational info not for the customer)\n' +
+      '}\n\n' +
+      'Today\'s date: ' + today + '.\n' +
+      (text ? 'Text content:\n' + text : '');
+
+    var content = [];
+    if (imageBase64) {
+      content.push({ type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } });
+    }
+    content.push({ type: 'text', text: userPrompt });
+
+    var requestBody = {
+      model: 'claude-sonnet-5-5',
+      // Thinking counts toward max_tokens, so leave room beyond the JSON itself.
+      max_tokens: 16000,
+      output_config: { effort: 'low' },
+      // On a safety decline, retry server-side on Anthropic's recommended model.
+      fallbacks: 'default',
+      system: systemPrompt,
+      messages: [{ role: 'user', content: content }]
+    };
+
+    var call = callAnthropicMessages(apiKey, requestBody, { 'anthropic-beta': 'server-side-fallback-2026-07-01' }, 'Order extraction');
+    if (call.errorResponse) return call.errorResponse;
+    var data = call.data;
+
+    if (data.stop_reason === 'refusal') {
+      return jsonResponse({ error: 'The AI declined to read this — fill the fields in manually.' }, 422);
+    }
+    if (data.stop_reason === 'max_tokens') {
+      return jsonResponse({ error: 'The response was cut off — try a shorter message.' }, 502);
+    }
+
+    // The response can also carry thinking or fallback blocks; only text holds the JSON.
+    var rawText = (data.content || []).map(function(block) {
+      return block && block.type === 'text' ? block.text : '';
+    }).join('');
+    var cleaned = rawText.replace(/```json|```/g, '').trim();
+    var order;
+    try { order = JSON.parse(cleaned); } catch (parseErr) {
+      return jsonResponse({ error: 'Could not read the AI response — try again.' }, 502);
+    }
+    return jsonResponse({ order: order }, 200);
+  } catch (err) {
+    var msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
 
 // ── Vision extract (scan sheet) ───────────────────────────────────────────────
 
@@ -1436,34 +1712,9 @@ function handleVisionExtract(payload) {
       }]
     };
 
-    var response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      payload: JSON.stringify(requestBody),
-      muteHttpExceptions: true
-    });
-
-    var statusCode = response.getResponseCode();
-    var rawBody = response.getContentText();
-    var data = null;
-    try { data = JSON.parse(rawBody); } catch (parseErr) { data = null; }
-
-    if (statusCode < 200 || statusCode >= 300) {
-      var apiErrMsg = (data && data.error && data.error.message) ? data.error.message : rawBody.slice(0, 200);
-      if (statusCode === 429) {
-        return jsonResponse({ error: 'Vision API is rate-limited right now. Please try again in a moment.', detail: apiErrMsg }, 429);
-      }
-      if (statusCode === 529 || statusCode === 503) {
-        return jsonResponse({ error: 'Vision API is temporarily overloaded. Please try again in a moment.', detail: apiErrMsg }, 503);
-      }
-      return jsonResponse({ error: 'Vision API error (' + statusCode + ')', detail: apiErrMsg }, 502);
-    }
-    if (!data) return jsonResponse({ error: 'Vision API returned an unreadable response' }, 502);
-    if (data.error) return jsonResponse({ error: data.error.message || 'API error' }, 500);
+    var call = callAnthropicMessages(apiKey, requestBody, {}, 'Vision API');
+    if (call.errorResponse) return call.errorResponse;
+    var data = call.data;
 
     var rawText = '';
     if (data.content && Array.isArray(data.content)) {
@@ -1725,6 +1976,70 @@ function handleRiderCommitStops(payload) {
   } catch (err) {
     var msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+// ── Rider records a scanned sheet's stop count ────────────────────────────────
+
+// Saves how many stops the rider's scanned route sheet(s) had on the order,
+// without saving the route itself. Orders on a per-stop account are priced
+// from it straight away (stops x the account's pricePerStop).
+function handleRiderSetStopCount(payload) {
+  try {
+    var riderId = String(payload.id || '').trim();
+    var rider = getRiderById(riderId);
+    if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+    var eventId = cleanOrderText(payload.eventId);
+    if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
+    var count = Math.round(safeNumber(payload.count, 0));
+    if (count < 1) return jsonResponse({ error: 'Missing stop count' }, 400);
+
+    var cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+    var event = cal.getEventById(eventId);
+    if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+    var desc = String(event.getDescription() || '');
+    var existingPayload = extractPayloadFromDescription(desc) || {};
+    var adminData = ensureAdminData(desc, existingPayload);
+
+    var assignedRiderId = adminData.rider && adminData.rider.riderId;
+    var assignedName = adminData.rider && adminData.rider.name;
+    if (assignedRiderId && assignedRiderId !== riderId && assignedName !== rider.name) {
+      return jsonResponse({ error: 'You are not assigned to this order' }, 403);
+    }
+
+    var quote = existingPayload.quote || {};
+    quote.stopCount = count;
+    var token = cleanOrderText(existingPayload.accountToken || adminData.accountToken);
+    var accountRate = token ? accountPricePerStop(getAccountConfig(token)) : 0;
+    if (quote.billingMode === 'per_stop' || accountRate > 0) {
+      if (!(safeNumber(quote.stopRate, 0) > 0)) quote.stopRate = accountRate;
+      applyPerStopPricing(quote);
+    }
+    existingPayload.quote = quote;
+
+    var msg = rider.name + ' recorded ' + count + ' stop' + (count === 1 ? '' : 's') + ' from a scanned sheet';
+    pushAdminTimeline(adminData, adminData.status, msg, 'rider:' + rider.name);
+    adminData.timeline[adminData.timeline.length - 1].internal = true;
+    event.setDescription(buildEventDescription(existingPayload, adminData));
+
+    appendOrderLogEntry({
+      action: 'rider_set_stop_count',
+      eventId: event.getId(),
+      payload: existingPayload,
+      adminData: adminData,
+      status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: msg,
+      build: BUILD_ID
+    });
+
+    return jsonResponse({ ok: true, stopCount: count, order: buildOrderSummary(event) }, 200);
+  } catch (err) {
+    var errMsg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: errMsg }, 500);
   }
 }
 
@@ -2064,6 +2379,7 @@ function handleAdminPost(payload){
   if (action === 'adminUpdate') return handleAdminUpdate(payload);
   if (action === 'adminUpdateStop') return handleAdminUpdateStop(payload);
   if (action === 'adminCreatePayment') return handleAdminCreatePayment(payload);
+  if (action === 'adminCheckStripePayment') return handleAdminCheckStripePayment(payload);
   if (action === 'adminGeocode') return handleAdminGeocode(payload);
   return jsonResponse({ error: 'Unknown action' }, 400);
 }
@@ -2128,11 +2444,30 @@ function normalizeStopsForOrder(incomingStops, existingStops){
       // same as before, so a later resubmit (reorder, append-scan) can never
       // clobber a note someone has already set.
       notes: (prior && prior.notes) || cleanOrderText(stop && stop.notes) || '',
+      // The customer-facing note for this stop (shown on its tracking, unlike
+      // `notes`, which stays internal). Taken from the incoming stop only when
+      // the caller sends the field — the dispatcher editor sends it only for
+      // stops whose note it changed — so a route resubmit or a stale editor
+      // save can't wipe a note a rider added meanwhile.
+      customerNote: (stop && Object.prototype.hasOwnProperty.call(stop, 'customerNote'))
+        ? cleanOrderText(stop.customerNote)
+        : ((prior && prior.customerNote) || ''),
+      // Recipient contact for this stop — internal (rider and dispatch only,
+      // never in any tracking payload). Same rule: kept unless sent.
+      recipientName: stopFieldOrPrior(stop, prior, 'recipientName'),
+      recipientPhone: stopFieldOrPrior(stop, prior, 'recipientPhone'),
+      recipientEmail: stopFieldOrPrior(stop, prior, 'recipientEmail'),
+      addressDetails: stopFieldOrPrior(stop, prior, 'addressDetails'),
       trackingToken: (prior && prior.trackingToken) || generatePublicToken(16),
       completedAt: (prior && prior.completedAt) || '',
       failureReason: (prior && prior.failureReason) || ''
     };
   }).filter(Boolean);
+}
+
+function stopFieldOrPrior(stop, prior, field){
+  if (stop && Object.prototype.hasOwnProperty.call(stop, field)) return cleanOrderText(stop[field]);
+  return (prior && prior[field]) || '';
 }
 
 // Assigns a fresh id/trackingToken to any stop missing one (e.g. a
@@ -2174,7 +2509,7 @@ function getUnifiedStops(route, adminData){
   const pickupStop = {
     id: '', address: legacyPickupAddr, tier: '', priority: false, outlier: false,
     status: pastPickup ? 'Delivered' : 'Pending',
-    podUrl: ad.pickupPodUrl || '', podAt: ad.pickupPodAt || '', notes: '',
+    podUrl: ad.pickupPodUrl || '', podAt: ad.pickupPodAt || '', notes: '', customerNote: '',
     trackingToken: '',
     completedAt: pastPickup ? (ad.pickupPodAt || '') : '',
     failureReason: ''
@@ -2183,7 +2518,7 @@ function getUnifiedStops(route, adminData){
   const dropoffStop = {
     id: '', address: legacyDropoffAddr, tier: '', priority: false, outlier: false,
     status: ad.status === 'Delivered' ? 'Delivered' : (dropoffFailed ? 'Failed' : 'Pending'),
-    podUrl: ad.podUrl || '', podAt: ad.podAt || '', notes: '',
+    podUrl: ad.podUrl || '', podAt: ad.podAt || '', notes: '', customerNote: '',
     trackingToken: '',
     completedAt: ad.status === 'Delivered' ? (ad.podAt || ad.routeCompletedAt || '') : '',
     failureReason: dropoffFailed ? (ad.canceledReason || '') : ''
@@ -2256,6 +2591,8 @@ function mergeAdminOrderPayload(orderInput, existingPayload, existingAdminData){
     billingMode: cleanOrderText(incomingQuote.billingMode || baseQuote.billingMode || ''),
     hourlyRate: safeNumber((incomingQuote.hourlyRate != null ? incomingQuote.hourlyRate : baseQuote.hourlyRate), 0),
     elapsedMinutes: safeNumber((incomingQuote.elapsedMinutes != null ? incomingQuote.elapsedMinutes : baseQuote.elapsedMinutes), 0),
+    stopCount: Math.max(0, Math.round(safeNumber((incomingQuote.stopCount != null ? incomingQuote.stopCount : baseQuote.stopCount), 0))),
+    stopRate: safeNumber((incomingQuote.stopRate != null ? incomingQuote.stopRate : baseQuote.stopRate), 0),
     etaMins: Math.max(15, safeNumber((incomingQuote.etaMins != null ? incomingQuote.etaMins : baseQuote.etaMins), DEFAULT_DURATION_MIN)),
     totalKm: safeNumber((incomingQuote.totalKm != null ? incomingQuote.totalKm : baseQuote.totalKm), 0),
     currency: cleanOrderText(incomingQuote.currency || baseQuote.currency || 'EUR'),
@@ -2270,6 +2607,7 @@ function mergeAdminOrderPayload(orderInput, existingPayload, existingAdminData){
     incomingQuote.breakdown || baseQuote.breakdown || {},
     Number(quote.total)
   );
+  if (quote.billingMode === 'per_stop') applyPerStopPricing(quote);
 
   return {
     customer: customer,
@@ -2613,26 +2951,58 @@ function handlePaymentReturn(payload){
     if (!verification.ok) {
       return jsonResponse({ error: 'Payment verification failed', detail: verification.error || 'Stripe verification failed' }, 403);
     }
-    const paymentStatus = verification.paymentStatus;
 
-    const event = findEventByReference(reference);
+    const event = preEvent || findEventByReference(reference);
     if (!event) return jsonResponse({ error: 'Not found' }, 404);
 
+    const applied = applyVerifiedPayment(event, reference, verification, {
+      claimedOutcome: normalizePaymentOutcome(payload.outcome),
+      paymentUrl: String(payload.paymentUrl || '').trim(),
+      logAction: 'payment_return',
+      logPrefix: 'Payment return verified'
+    });
+
+    return jsonResponse({
+      ok: true,
+      reference: reference,
+      paymentStatus: applied.paymentStatus,
+      trackingUrl: applied.trackingUrl,
+      changed: applied.changed,
+      confirmationEmailSent: applied.confirmationEmailSent
+    }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+// Writes a Stripe-verified payment result onto the order. The first time an
+// order turns Paid it emails the customer their confirmation and the owner a
+// "payment received" notice. Shared by the customer's payment return and the
+// dispatcher's "Check Stripe payment", which can race each other — hence the
+// lock, so nobody gets the same email twice.
+function applyVerifiedPayment(event, reference, verification, options){
+  const opts = options || {};
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try { locked = lock.tryLock(20000); } catch(_) { locked = false; }
+  try {
     const desc = String(event.getDescription() || '');
     const payloadData = extractPayloadFromDescription(desc) || {};
     const adminData = ensureAdminData(desc, payloadData);
+    const paymentStatus = verification.paymentStatus;
     const previous = String(adminData.paymentStatus || '');
     // Do not downgrade already-paid orders from public return parameters.
     const resolvedPaymentStatus = (previous === 'Paid' && paymentStatus !== 'Paid') ? 'Paid' : paymentStatus;
     adminData.paymentStatus = resolvedPaymentStatus;
     if (!adminData.status) adminData.status = DEFAULT_STATUS_LABEL;
+    if (paymentStatus === 'Paid' && verification.sessionId) adminData.stripeSessionId = verification.sessionId;
 
-    const incomingPaymentUrl = String(payload.paymentUrl || '').trim();
-    if (!adminData.paymentUrl && incomingPaymentUrl) adminData.paymentUrl = incomingPaymentUrl;
+    if (!adminData.paymentUrl && opts.paymentUrl) adminData.paymentUrl = opts.paymentUrl;
 
     adminData.timeline = Array.isArray(adminData.timeline) ? adminData.timeline : [];
     const ts = new Date().toISOString();
-    const claimedOutcome = normalizePaymentOutcome(payload.outcome);
+    const claimedOutcome = String(opts.claimedOutcome || '').trim();
     const verifiedOutcome = String(verification.paymentStatusRaw || verification.sessionStatusRaw || '').trim() || paymentStatus.toLowerCase();
     const changed = previous !== resolvedPaymentStatus;
     if (changed) {
@@ -2645,10 +3015,11 @@ function handlePaymentReturn(payload){
       adminData.lastUpdateAt = ts;
     }
 
+    if (!payloadData.reference) payloadData.reference = reference;
+    if (!payloadData.trackingUrl && adminData.trackingUrl) payloadData.trackingUrl = adminData.trackingUrl;
+
     let confirmationEmailSent = false;
     if (adminData.paymentStatus === 'Paid' && !adminData.confirmationEmailSentAt) {
-      if (!payloadData.reference) payloadData.reference = reference;
-      if (!payloadData.trackingUrl && adminData.trackingUrl) payloadData.trackingUrl = adminData.trackingUrl;
       confirmationEmailSent = sendClientConfirmationEmail(payloadData, adminData);
       if (confirmationEmailSent) {
         adminData.confirmationEmailSentAt = ts;
@@ -2669,27 +3040,154 @@ function handlePaymentReturn(payload){
       adminData.lastUpdateAt = ts;
     }
 
-    const updatedDesc = upsertAdminData(desc, adminData);
-    event.setDescription(updatedDesc);
+    // Only when Stripe moved it to Paid — if a dispatcher had already marked it
+    // Paid by hand, the owner knows.
+    let ownerEmailSent = false;
+    if (changed && resolvedPaymentStatus === 'Paid' && !adminData.ownerPaymentEmailSentAt) {
+      ownerEmailSent = sendOwnerPaymentEmail(payloadData, adminData, reference, verification, confirmationEmailSent);
+      if (ownerEmailSent) adminData.ownerPaymentEmailSentAt = ts;
+    }
+
+    event.setDescription(upsertAdminData(desc, adminData));
 
     appendOrderLogEntry({
-      action: 'payment_return',
+      action: opts.logAction || 'payment_return',
       eventId: event.getId(),
       payload: payloadData,
       adminData: adminData,
       status: adminData.status,
       paymentStatus: adminData.paymentStatus,
-      message: 'Payment return verified: ' + verifiedOutcome + (claimedOutcome ? (' (claimed: ' + claimedOutcome + ')') : '') + (confirmationEmailSent ? ' (confirmation email sent)' : ''),
+      message: (opts.logPrefix || 'Payment verified') + ': ' + verifiedOutcome + (claimedOutcome ? (' (claimed: ' + claimedOutcome + ')') : '') + (confirmationEmailSent ? ' (confirmation email sent)' : ''),
       build: BUILD_ID
     });
 
-    return jsonResponse({
-      ok: true,
-      reference: reference,
+    return {
       paymentStatus: adminData.paymentStatus,
       trackingUrl: adminData.trackingUrl || payloadData.trackingUrl || '',
       changed: changed,
-      confirmationEmailSent: confirmationEmailSent
+      confirmationEmailSent: confirmationEmailSent,
+      confirmationEmailSentAt: adminData.confirmationEmailSentAt || '',
+      ownerEmailSent: ownerEmailSent
+    };
+  } finally {
+    if (locked) {
+      try { lock.releaseLock(); } catch(_) {}
+    }
+  }
+}
+
+function sendOwnerPaymentEmail(payload, adminData, reference, verification, customerEmailed){
+  try {
+    if (!OWNER_EMAIL) return false;
+    const data = payload || {};
+    const customer = data.customer || {};
+    const quote = data.quote || {};
+    const schedule = quote.schedule || {};
+    const stops = getUnifiedStops(quote.route || {}, adminData);
+    const amount = verification && verification.amountTotal
+      ? (verification.amountTotal / 100)
+      : (Number(quote.total || 0) || 0);
+    const currency = (verification && verification.currency) || 'EUR';
+    const amountLabel = currency + ' ' + amount.toFixed(2);
+    const lines = [];
+    lines.push('Payment received in Stripe.');
+    lines.push('Reference: ' + reference);
+    lines.push('Amount: ' + amountLabel);
+    lines.push('Customer: ' + (String(customer.name || '').trim() || '-'));
+    if (customer.email) lines.push('Email: ' + String(customer.email).trim());
+    if (customer.phone) lines.push('Phone: ' + String(customer.phone).trim());
+    lines.push('Pickup: ' + [formatScheduleDateForEmail(schedule.date || ''), String(schedule.time || '').trim()].filter(Boolean).join(' ') + (stops[0] && stops[0].address ? (' - ' + stops[0].address) : ''));
+    if (stops.length > 1) lines.push('Drop-off: ' + String(stops[stops.length - 1].address || '-') + (stops.length > 2 ? (' (' + (stops.length - 1) + ' stops)') : ''));
+    if (adminData && adminData.trackingUrl) lines.push('Tracking: ' + adminData.trackingUrl);
+    if (verification && verification.sessionId) lines.push('Stripe session: ' + verification.sessionId);
+    lines.push('');
+    lines.push(customerEmailed ? 'The customer has been sent their booking confirmation.' : 'The customer confirmation email was NOT sent (no email address or a send error) - please contact them.');
+    MailApp.sendEmail({
+      to: OWNER_EMAIL,
+      subject: 'Payment received - ' + reference + ' - ' + amountLabel,
+      body: lines.join('\n')
+    });
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+// Dispatcher "Check Stripe payment": asks Stripe whether this order was paid
+// and, if so, applies it exactly like the customer's own payment return would
+// have (marks Paid, sends the confirmation). Never downgrades an order.
+function handleAdminCheckStripePayment(payload){
+  try {
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+    const eventId = cleanOrderText(payload.eventId);
+    let event = eventId ? cal.getEventById(eventId) : null;
+    if (!event && payload.reference) event = findEventByReference(payload.reference);
+    if (!event) return jsonResponse({ error: 'Order not found' }, 404);
+
+    const desc = String(event.getDescription() || '');
+    const payloadData = extractPayloadFromDescription(desc) || {};
+    const adminData = ensureAdminData(desc, payloadData);
+    const reference = String(payloadData.reference || cleanOrderText(payload.reference) || extractReferenceFromText(event.getTitle())).trim().toUpperCase();
+    if (!reference) return jsonResponse({ error: 'This order has no reference to look up in Stripe.' }, 400);
+    if (adminData.paymentMode === 'account' || adminData.paymentStatus === 'Account') {
+      return jsonResponse({ ok: true, found: false, paymentStatus: adminData.paymentStatus, message: 'Account order - billed on invoice, not through Stripe.' }, 200);
+    }
+
+    // Sessions this order is known to have, then a search by reference.
+    const candidates = [];
+    [
+      adminData.stripeSessionId,
+      adminData.stripeRetrySessionId,
+      stripeSessionIdFromText(payloadData.paymentClientSecret),
+      stripeSessionIdFromText(adminData.paymentUrl),
+      stripeSessionIdFromText(payloadData.paymentUrl)
+    ].forEach(function(id){
+      const clean = String(id || '').trim();
+      if (clean && candidates.indexOf(clean) < 0) candidates.push(clean);
+    });
+
+    let paid = null;
+    for (let i = 0; i < candidates.length && !paid; i++) {
+      const v = verifyStripeSessionForReference(reference, candidates[i]);
+      if (v.ok && v.paymentStatus === 'Paid') paid = v;
+    }
+    let searchError = '';
+    if (!paid) {
+      const search = findPaidStripeSessionsByReference(reference, event.getDateCreated());
+      if (!search.ok) searchError = search.error || '';
+      for (let j = 0; j < search.sessions.length && !paid; j++) {
+        const v = verifyStripeSessionForReference(reference, search.sessions[j]);
+        if (v.ok && v.paymentStatus === 'Paid') paid = v;
+      }
+    }
+
+    if (!paid) {
+      if (searchError && !candidates.length) return jsonResponse({ error: searchError }, 502);
+      return jsonResponse({
+        ok: true,
+        found: false,
+        paymentStatus: adminData.paymentStatus || '',
+        message: 'No completed payment found in Stripe for ' + reference + '.'
+      }, 200);
+    }
+
+    const applied = applyVerifiedPayment(event, reference, paid, {
+      claimedOutcome: 'dispatcher check' + (payload.operator ? (' by ' + cleanOrderText(payload.operator)) : ''),
+      logAction: 'payment_check',
+      logPrefix: 'Stripe payment check'
+    });
+    return jsonResponse({
+      ok: true,
+      found: true,
+      reference: reference,
+      paymentStatus: applied.paymentStatus,
+      changed: applied.changed,
+      confirmationEmailSent: applied.confirmationEmailSent,
+      confirmationEmailSentAt: applied.confirmationEmailSentAt,
+      ownerEmailSent: applied.ownerEmailSent,
+      amount: paid.amountTotal ? (paid.amountTotal / 100) : null,
+      order: buildOrderSummary(event)
     }, 200);
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
@@ -3211,6 +3709,7 @@ function ensureAdminData(desc, payload){
     const ref = payload && payload.reference ? String(payload.reference) : '';
     adminData.trackingUrl = ref ? buildTrackingUrl(payload || {}, ref, adminData.trackingToken) : '';
   }
+  adminData.trackingUrl = publicTrackingUrl(adminData.trackingUrl);
   if (!Array.isArray(adminData.timeline)) adminData.timeline = [];
   if (!adminData.timeline.length) {
     adminData.timeline.push({
@@ -3283,7 +3782,8 @@ function buildOrderSummary(event){
       paymentStatus: adminData.paymentStatus || '',
       invoicedAt: cleanOrderText(adminData.invoicedAt || ''),
       paymentUrl: adminData.paymentUrl || payload.paymentUrl || '',
-      trackingUrl: adminData.trackingUrl || payload.trackingUrl || '',
+      hasStripeSession: !!(adminData.stripeSessionId || stripeSessionIdFromText(payload.paymentClientSecret) || stripeSessionIdFromText(adminData.paymentUrl || payload.paymentUrl)),
+      trackingUrl: publicTrackingUrl(adminData.trackingUrl || payload.trackingUrl || ''),
       trackingToken: adminData.trackingToken || '',
       updatesPreference: adminData.updatesPreference || payload.updatesPreference || '',
       riderName: cleanOrderText(adminData.rider && adminData.rider.name || ''),
@@ -3338,9 +3838,14 @@ function buildTrackingPayload(summary){
       status: String((s && s.status) || 'Pending'),
       podUrl: String((s && s.podUrl) || ''),
       podAt: String((s && s.podAt) || ''),
-      completedAt: String((s && s.completedAt) || '')
+      completedAt: String((s && s.completedAt) || ''),
+      customerNote: String((s && s.customerNote) || '')
     };
   });
+  // Internal history and notes never leave the server on a public tracking
+  // request (see isInternalTimelineEntry).
+  const publicTimeline = (summary.timeline || []).filter(function(item){ return !isInternalTimelineEntry(item); });
+  const publicNotes = (summary.dispatcherNotes || []).filter(function(item){ return !isInternalTimelineEntry(item); });
   return {
     reference: summary.reference,
     status: summary.status,
@@ -3349,11 +3854,30 @@ function buildTrackingPayload(summary){
     trackingUrl: summary.trackingUrl,
     stops: stops,
     schedule: summary.schedule,
-    timeline: summary.timeline || [],
+    timeline: publicTimeline,
     notes: summary.notes || '',
-    dispatcherNotes: summary.dispatcherNotes || [],
-    deliveryNote: summary.deliveryNote || ''
+    dispatcherNotes: publicNotes,
+    deliveryNote: latestDispatcherNoteText(publicNotes)
   };
+}
+
+// Public tracking shows delivery progress only. Internal = operator and
+// billing bookkeeping, plus dispatcher notes that were saved but not sent to
+// the customer (a sent update's `via` includes email/whatsapp). Entries are
+// classified by who wrote them and their generated message text, so older
+// entries need no migration.
+const INTERNAL_TIMELINE_MESSAGE = /^(Order created manually by|Order edited by|Order duplicated from|Payment status changed|Payment link created|Marked as invoiced|Invoiced mark removed|Confirmation email|Update sent via|Update email could not|WhatsApp update|Rider committed)|updated notes for stop|set route start time/i;
+const PUBLIC_DISPATCHER_MESSAGE = /^(Status changed from|Schedule updated|Rider assignment updated|Rider unassigned|Order canceled by|POD uploaded by dispatcher)|marked stop \d+\/\d+/i;
+
+function isInternalTimelineEntry(entry){
+  if (!entry) return true;
+  if (entry.internal === true) return true;
+  const msg = String(entry.message || '');
+  if (INTERNAL_TIMELINE_MESSAGE.test(msg)) return true;
+  // A plain 'dispatcher' entry that isn't one of the generated status/schedule
+  // messages is an editor save reason or a quick note saved without sending.
+  const via = String(entry.via || '').toLowerCase();
+  return via === 'dispatcher' && !PUBLIC_DISPATCHER_MESSAGE.test(msg);
 }
 
 function normalizeReference(ref){
@@ -4577,7 +5101,7 @@ function handleRiderCompleteStop(payload){
   // go through) is a no-op: keep the original completedAt and don't log it
   // twice. A POD photo sent along with the repeat is still saved.
   const isRepeat = stops[idx].status === statusInput;
-  if (isRepeat && !payload.podData && !('notes' in payload)) {
+  if (isRepeat && !payload.podData && !('notes' in payload) && !('customerNote' in payload)) {
     return jsonResponse({ ok: true, stop: stops[idx], order: buildOrderSummary(event) }, 200);
   }
 
@@ -4587,6 +5111,9 @@ function handleRiderCompleteStop(payload){
     stops[idx].failureReason = statusInput === 'Failed' ? reason : '';
   }
   if ('notes' in payload) stops[idx].notes = cleanOrderText(payload.notes);
+  // Customer-facing note for this stop, shown on its tracking. Re-sending the
+  // stop's current status with only `customerNote` edits it after completion.
+  if ('customerNote' in payload) stops[idx].customerNote = cleanOrderText(payload.customerNote);
 
   if (payload.podData && statusInput === 'Delivered'){
     try {
@@ -4616,6 +5143,136 @@ function handleRiderCompleteStop(payload){
   });
 
   return jsonResponse({ ok: true, stop: stops[idx], order: buildOrderSummary(event) }, 200);
+}
+
+// "Send note now" on a stop (dispatcher editor and rider app): saves the
+// stop's customer note so it shows on that stop's tracking immediately, and
+// optionally emails it to the stop's recipient and/or returns a WhatsApp link
+// (wa.me, opened by the caller) with the note and their tracking link.
+// Riders may only send on their own orders and can't change contact details.
+function handleSendStopNote(payload){
+  try {
+    const riderId = String(payload.id || '').trim();
+    const rider = riderId ? getRiderById(riderId) : null;
+    const isAdmin = !rider && isAdminAuthorized(String(payload.token || '').trim());
+    if (!rider && !isAdmin) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+    const eventId = cleanOrderText(payload.eventId);
+    const stopId = cleanOrderText(payload.stopId);
+    if (!eventId || !stopId) return jsonResponse({ error: 'Missing eventId or stopId' }, 400);
+    const note = cleanOrderText(payload.customerNote);
+    if (!note) return jsonResponse({ error: 'Write a note first.' }, 400);
+
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+    const event = cal.getEventById(eventId);
+    if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+    const desc = String(event.getDescription() || '');
+    const payloadData = extractPayloadFromDescription(desc) || {};
+    const adminData = ensureAdminData(desc, payloadData);
+
+    if (rider) {
+      const assignedRiderId = adminData.rider && adminData.rider.riderId;
+      const assignedName = adminData.rider && adminData.rider.name;
+      if (assignedRiderId && assignedRiderId !== riderId && assignedName !== rider.name) {
+        return jsonResponse({ error: 'Not your order' }, 403);
+      }
+    }
+
+    const quote = payloadData.quote || {};
+    const route = quote.route || {};
+    const stops = ensureStopIds(getUnifiedStops(route, adminData));
+    const idx = stops.findIndex(function(s){ return s && s.id === stopId; });
+    if (idx < 0) return jsonResponse({ error: 'Stop not found' }, 404);
+    const stop = stops[idx];
+
+    stop.customerNote = note;
+    // The dispatcher may have just typed the recipient's details in the
+    // editor without saving the whole order yet — use and keep them.
+    if (isAdmin) {
+      ['recipientName', 'recipientPhone', 'recipientEmail'].forEach(function(field){
+        if (Object.prototype.hasOwnProperty.call(payload, field)) stop[field] = cleanOrderText(payload[field]);
+      });
+    }
+
+    const reference = String(payloadData.reference || adminData.reference || '');
+    const trackingUrl = stop.trackingToken ? buildStopTrackingUrl(payloadData, reference, stop.id, stop.trackingToken) : '';
+    const channels = payload.channels || {};
+    const sent = { tracking: true, email: false, whatsappUrl: '', errors: [] };
+
+    if (channels.email) {
+      if (!stop.recipientEmail) sent.errors.push('No email for this stop');
+      else sent.email = sendStopNoteEmail(stop, reference, note, trackingUrl);
+      if (stop.recipientEmail && !sent.email) sent.errors.push('Email could not be sent');
+    }
+    if (channels.whatsapp) {
+      const phone = normalizeStopPhone(stop.recipientPhone);
+      if (!phone) sent.errors.push('No phone for this stop');
+      else sent.whatsappUrl = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(buildStopNoteText(stop, note, trackingUrl));
+    }
+
+    route.stops = stops;
+    delete route.pickup;
+    delete route.dropoff;
+    quote.route = route;
+    payloadData.quote = quote;
+
+    const who = rider ? rider.name : applyOperatorMetadata(adminData, payload.operator);
+    const viaList = ['tracking'].concat(sent.email ? ['email'] : [], sent.whatsappUrl ? ['WhatsApp'] : []);
+    const msg = who + ' sent a note for stop ' + (idx + 1) + ' (' + viaList.join(' + ') + ')';
+    pushAdminTimeline(adminData, adminData.status, msg, rider ? 'rider' : 'dispatcher');
+    adminData.timeline[adminData.timeline.length - 1].internal = true;
+    event.setDescription(buildEventDescription(payloadData, adminData));
+
+    appendOrderLogEntry({
+      action: 'send_stop_note', eventId: eventId, stopId: stopId, payload: payloadData,
+      adminData: adminData, status: adminData.status,
+      paymentStatus: adminData.paymentStatus,
+      message: msg, build: BUILD_ID
+    });
+
+    return jsonResponse({ ok: true, stop: stop, sent: sent, order: buildOrderSummary(event) }, 200);
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
+    return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  }
+}
+
+// Spanish numbers are often typed without the country code; wa.me needs it.
+function normalizeStopPhone(value){
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.indexOf('00') === 0) digits = digits.slice(2);
+  if (digits.length === 9 && /^[6789]/.test(digits)) digits = '34' + digits;
+  return digits;
+}
+
+function buildStopNoteText(stop, note, trackingUrl){
+  const lines = [];
+  lines.push(stop.recipientName ? ('Hola ' + stop.recipientName + ',') : 'Hola,');
+  lines.push('');
+  lines.push(note);
+  if (trackingUrl) {
+    lines.push('');
+    lines.push('Tracking: ' + trackingUrl);
+  }
+  lines.push('');
+  lines.push('Cargoworks');
+  return lines.join('\n');
+}
+
+function sendStopNoteEmail(stop, reference, note, trackingUrl){
+  try {
+    MailApp.sendEmail({
+      to: stop.recipientEmail,
+      subject: 'Cargoworks: update on your delivery' + (reference ? (' (' + reference + ')') : ''),
+      body: buildStopNoteText(stop, note, trackingUrl),
+      replyTo: REPLY_TO
+    });
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 function handleAdminUpdateStop(payload){
@@ -4784,7 +5441,89 @@ function handleAdminManageRiders(payload){
     return jsonResponse({ ok: true }, 200);
   }
 
+  // Permanent: the rider's link stops working and they can't be restored
+  // (revoke is the undoable option). Orders keep the rider's name as text.
+  if (op === 'delete'){
+    const targetId = cleanOrderText(payload.riderId);
+    if (!targetId || !riders[targetId]) return jsonResponse({ error: 'Rider not found' }, 404);
+    delete riders[targetId];
+    saveRidersData(riders);
+    return jsonResponse({ ok: true }, 200);
+  }
+
   return jsonResponse({ error: 'Unknown op' }, 400);
+}
+
+// ONE-OFF (2026-10-15): run once from the Apps Script editor (select
+// setupTrevolAccount, press Run). Adds the TREVOL account (EUR 2 + IVA per
+// stop) and moves the route-sheet orders it has already done onto it with
+// their stop counts. Safe to re-run: it only overwrites the same values.
+function setupTrevolAccount() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = String(props.getProperty(ACCOUNT_TOKENS_PROPERTY) || '').trim();
+  const tokens = raw ? JSON.parse(raw) : {};
+  const existing = tokens.TREVOL || {};
+  tokens.TREVOL = Object.assign({
+    name: 'Trevol Missatgers',
+    fiscalName: '',
+    nif: '',
+    fiscalAddress: '',
+    billingEmail: '',
+    operationsEmail: '',
+    phone: '',
+    dailyLimit: 0,
+    active: true,
+    requiresStaffName: false,
+    requiresPickupTime: false,
+    requiresDropoffTime: false,
+    requiresAttName: false,
+    requiresAttContact: false,
+    trialEndsDate: '',
+    trialNotes: '',
+    notes: 'Route-sheet jobs billed per stop: EUR 2 + IVA per stop.'
+  }, existing, { name: existing.name || 'Trevol Missatgers', active: true, pricePerStop: 2 });
+  props.setProperty(ACCOUNT_TOKENS_PROPERTY, JSON.stringify(tokens));
+  Logger.log('TREVOL account saved (' + Object.keys(tokens).length + ' accounts in total).');
+
+  const orders = [
+    ['CW-08092026-0C398B54', 25], // sheet 17/09
+    ['CW-23092026-6DA07658', 30], // 23/09
+    ['CW-25092026-A77FB4D5', 35], // 25/09
+    ['CW-30092026-4A63E67C', 25], // 30/09
+    ['CW-06102026-B338BCEC', 30], // 06/10
+    ['CW-14102026-31BC8B1D', 36]  // 14/10
+  ];
+  let stopsTotal = 0;
+  let netTotal = 0;
+  orders.forEach(function(pair){
+    const ref = pair[0];
+    const count = pair[1];
+    const event = findEventByReference(ref);
+    if (!event) {
+      Logger.log('NOT FOUND: ' + ref);
+      return;
+    }
+    const desc = String(event.getDescription() || '');
+    const payloadData = extractPayloadFromDescription(desc) || {};
+    const adminData = ensureAdminData(desc, payloadData);
+    payloadData.accountToken = 'TREVOL';
+    adminData.accountToken = 'TREVOL';
+    adminData.accountName = tokens.TREVOL.name;
+    if (adminData.paymentStatus !== 'Paid') adminData.paymentStatus = 'Account';
+    const quote = payloadData.quote || {};
+    quote.stopCount = count;
+    quote.stopRate = 2;
+    applyPerStopPricing(quote);
+    payloadData.quote = quote;
+    if (!payloadData.reference) payloadData.reference = ref;
+    pushAdminTimeline(adminData, adminData.status, 'Moved to the Trevol Missatgers account: ' + count + ' stops x EUR 2.00', 'dispatcher');
+    adminData.timeline[adminData.timeline.length - 1].internal = true;
+    event.setDescription(buildEventDescription(payloadData, adminData));
+    stopsTotal += count;
+    netTotal += quote.total;
+    Logger.log(ref + ': ' + count + ' stops, EUR ' + quote.total.toFixed(2) + ' + IVA');
+  });
+  Logger.log('Done: ' + stopsTotal + ' stops, EUR ' + netTotal.toFixed(2) + ' + IVA (EUR ' + (Math.round(netTotal * 121) / 100).toFixed(2) + ' with IVA).');
 }
 
 function testAccountOrder() {
