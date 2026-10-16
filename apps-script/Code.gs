@@ -2440,10 +2440,13 @@ function normalizeStopsForOrder(incomingStops, existingStops){
       podAt: (prior && prior.podAt) || '',
       // On first-ever save (no prior) an incoming note is trusted — this is
       // how a rider's scanned name/apartment detail becomes the stop's note
-      // the moment it's committed. Once a prior note exists it always wins,
-      // same as before, so a later resubmit (reorder, append-scan) can never
-      // clobber a note someone has already set.
-      notes: (prior && prior.notes) || cleanOrderText(stop && stop.notes) || '',
+      // the moment it's committed. Once a prior note exists it wins, so a
+      // later resubmit (reorder, append-scan) can never clobber a note
+      // someone has already set — unless the dispatcher editor flags the
+      // note as edited there (notesEdited), which is how it's changed.
+      notes: (stop && stop.notesEdited)
+        ? cleanOrderText(stop.notes)
+        : ((prior && prior.notes) || cleanOrderText(stop && stop.notes) || ''),
       // The customer-facing note for this stop (shown on its tracking, unlike
       // `notes`, which stays internal). Taken from the incoming stop only when
       // the caller sends the field — the dispatcher editor sends it only for

@@ -1407,7 +1407,7 @@
   // counted next to Save) so edits can be double-checked before saving. Stops
   // compare against the stop as loaded (_orig/_origIndex, set in openEditor).
   const editorFormEl = document.getElementById('dispatcherEditorForm');
-  const STOP_TRACKED_FIELDS = ['address', 'tier', 'customerNote', 'recipientName', 'recipientPhone', 'recipientEmail', 'addressDetails'];
+  const STOP_TRACKED_FIELDS = ['address', 'tier', 'notes', 'customerNote', 'recipientName', 'recipientPhone', 'recipientEmail', 'addressDetails'];
   let editorChangeCountEl = null;
 
   function editorBaselineControls(){
@@ -1867,6 +1867,7 @@
         const copy = Object.assign({}, s);
         if (modeDuplicate) copy.customerNote = '';
         copy._customerNoteOriginal = copy.customerNote || '';
+        copy._notesOriginal = copy.notes || '';
         copy._orig = {};
         STOP_TRACKED_FIELDS.forEach(function(f){ copy._orig[f] = copy[f] || ''; });
         copy._origIndex = idx;
@@ -1921,6 +1922,10 @@
               recipientName: normalizeText(s.recipientName), recipientPhone: normalizeText(s.recipientPhone),
               recipientEmail: normalizeText(s.recipientEmail), addressDetails: normalizeText(s.addressDetails)
             };
+            // Internal note: the backend keeps a stop's saved note unless told
+            // it was edited here (a rider's route resubmit mustn't wipe it).
+            out.notes = normalizeText(s.notes);
+            if (s.id && out.notes !== normalizeText(s._notesOriginal)) out.notesEdited = true;
             // Only send the customer note when it's new or edited here (see openEditor).
             const note = normalizeText(s.customerNote);
             if (editorState.mode !== 'edit' || !s.id || note !== normalizeText(s._customerNoteOriginal)) out.customerNote = note;
@@ -3143,6 +3148,19 @@
 
       row.appendChild(topRow);
 
+      // Internal note: rider and dispatch only, never on tracking.
+      const internalNote = document.createElement('input');
+      internalNote.type = 'text';
+      internalNote.className = 'stop-internal-note';
+      internalNote.placeholder = '🔒 Internal note — rider & dispatch only (never on tracking)';
+      internalNote.value = stop.notes || '';
+      internalNote.addEventListener('input', function(){
+        stop.notes = internalNote.value;
+        updateEditorDirtyFromForm();
+      });
+      trackStopInput(internalNote, stop, 'notes');
+      row.appendChild(internalNote);
+
       if (!isFirst) row.appendChild(buildStopRecipientControls(stop));
 
       const metaRow = document.createElement('div');
@@ -3159,39 +3177,6 @@
         metaRow.appendChild(reasonEl);
       }
 
-      if (stop.notes) {
-        const notesEl = document.createElement('span');
-        notesEl.style.cssText = 'color:var(--dispatch-muted);font-style:italic;';
-        notesEl.textContent = '📝 ' + stop.notes;
-        metaRow.appendChild(notesEl);
-      }
-
-      if (stop.id && editorState.sourceEventId) {
-        const notesBtn = document.createElement('button');
-        notesBtn.type = 'button';
-        notesBtn.className = 'btn btn--ghost';
-        notesBtn.style.cssText = 'padding:0.1rem 0.4rem;font-size:0.7rem;';
-        notesBtn.textContent = stop.notes ? '✎ Edit internal note' : '✎ Add internal note';
-        notesBtn.addEventListener('click', async function(){
-          const next = window.prompt('Internal note for this stop (rider and dispatch only, never shown on tracking):', stop.notes || '');
-          if (next == null) return;
-          try {
-            const res = await postAdmin({
-              action: 'adminUpdateStop',
-              eventId: editorState.sourceEventId,
-              stopId: stop.id,
-              notes: next,
-              operator: currentOperator()
-            });
-            if (res && res.stop) Object.assign(editorState.stopsModel[idx], res.stop);
-            renderStopsList();
-            setEditorFeedback('✓ Note saved.');
-          } catch (err) {
-            setEditorFeedback('Note save failed: ' + ((err && err.message) || err), true);
-          }
-        });
-        metaRow.appendChild(notesBtn);
-      }
 
       if (stop.podUrl) {
         const podLink = document.createElement('a');
@@ -3665,6 +3650,29 @@
     updateEditorDirtyFromForm();
     updateMapsRouteLink();
     autoCalcStopsFee();
+  }
+
+  // "+ Add stop": a new row at the END of the route, after the stop just
+  // filled in (that one moves into the middle and the new row becomes the
+  // last stop) — inserting before the last row pushed the stop being typed
+  // down and put a blank row in its place. If the last row is still empty,
+  // that's the row to fill, so no second blank row.
+  function addStopAtEnd() {
+    const model = editorState.stopsModel;
+    const last = model[model.length - 1];
+    if (model.length < 2 || (last && normalizeText(last.address))) {
+      model.push(blankStopEntry(''));
+      renderStopsList();
+      updateEditorDirtyFromForm();
+      updateMapsRouteLink();
+      autoCalcStopsFee();
+    }
+    const rows = editStopsList ? editStopsList.querySelectorAll('.stop-row') : [];
+    const input = rows.length ? rows[rows.length - 1].querySelector('input[type="text"]') : null;
+    if (input) {
+      input.focus();
+      if (input.scrollIntoView) input.scrollIntoView({ block: 'nearest' });
+    }
   }
 
   // ── Pickup — My Location ─────────────────────────────────────────────────
@@ -4146,12 +4154,13 @@
     toggle.className = 'btn btn--ghost';
     toggle.textContent = '🗺 Map';
     row.appendChild(toggle);
+    let optimizeBtn = null;
     if (options.onOptimize) {
-      const optimizeBtn = document.createElement('button');
+      optimizeBtn = document.createElement('button');
       optimizeBtn.type = 'button';
       optimizeBtn.className = 'btn btn--ghost';
       optimizeBtn.textContent = '✨ Optimize route';
-      optimizeBtn.title = 'Reorder the pending stops for a shorter route and open the order to check it';
+      optimizeBtn.title = options.optimizeTitle || 'Reorder the pending stops for a shorter route and open the order to check it';
       optimizeBtn.addEventListener('click', function(){ options.onOptimize(optimizeBtn); });
       row.appendChild(optimizeBtn);
     }
@@ -4194,14 +4203,17 @@
       if (open) refresh();
     }
     toggle.addEventListener('click', function(){ setOpen(!open); });
-    return { el: wrap, setOpen: setOpen, refresh: refresh, isOpen: function(){ return open; } };
+    return { el: wrap, setOpen: setOpen, refresh: refresh, isOpen: function(){ return open; }, optimizeBtn: optimizeBtn };
   }
 
   // Under the editor's stops; redrawn (debounced) whenever the stops are re-rendered.
   function ensureEditorMapPanel(){
     if (!editStopsList || !editStopsList.parentNode) return;
     if (!editorMapPanel) {
-      editorMapPanel = buildStopsMapPanel(function(){ return editorState.stopsModel || []; });
+      editorMapPanel = buildStopsMapPanel(function(){ return editorState.stopsModel || []; }, {
+        onOptimize: optimizeEditorStops,
+        optimizeTitle: 'Reorder the pending stops for a shorter route — check the highlighted stops, then Save'
+      });
       const after = (splitBarEl && splitBarEl.parentNode === editStopsList.parentNode) ? splitBarEl : editStopsList;
       editStopsList.parentNode.insertBefore(editorMapPanel.el, after.nextSibling);
     }
@@ -4211,33 +4223,53 @@
     }
   }
 
-  // "✨ Optimize route" on a card: opens the order in the editor with its
-  // stops reordered (moved ones highlighted) for checking before Save.
-  async function optimizeOrderInEditor(order, btn){
-    const stops = (order && order.route && Array.isArray(order.route.stops)) ? order.route.stops : [];
-    if (stops.length < 3) return;
+  // "✨ Optimize route" under the editor's stops: reorders them as they are
+  // right now (hand-dragged order included) for a shorter route. Pickup,
+  // finished and priority stops keep their places; empty rows stay last.
+  async function optimizeEditorStops(btn){
+    const model = editorState.stopsModel || [];
+    const filled = model.filter(function(s){ return normalizeText(s.address); });
+    const blank = model.filter(function(s){ return !normalizeText(s.address); });
+    if (filled.length < 3) {
+      setEditorFeedback('Add at least two drops to optimize the route.', true);
+      return;
+    }
+    const before = filled.map(function(s){ return normalizeText(s.address); }).join('|');
     let coords;
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Optimizing…'; }
     try {
-      coords = await geocodeStops(stops);
+      coords = await geocodeStops(filled);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '✨ Optimize route'; }
     }
-    const result = optimizeStopOrder(stops, coords);
+    // The stops were edited while the addresses were looked up.
+    const now = (editorState.stopsModel || []).filter(function(s){ return normalizeText(s.address); }).map(function(s){ return normalizeText(s.address); }).join('|');
+    if (!editorState.open || now !== before) {
+      if (editorState.open) setEditorFeedback('The stops changed while optimizing — press Optimize again.', true);
+      return;
+    }
+    const result = optimizeStopOrder(filled, coords);
+    if (!result.changed) {
+      setEditorFeedback('This is already the shortest order found (' + result.beforeKm.toFixed(1) + ' km straight line) — nothing changed.');
+      return;
+    }
+    editorState.stopsModel = result.indexOrder.map(function(i){ return filled[i]; }).concat(blank);
+    renderStopsList();
+    updateMapsRouteLink();
+    autoCalcStopsFee();
+    updateEditorDirtyFromForm();
+    setEditorFeedback('Reordered for a shorter route: ' + result.beforeKm.toFixed(1) + ' → ' + result.afterKm.toFixed(1) + ' km (straight line). Check the highlighted stops and Save.');
+  }
+
+  // "✨ Optimize route" on a card: opens the order in the editor, shows the
+  // map and optimizes there (moved stops highlighted) for checking before Save.
+  async function optimizeOrderInEditor(order, btn){
+    const stops = (order && order.route && Array.isArray(order.route.stops)) ? order.route.stops : [];
+    if (stops.length < 3) return;
     openEditor('edit', order);
     if (!editorState.open || editorState.sourceEventId !== order.eventId) return;
-    const model = editorState.stopsModel;
-    if (result.changed && model.length === stops.length) {
-      editorState.stopsModel = result.indexOrder.map(function(i){ return model[i]; });
-      renderStopsList();
-      updateMapsRouteLink();
-      autoCalcStopsFee();
-      updateEditorDirtyFromForm();
-      setEditorFeedback('Reordered for a shorter route: ' + result.beforeKm.toFixed(1) + ' → ' + result.afterKm.toFixed(1) + ' km (straight line). Check the highlighted stops and Save.');
-    } else {
-      setEditorFeedback('This is already the shortest order found (' + result.beforeKm.toFixed(1) + ' km straight line) — nothing changed.');
-    }
     if (editorMapPanel) editorMapPanel.setOpen(true);
+    await optimizeEditorStops(editorMapPanel ? editorMapPanel.optimizeBtn : btn);
   }
 
   // Determine cargo rate from cargo type text (mirrors map.js getCargoAdjustment)
@@ -4459,6 +4491,7 @@
     var timer = null;
     var lastQuery = '';
     var pendingAccept = false;
+    var accepting = false;
 
     function hideSug() { sug.className = 'address-suggestion'; sug.innerHTML = ''; }
 
@@ -4483,9 +4516,12 @@
         inputEl.value = resolved;
         pendingAccept = false;
         hideSug();
-        updateEditorDirtyFromForm();
-        updateMapsRouteLink();
-        autoCalcStopsFee();
+        // Fire the row's own input handler so the stop itself gets the
+        // address — setting .value alone left the old text in the order,
+        // and it came back the next time the stop list redrew.
+        accepting = true;
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        accepting = false;
       });
 
       sug.appendChild(textSpan);
@@ -4507,6 +4543,7 @@
     }
 
     inputEl.addEventListener('input', function() {
+      if (accepting) return; // the accepted suggestion — nothing to look up
       var val = inputEl.value.trim();
       hideSug();
       if (timer) clearTimeout(timer);
@@ -4730,7 +4767,7 @@
   // per-row inside renderStopsList (pickup/dropoff are now dynamically
   // rendered rows, not static inputs).
 
-  if (addStopBtn) addStopBtn.addEventListener('click', function(){ addStopToModel(''); });
+  if (addStopBtn) addStopBtn.addEventListener('click', addStopAtEnd);
 
   if (editGetSystemPricing) editGetSystemPricing.addEventListener('click', handleGetSystemPricing);
 
