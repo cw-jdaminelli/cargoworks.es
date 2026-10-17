@@ -559,43 +559,28 @@ window.initZonesMap = function initZonesMap(){
     }
   }
   async function computeRouteDetails(origin, waypoints, destination){
-    // Returns { totalSec, legs: [{ sec, meters, from, to }] }
+    // Returns { totalSec, legs: [{ sec, meters, from, to }], pathPoints }.
+    // Legs are routed a few at a time and cached (CargoworksPricing), so a
+    // multistop route no longer waits for each leg before asking for the next.
     const pts = [origin].concat(waypoints||[]).concat([destination]).filter(Boolean);
     const legs = [];
-    if (!pts || pts.length < 2) return { totalSec: 0, legs };
+    if (!pts || pts.length < 2) return { totalSec: 0, legs, pathPoints: [] };
     try {
+      const routed = await CargoworksPricing.routeBikeLegs(directions, pts, { concurrency: 4 });
       let totalSec = 0;
       const pathPoints = [];
-      for (let i = 0; i < pts.length - 1; i++) {
-        const leg = await requestBikeLegRoute(pts[i], pts[i + 1]);
-        if (!leg) throw new Error('Leg routing unavailable');
-        const sec = Number(leg.sec || 0) || 0;
-        const meters = Number(leg.meters || 0) || 0;
+      routed.legs.forEach(function(leg, i){
+        const sec = Number(leg && leg.sec || 0) || 0;
+        const meters = Number(leg && leg.meters || 0) || 0;
         totalSec += sec;
         legs.push({ sec, meters, from: pts[i], to: pts[i + 1] });
         // Exclude base->pickup leg path (index 0) to keep rendered route focused on service leg.
-        if (i >= 1 && Array.isArray(leg.pathPoints) && leg.pathPoints.length) {
+        if (i >= 1 && leg && Array.isArray(leg.pathPoints)) {
           for (let k = 0; k < leg.pathPoints.length; k++) pathPoints.push(leg.pathPoints[k]);
         }
-      }
+      });
       return { totalSec, legs, pathPoints };
-    } catch(_) {}
-    // Fallback: estimate per-leg using spherical distances
-    try {
-      let totalSec = 0;
-      for (let i = 0; i < pts.length - 1; i++) {
-        const meters = (google.maps.geometry && google.maps.geometry.spherical)
-          ? (google.maps.geometry.spherical.computeDistanceBetween(pts[i], pts[i+1]) || 0)
-          : 0;
-        const detourFactor = 1.25;
-        const km = (meters * detourFactor) / 1000;
-        const speedKmH = 15;
-        const sec = Math.round((km / speedKmH) * 3600);
-        totalSec += sec;
-        legs.push({ sec, meters, from: pts[i], to: pts[i+1] });
-      }
-      return { totalSec, legs, pathPoints: [] };
-    } catch(_) { return { totalSec: 0, legs: [] }; }
+    } catch(_) { return { totalSec: 0, legs: [], pathPoints: [] }; }
   }
 
   function countZoneCrossings(points){
@@ -665,6 +650,26 @@ window.initZonesMap = function initZonesMap(){
       Array.from(qStopsWrap.querySelectorAll('.quote-stop')).forEach(function(el){ inputs.push(el); });
     }
     return inputs;
+  }
+  // An address field's text plus its resolved location, to move it to
+  // another field (Add stop, Optimize). null clears the field.
+  function readAddressData(inputEl){
+    if (!inputEl) return null;
+    const d = inputEl.dataset || {};
+    return { value: String(inputEl.value || ''), lat: d.lat || '', lng: d.lng || '', address: d.address || '' };
+  }
+  function writeAddressData(inputEl, data){
+    if (!inputEl) return;
+    inputEl.value = data ? data.value : '';
+    if (data && data.lat && data.lng) {
+      inputEl.dataset.lat = data.lat;
+      inputEl.dataset.lng = data.lng;
+      if (data.address) inputEl.dataset.address = data.address; else delete inputEl.dataset.address;
+    } else {
+      delete inputEl.dataset.lat;
+      delete inputEl.dataset.lng;
+      delete inputEl.dataset.address;
+    }
   }
   function clearStoredLocation(inputEl){
     try {
@@ -1430,8 +1435,8 @@ window.initZonesMap = function initZonesMap(){
   function updateDeliverySummary(){
     if (!qDeliverySummary) return;
     const ctx = window._lastQuoteContext || null;
-    const pickupReady = !!(qPickup && qPickup.dataset && qPickup.dataset.lat && qPickup.dataset.lng);
-    const dropReady = !!(qDrop && qDrop.dataset && qDrop.dataset.lat && qDrop.dataset.lng);
+    const pickupReady = endpointReady('first');
+    const dropReady = endpointReady('last');
     if (!ctx || !pickupReady || !dropReady) {
       qDeliverySummary.classList.add('is-hidden');
       qDeliverySummary.innerHTML = '';
@@ -1672,9 +1677,16 @@ window.initZonesMap = function initZonesMap(){
     qPaymentMount.innerHTML = '';
     paymentFrameVisible = false;
   }
+  // Pickup is the first address field and the drop-off the last, whichever
+  // inputs those are after stops were added, dragged or optimized.
+  function endpointReady(which){
+    const ordered = getOrderedInputs();
+    const el = which === 'first' ? (ordered[0] || qPickup) : (ordered.length > 1 ? ordered[ordered.length - 1] : qDrop);
+    return !!(el && el.dataset && el.dataset.lat && el.dataset.lng);
+  }
   function updateSubmitVisibility(){
-    const pickupReady = !!(qPickup && qPickup.dataset && qPickup.dataset.lat && qPickup.dataset.lng);
-    const dropReady = !!(qDrop && qDrop.dataset && qDrop.dataset.lat && qDrop.dataset.lng);
+    const pickupReady = endpointReady('first');
+    const dropReady = endpointReady('last');
     const ready = pickupReady && dropReady;
     const hasQuote = !!(window._lastQuoteContext);
     const hasSummaryContent = !!(
@@ -1942,18 +1954,44 @@ window.initZonesMap = function initZonesMap(){
     const dt = new Date(val);
     return Number.isNaN(dt.getTime()) ? null : dt;
   }
+  // The calendar lives behind Apps Script, which is sometimes slow to wake
+  // up or briefly answers with an error page — so each date gets a few tries
+  // with a timeout before giving up, and only successes are cached.
+  const availabilityInflight = new Map();
   async function fetchAvailabilityForDate(dateKey){
     if (!calendarConfigured()) return null;
     if (availabilityCache.has(dateKey)) return availabilityCache.get(dateKey);
+    if (availabilityInflight.has(dateKey)) return availabilityInflight.get(dateKey);
     const base = BOOKING_API_BASE.replace(/\/$/, '');
     const url = base + '?date=' + encodeURIComponent(dateKey);
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-    if (!res.ok) throw new Error('Availability fetch failed');
-    const json = await res.json();
-    const blocked = Array.isArray(json && json.blocked) ? json.blocked : [];
-    const result = { blocked };
-    availabilityCache.set(dateKey, result);
-    return result;
+    const attempt = async function(){
+      const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(function(){ ctrl.abort(); }, 15000) : null;
+      try {
+        const res = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: ctrl ? ctrl.signal : undefined });
+        const text = await res.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch(_) { throw new Error('Availability: not JSON'); }
+        if (!res.ok || !json || !Array.isArray(json.blocked)) throw new Error((json && json.error) || 'Availability fetch failed');
+        return { blocked: json.blocked };
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    const run = (async function(){
+      let lastErr = null;
+      for (let i = 0; i < 3; i++) {
+        if (i) await new Promise(function(r){ setTimeout(r, 1000 * i); });
+        try {
+          const result = await attempt();
+          availabilityCache.set(dateKey, result);
+          return result;
+        } catch(e) { lastErr = e; }
+      }
+      throw lastErr || new Error('Availability fetch failed');
+    })();
+    availabilityInflight.set(dateKey, run);
+    try { return await run; } finally { availabilityInflight.delete(dateKey); }
   }
   function getOverflowAfterHoursInfo(startMin, durationMin, closingMin){
     if (startMin == null || durationMin == null || closingMin == null) return { overflowMinutes: 0, overflowFraction: 0, willOverflow: false };
@@ -2036,6 +2074,9 @@ window.initZonesMap = function initZonesMap(){
       setAvailabilityStatus('');
       return;
     }
+    if (hasDate && !hasTime) {
+      try { fetchAvailabilityForDate(String(qDate.value)).catch(function(){}); } catch(_) {}
+    }
     if (!hasDate || !hasTime) {
       // Don't nag while the user is still mid-way through picking date+time
       // (this fires on every partial input/change of either field). The
@@ -2074,7 +2115,8 @@ window.initZonesMap = function initZonesMap(){
       }
     } catch(_){
       if (seq !== availabilitySeq) return;
-      setAvailabilityStatus(i18n('availabilityError') || 'Could not load calendar availability.', true);
+      // Booking still works without it — say so, without the error styling.
+      setAvailabilityStatus(i18n('availabilityError') || "We couldn't check the calendar just now — you can still book and we'll confirm your time.", false);
     }
   }
   if (qDate && qTime) {
@@ -2941,6 +2983,7 @@ window.initZonesMap = function initZonesMap(){
   // Deliberately does NOT recalculate the price itself afterwards (see
   // markStopsDirty) — reordering and pricing are two separate, explicit
   // steps (Optimize, then Calculate).
+  // anchorEnd null = open end: the route just stops at its last drop.
   function tspMetrics(anchorStart, anchorEnd, order){
     const detour = 1.25;
     let prev = anchorStart; let meters = 0;
@@ -2948,7 +2991,7 @@ window.initZonesMap = function initZonesMap(){
       meters += haversineKm(prev, order[i].loc) * detour * 1000;
       prev = order[i].loc;
     }
-    meters += haversineKm(prev, anchorEnd) * detour * 1000;
+    if (anchorEnd) meters += haversineKm(prev, anchorEnd) * detour * 1000;
     return meters;
   }
   function tspPermute(arr){
@@ -3007,34 +3050,36 @@ window.initZonesMap = function initZonesMap(){
     }
     return rBest;
   }
+  // Every drop (the drop-off included) is reordered for the shortest route
+  // from the pickup; whichever drop ends up last fills the drop-off field.
+  // Locked stops keep their place. Addresses move between the fields — the
+  // fields themselves stay put.
   async function optimizeStopsOrder(){
     const originalLabel = qOptimize ? qOptimize.innerHTML : null;
     if (qOptimize) { qOptimize.disabled = true; qOptimize.innerHTML = '⏳ ' + (i18n('quoteOptimize') || 'Optimize route'); }
     try {
-      const pickupEl = document.getElementById('quotePickup');
-      const dropEl = document.getElementById('quoteDropoff');
+      const ordered = getOrderedInputs();
+      const pickupEl = ordered[0];
       const pickupQ = (pickupEl && pickupEl.value || '').trim();
-      const dropQ = (dropEl && dropEl.value || '').trim();
-      const pickupLoc = pickupEl ? (getLocationForInput(pickupEl) || await geocodeOne(pickupQ)) : null;
-      const dropLoc = dropEl ? (getLocationForInput(dropEl) || await geocodeOne(dropQ)) : null;
-      if (!pickupLoc || !dropLoc) {
-        setQuoteResultWithDebug(i18n('quoteOptimizeNeedPickup') || 'Enter a pickup address first.', 'Optimize: missing pickup/dropoff location');
+      const pickupLoc = pickupEl && pickupQ ? (getLocationForInput(pickupEl) || await geocodeOne(pickupQ)) : null;
+      if (!pickupLoc) {
+        setQuoteResultWithDebug(i18n('quoteOptimizeNeedPickup') || 'Enter a pickup address first.', 'Optimize: missing pickup location');
         if (qOut) qOut.classList.remove('is-hidden');
         return;
       }
-      const stopItems = qStopsWrap ? Array.from(qStopsWrap.querySelectorAll('.quote-stop-item')).filter(w => ((w && w.dataset && w.dataset.role) || 'stop') === 'stop') : [];
-      // Resolve every stop's location (geocoding any that aren't cached yet)
-      // while keeping current DOM order — empty rows are left untouched in
-      // place, they carry no address to route by.
+      // Resolve every drop's location in field order; empty or unfound
+      // fields are left exactly where they are.
       const resolved = [];
-      for (let i = 0; i < stopItems.length; i++){
-        const w = stopItems[i];
-        const el = w.querySelector && w.querySelector('.quote-stop');
+      const drops = ordered.slice(1);
+      for (let i = 0; i < drops.length; i++){
+        const el = drops[i];
         const val = (el && el.value || '').trim();
         if (!val) continue;
         const loc = getLocationForInput(el) || await geocodeOne(val);
         if (!loc) continue;
-        resolved.push({ w, el, loc, locked: w.classList.contains('is-locked') });
+        if (!getLocationForInput(el)) setInputLocationData(el, loc, val);
+        const w = el.closest ? el.closest('.quote-stop-item') : null;
+        resolved.push({ el, loc, locked: !!(w && w.classList.contains('is-locked')), data: readAddressData(el) });
       }
       if (resolved.length <= 1) {
         setQuoteResultWithDebug(i18n('quoteOptimizeNeedMore') || 'Add at least two stops to optimize.', 'Optimize: not enough resolved stops');
@@ -3042,9 +3087,9 @@ window.initZonesMap = function initZonesMap(){
         return;
       }
 
-      // Split into segments between fixed anchors (pickup, each locked stop
-      // in turn, dropoff) and solve each segment's free stops independently
-      // — a locked stop always keeps its exact place in the sequence.
+      // Segments between fixed anchors (pickup, then each locked stop); the
+      // last segment has an open end. Each is solved on its own, so a locked
+      // stop keeps its exact place in the sequence.
       const segments = [];
       const lockedItems = [];
       let anchor = pickupLoc;
@@ -3059,24 +3104,29 @@ window.initZonesMap = function initZonesMap(){
           free.push(item);
         }
       });
-      segments.push({ anchorStart: anchor, anchorEnd: dropLoc, free: free });
+      segments.push({ anchorStart: anchor, anchorEnd: null, free: free });
 
       const finalOrder = [];
       segments.forEach(function(seg, i){
         finalOrder.push.apply(finalOrder, solveStopSegment(seg.anchorStart, seg.anchorEnd, seg.free));
         if (i < segments.length - 1) finalOrder.push(lockedItems[i]);
       });
-      if (!finalOrder.length) return;
+      if (finalOrder.length !== resolved.length) return;
 
-      // Reorder DOM: insert each stop, in solved order, right before the
-      // dropoff wrapper (pickup's wrapper is never touched, so it stays put).
-      const dropWrap = qStopsWrap.querySelector('[data-role="drop"]') || null;
-      finalOrder.forEach(function(item){
-        if (item && item.w && dropWrap) qStopsWrap.insertBefore(item.w, dropWrap);
-      });
-      markStopsDirty();
-      const lockedNote = lockedItems.length ? (' (' + lockedItems.length + ' locked in place)') : '';
-      setQuoteResultWithDebug((i18n('quoteOptimizeDone') || 'Stops reordered for the shortest route. Tap Calculate to see the price.') + lockedNote, 'Optimize: ' + resolved.length + ' stops, ' + lockedItems.length + ' locked');
+      const before = tspMetrics(pickupLoc, null, resolved);
+      const after = tspMetrics(pickupLoc, null, finalOrder);
+      const changed = finalOrder.some(function(item, k){ return item !== resolved[k]; });
+      if (changed && after < before) {
+        // The k-th address field (among the filled ones) gets the k-th stop
+        // of the solved route.
+        finalOrder.forEach(function(item, k){ writeAddressData(resolved[k].el, item.data); });
+        markStopsDirty();
+        const lockedNote = lockedItems.length ? (' (' + lockedItems.length + ' locked in place)') : '';
+        setQuoteResultWithDebug((i18n('quoteOptimizeDone') || 'Stops reordered for the shortest route. Tap Calculate to see the price.') + lockedNote,
+          'Optimize: ' + resolved.length + ' drops, ' + (before / 1000).toFixed(1) + ' → ' + (after / 1000).toFixed(1) + ' km est., ' + lockedItems.length + ' locked');
+      } else {
+        setQuoteResultWithDebug(i18n('quoteOptimizeAlready') || 'Your stops are already in the shortest order.', 'Optimize: no shorter order found');
+      }
       if (qOut) qOut.classList.remove('is-hidden');
     } catch(_){ } finally {
       if (qOptimize) { qOptimize.disabled = false; qOptimize.innerHTML = originalLabel; }
@@ -3308,49 +3358,23 @@ window.initZonesMap = function initZonesMap(){
     });
   } catch(_) {}
   if (qAddStop && qStopsWrap) {
+    // "Add stop" adds the empty field at the BOTTOM: the address in the last
+    // field (the drop-off) moves up into a new stop just above it, and the
+    // now-empty last field gets the cursor. An empty last field is just
+    // focused — no second blank row.
     qAddStop.addEventListener('click', function(){
-      const w = document.createElement('div');
-      w.className = 'quote-stop-item';
-      w.draggable = enableStopDrag;
-      const h = enableStopDrag ? document.createElement('span') : null;
-      if (h) {
-        h.className = 'drag-handle';
-        h.setAttribute('title', i18n('dragHandleLabel') || 'Drag to reorder');
-        h.innerHTML = '<i class="fa fa-bars" aria-hidden="true"></i>';
-      }
-      const i = document.createElement('input');
-      i.type = 'text';
-      const ph = i18n('quoteStopPlaceholder') || 'Stop address';
-      i.placeholder = ph;
-      i.setAttribute('aria-label', ph);
-      i.className = 'quote-stop';
-      const lockBtn = createStopLockToggle();
-      const del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'stop-delete';
-      del.setAttribute('title', i18n('quoteDeleteStop') || 'Delete stop');
-      del.setAttribute('aria-label', i18n('quoteDeleteStop') || 'Delete stop');
-      del.textContent = '×';
-      del.addEventListener('click', function(){
-        try {
-          clearAddressMarker(i);
-          w.remove();
-          markStopsDirty();
-        } catch(_) {}
-      });
-      if (h) w.appendChild(h);
-      w.appendChild(i);
-      w.appendChild(lockBtn);
-      w.appendChild(del);
-      // Same reasoning as createStopItem: insert before dropoff, never after —
-      // appending to the end would silently demote the real dropoff to an
-      // intermediate stop and make this new row the de-facto endpoint.
-      const dropWrapForNewStop = qStopsWrap.querySelector('[data-role="drop"]');
-      if (dropWrapForNewStop) qStopsWrap.insertBefore(w, dropWrapForNewStop);
-      else qStopsWrap.appendChild(w);
-      attachAutocomplete(i);
-      attachStopDragHandlers(w);
-      attachAddressInputHandlers(i);
+      try {
+        const ordered = getOrderedInputs();
+        const last = ordered[ordered.length - 1];
+        if (!last) return;
+        if (!String(last.value || '').trim()) { last.focus(); return; }
+        const stopInput = createStopItem();
+        if (!stopInput) return;
+        writeAddressData(stopInput, readAddressData(last));
+        writeAddressData(last, null);
+        markStopsDirty();
+        last.focus();
+      } catch(_) {}
     });
   }
   // Wrap and attach drag handlers to any pre-existing stop inputs
@@ -3961,24 +3985,12 @@ window.initZonesMap = function initZonesMap(){
       if (seq !== estimateSeq) return;
       // Render route overlays on map
       renderRoute(pickupLoc, stopLocs, dropLoc, routeDetails);
-      // Combined pricing: distance dominates + pickup zone base charge
+      // Priced by the shared engine (js/js/pricing-engine.js) — the same
+      // calculation as the dispatcher's "Get system pricing".
       const cur = window._currencySymbol || '€';
-      const dp = window._distancePricing || {};
       const pickupZone = String(pickupZoneNum || '');
-      const perKmMap = dp && dp.perKm;
-      let perKm = 0;
-      if (perKmMap && typeof perKmMap === 'object') {
-        perKm = Number(perKmMap[pickupZone]) || 0;
-      } else {
-        perKm = Number(perKmMap) || 0;
-      }
-      const minimum = Number(dp && dp.minimum) || 0;
-      if (!perKm || perKm <= 0) perKm = 1.5;
-      perKm = Math.round((perKm * 1.1) * 100) / 100;
       // Exclude approach leg (Base → Pickup) from distance pricing
       const legs = (routeDetails.legs || []).slice(1);
-      let totalMeters = 0;
-      const parts = [];
       // Build human leg labels using pickup/stops/drop order
       const pointLabels = [];
       (function(){
@@ -3989,49 +4001,51 @@ window.initZonesMap = function initZonesMap(){
         for (let i = 0; i < stopInputs.length; i++) pointLabels.push(i18n('quoteEtaLabelStop', { n: (i+1) }) || ('Stop ' + (i+1)));
         pointLabels.push(i18n('quoteEtaLabelDropoff') || 'Dropoff');
       })();
-      for (let i = 0; i < legs.length; i++) {
-        const m = Number(legs[i].meters || 0) || 0;
-        totalMeters += m;
-        const km = Math.round((m/1000) * 100) / 100;
-        const price = Math.round((km * perKm) * 100) / 100;
-        const fromLabel = pointLabels[i] || ('Leg ' + (i+1));
-        const toLabel = pointLabels[i+1] || '';
-        const legEtaMin = Math.round((Number(legs[i].sec||0)||0) / 60);
-        const line = {
-          from: fromLabel,
-          to: toLabel,
-          km: km,
-          price: price,
-          etaMin: legEtaMin
-        };
-        parts.push(line);
-      }
-      const totalKm = Math.round((totalMeters/1000) * 100) / 100;
-      const dropCenterKm = Math.round(haversineKm(origin, dropLoc) * 100) / 100;
-      const distanceBasisKm = Math.max(totalKm, dropCenterKm);
-      let distanceTotal = Math.round((distanceBasisKm * perKm) * 100) / 100;
-      // Pickup zone full base charge
-      const base = basePriceForZone(pickupZone);
-      const pickupCharge = Math.round((base) * 100) / 100;
-      const addressFeeCount = stopLocs.length + 1; // dropoff + stops (exclude pickup)
-      const addressFeePer = addressFeeCount >= 3 ? 1.25 : 0;
-      const addressFee = Math.round((addressFeePer * addressFeeCount) * 100) / 100;
-      const preMinSubtotal = Math.round((distanceTotal + pickupCharge) * 100) / 100;
-      let subtotal = Math.round((distanceTotal + pickupCharge) * 100) / 100;
-      if (minimum && subtotal < minimum) subtotal = minimum;
-      subtotal = Math.round((subtotal + addressFee) * 100) / 100;
       const cargoInfo = getCargoAdjustment();
-      const cargoAmount = Math.round((subtotal * (cargoInfo.rate || 0)) * 100) / 100;
-      subtotal = Math.round((subtotal + cargoAmount) * 100) / 100;
       const surchargeInfo = computeSurchargeInfo();
-      const effectiveAfterHoursRate = surchargeInfo.afterHours ? surchargeInfo.afterRate : ((surchargeInfo.overflowAfterHoursFraction || 0) * (surchargeInfo.afterRate || 0));
-      const effectiveRate = (surchargeInfo.isWeekendHoliday ? surchargeInfo.weekendRate : 0) + effectiveAfterHoursRate;
-      const surchargeAmount = Math.round((subtotal * effectiveRate) * 100) / 100;
-      const weekendSurchargeAmount = Math.round((subtotal * (surchargeInfo.isWeekendHoliday ? surchargeInfo.weekendRate : 0)) * 100) / 100;
-      const afterHoursSurchargeAmount = Math.round((subtotal * effectiveAfterHoursRate) * 100) / 100;
-      const subtotalBeforeDiscount = Math.round((subtotal + surchargeAmount) * 100) / 100;
-      const discountInfo = resolveDiscountsForEstimate(subtotalBeforeDiscount, surchargeInfo.dateKey, cur);
-      const discountAmount = Math.round((discountInfo.totalDiscount || 0) * 100) / 100;
+      let discountInfo = { totalDiscount: 0, applied: [] };
+      const priced = CargoworksPricing.computeQuotePrice({
+        prices: {
+          zones: window._zonePrices || {},
+          distance: window._distancePricing || {},
+          surcharges: window._surcharges || {},
+          businessHours: window._businessHours || {}
+        },
+        holidays: window._holidaysSet instanceof Set ? window._holidaysSet : new Set(),
+        pickupZone: pickupZone,
+        legs: legs,
+        dropCenterKm: haversineKm(origin, dropLoc),
+        intermediateStops: stopLocs.length,
+        etaStopCount: stopInputs.length,
+        cargoKey: cargoInfo.key,
+        // No date/time picked yet: no weekend/holiday or after-hours surcharge.
+        dateKey: (qDate && qDate.value) ? surchargeInfo.dateKey : '',
+        timeLabel: surchargeInfo.timeLabel,
+        discount: function(subtotalBeforeDiscount){
+          discountInfo = resolveDiscountsForEstimate(subtotalBeforeDiscount, surchargeInfo.dateKey, cur);
+          return discountInfo;
+        }
+      });
+      const perKm = priced.perKm;
+      const minimum = priced.minimum;
+      const parts = priced.parts.map(function(part, i){
+        return { from: pointLabels[i] || ('Leg ' + (i+1)), to: pointLabels[i+1] || '', km: part.km, price: part.price, etaMin: part.etaMin };
+      });
+      const totalKm = priced.totalKm;
+      const dropCenterKm = priced.dropCenterKm;
+      const distanceBasisKm = priced.distanceBasisKm;
+      const distanceTotal = priced.distanceTotal;
+      const pickupCharge = priced.pickupCharge;
+      const addressFeeCount = priced.addressFeeCount;
+      const addressFeePer = priced.addressFeePer;
+      const addressFee = priced.addressFee;
+      const preMinSubtotal = priced.preMinSubtotal;
+      const cargoAmount = priced.cargoAmount;
+      const surchargeAmount = priced.surchargeAmount;
+      const weekendSurchargeAmount = priced.weekendSurchargeAmount;
+      const afterHoursSurchargeAmount = priced.afterHoursSurchargeAmount;
+      const subtotalBeforeDiscount = priced.subtotalBeforeDiscount;
+      const discountAmount = priced.discountAmount;
       const discountItems = Array.isArray(discountInfo.applied) ? discountInfo.applied : [];
       const discountPayloadItems = discountItems.map(function(item){
         const discountMeta = (item && item.discount && typeof item.discount === 'object') ? item.discount : {};
@@ -4044,14 +4058,14 @@ window.initZonesMap = function initZonesMap(){
           firstOrderOnly: !!discountMeta.firstOrderOnly
         };
       }).filter(function(item){ return !!item.code; });
-      const preVatTotal = Math.max(0, Math.round((subtotalBeforeDiscount - discountAmount) * 100) / 100);
-      const vatAmount = Math.round((preVatTotal * VAT_RATE) * 100) / 100;
-      const total = Math.round((preVatTotal + vatAmount) * 100) / 100;
+      const preVatTotal = priced.preVatTotal;
+      const vatAmount = priced.vatAmount;
+      const total = priced.total;
       const vatRatePercent = Math.round(VAT_RATE * 100);
-      const travelSecsAfterPickup = legs.reduce((a, l) => a + (Number(l.sec||0)||0), 0);
-      const travelMins = Math.round(travelSecsAfterPickup / 60);
-      const serviceMins = 5 + (3 * (stopInputs.length + 1));
-      const etaTotalMins = travelMins + serviceMins;
+      const etaTotalMins = priced.etaMins;
+      // Stored with the order in neutral labels (same as the dispatcher's);
+      // pages translate them when showing the breakdown.
+      const pricingDetail = CargoworksPricing.pricingDetail(priced, ['Pickup'].concat(stopInputs.map(function(_, i){ return 'Stop ' + (i + 1); }), ['Drop-off']));
       const info = 'Mode=distance · perKm=' + perKm.toFixed(2) + ' (pickup zone ' + pickupZone + ')' + (cargoInfo.rate ? (' · cargo ' + Math.round(cargoInfo.rate * 100) + '%') : '') + (surchargeInfo.rate ? (' · surcharge ' + Math.round(surchargeInfo.rate * 100) + '%') : '') + (discountAmount ? (' · discount ' + cur + discountAmount.toFixed(2)) : '') + (' · VAT ' + vatRatePercent + '% ' + cur + vatAmount.toFixed(2));
       const discountNote = discountAmount ? (i18n('quoteSummaryDiscountNote') || ' (discount applied)') : '';
       const summary = i18n('quoteSummaryDistance', {
@@ -4190,6 +4204,7 @@ window.initZonesMap = function initZonesMap(){
             zone: dropZoneNum
           }
         },
+        pricingDetail: pricingDetail,
         pricing: {
           subtotalBeforeDiscount: subtotalBeforeDiscount,
           preVatTotal: preVatTotal,

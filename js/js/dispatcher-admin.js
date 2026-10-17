@@ -136,6 +136,7 @@
   const editPriceDiscount = document.getElementById('editPriceDiscount');
   const editPriceAdjustment = document.getElementById('editPriceAdjustment');
   const editPriceTotal = document.getElementById('editPriceTotal');
+  const editPriceVatSplit = document.getElementById('editPriceVatSplit');
   const editStatus = document.getElementById('editStatus');
   const editPaymentStatus = document.getElementById('editPaymentStatus');
   const editPaymentUrl = document.getElementById('editPaymentUrl');
@@ -217,6 +218,8 @@
   // System pricing
   const editGetSystemPricing  = document.getElementById('editGetSystemPricing');
   const systemPricingStatus   = document.getElementById('systemPricingStatus');
+  const editPromoCode         = document.getElementById('editPromoCode');
+  const editPriceSubtotal     = document.getElementById('editPriceSubtotal');
 
   let importImageBase64  = null;
   let importImageMime    = null;
@@ -300,6 +303,10 @@
     try { sessionStorage.setItem(tokenKey, token); } catch(_) {}
   }
 
+  // Folds the Load/Filter/View controls away (▲ Controls, and New order —
+  // see handleNewOrder). Set up by initHeaderToggle.
+  let setHeaderCollapsed = function(){};
+
   function initHeaderToggle(){
     const header = document.querySelector('.dispatcher-header');
     const toggleBtn = document.getElementById('dispatcherToggle');
@@ -307,7 +314,8 @@
     if (!header || !toggleBtn) return;
 
     const storageKey = 'cwDispatcherHeaderCollapsed';
-    const collapsed = sessionStorage.getItem(storageKey) === '1';
+    let collapsed = false;
+    try { collapsed = sessionStorage.getItem(storageKey) === '1'; } catch(_) {}
     if (collapsed) header.classList.add('is-collapsed');
 
     function updateMargin(){
@@ -320,10 +328,14 @@
     const ro = new ResizeObserver(updateMargin);
     ro.observe(header);
 
+    setHeaderCollapsed = function(next){
+      header.classList.toggle('is-collapsed', !!next);
+      try { sessionStorage.setItem(storageKey, next ? '1' : '0'); } catch(_) {}
+      setTimeout(updateMargin, 300); // after the fold animation
+    };
+
     toggleBtn.addEventListener('click', function(){
-      const isCollapsed = header.classList.toggle('is-collapsed');
-      sessionStorage.setItem(storageKey, isCollapsed ? '1' : '0');
-      setTimeout(updateMargin, 300);
+      setHeaderCollapsed(!header.classList.contains('is-collapsed'));
     });
   }
 
@@ -794,6 +806,44 @@
     return ul;
   }
 
+  // Load type ↔ the booking page's cargo choice (quote.cargoKey). Older
+  // orders only have free text, so guess from its words.
+  function cargoKeyFromQuote(quote){
+    const key = normalizeText(quote && quote.cargoKey).toLowerCase();
+    if (key === 'small' || key === 'regular' || key === 'large') return key;
+    const t = (normalizeText(quote && quote.loadType) + ' ' + normalizeText(quote && quote.cargoType)).toLowerCase();
+    if (/small|shoebox|peque/.test(t)) return 'small';
+    if (/large|heavy|bulky|big|grande|pesad/.test(t)) return 'large';
+    return 'regular';
+  }
+
+  function promoCodesFromInput(){
+    return normalizeText(editPromoCode && editPromoCode.value).split(/[\s,;]+/).map(function(c){ return c.trim().toUpperCase(); }).filter(Boolean);
+  }
+
+  // The complete system price breakdown (CargoworksPricing.pricingDetail) as
+  // rows: { label, value, kind: ''|'sub'|'sum'|'note'|'neg' }.
+  function pricingDetailRows(d){
+    const rows = [];
+    rows.push({ label: 'Pickup fee (zone ' + (d.pickupZone || '-') + ')', value: d.pickupCharge });
+    const floorKm = safeNumber(d.distanceBasisKm, 0) > safeNumber(d.totalKm, 0) + 0.004;
+    rows.push({ label: 'Distance · ' + safeNumber(d.distanceBasisKm, 0).toFixed(2) + ' km × ' + money(d.perKm) + '/km', value: d.distanceTotal });
+    (Array.isArray(d.legs) ? d.legs : []).forEach(function(leg){
+      rows.push({ label: leg.from + ' → ' + leg.to + ' · ' + safeNumber(leg.km, 0).toFixed(2) + ' km', value: leg.price, kind: 'sub' });
+    });
+    if (floorKm) rows.push({ label: 'Charged as ' + safeNumber(d.distanceBasisKm, 0).toFixed(2) + ' km: the drop-off is that far from the centre (route is ' + safeNumber(d.totalKm, 0).toFixed(2) + ' km)', kind: 'note' });
+    if (safeNumber(d.minimumTopUp, 0) > 0) rows.push({ label: 'Minimum fare top-up', value: d.minimumTopUp });
+    if (safeNumber(d.addressFee, 0) > 0) rows.push({ label: 'Delivery fees · ' + d.addressFeeCount + ' drops × ' + money(d.addressFeePer), value: d.addressFee });
+    if (safeNumber(d.cargoAmount, 0) !== 0) rows.push({ label: 'Load: ' + (d.cargoLabel || d.cargoKey), value: d.cargoAmount });
+    if (safeNumber(d.weekendSurchargeAmount, 0) > 0) rows.push({ label: 'Weekend/holiday surcharge', value: d.weekendSurchargeAmount });
+    if (safeNumber(d.afterHoursSurchargeAmount, 0) > 0) rows.push({ label: 'After-hours surcharge', value: d.afterHoursSurchargeAmount });
+    if (safeNumber(d.discountAmount, 0) > 0) rows.push({ label: 'Promo' + ((d.discountCodes && d.discountCodes.length) ? (' ' + d.discountCodes.join(', ')) : ''), value: -safeNumber(d.discountAmount, 0), kind: 'neg' });
+    rows.push({ label: 'Subtotal (before IVA)', value: d.preVatTotal, kind: 'sum' });
+    rows.push({ label: 'IVA ' + Math.round(safeNumber(d.vatRate, 0.21) * 100) + '%', value: d.vatAmount });
+    rows.push({ label: 'Total', value: d.total, kind: 'sum' });
+    return rows;
+  }
+
   function renderPricing(order){
     const quote = order && order.quote ? order.quote : {};
     const breakdown = quote && quote.breakdown ? quote.breakdown : {};
@@ -830,14 +880,40 @@
       grid.appendChild(item);
     }
 
-    row('Base', base);
-    row('Distance', distance);
     const perStop = quote.billingMode === 'per_stop';
-    row(perStop ? (safeNumber(quote.stopCount, 0) + ' stops × ' + money(quote.stopRate)) : 'Stops', stops);
-    row('Surcharge', surcharge);
-    row('Discount', -discount);
-    row('Adjustment', adjustment);
-    row(perStop ? 'Final total (+ IVA)' : 'Final total', total);
+    const detail = quote.pricingDetail;
+    const detailOk = !perStop && !quote.priceOverride && detail && typeof detail === 'object' &&
+      Math.abs(safeNumber(detail.total, -1) - total) < 0.005;
+    if (detailOk) {
+      // The full system price: each leg, fees, surcharges, subtotal, IVA.
+      pricingDetailRows(detail).forEach(function(r){
+        if (r.kind === 'note') {
+          const n = document.createElement('div');
+          n.className = 'dispatcher-pricing-note';
+          n.style.cssText = 'grid-column:1/-1;font-size:0.68rem;color:var(--dispatch-muted);';
+          n.textContent = r.label;
+          grid.appendChild(n);
+          return;
+        }
+        row((r.kind === 'sub' ? '· ' : '') + r.label, r.value);
+        if (r.kind === 'sum') grid.lastChild.style.fontWeight = '700';
+      });
+    } else if (!perStop && quote.priceOverride) {
+      // Price set by hand: just the VAT split of the total.
+      const split = vatSplit(total);
+      row('Subtotal (ex. VAT)', split.subtotal);
+      row('VAT 21%', split.vat);
+      row('Final total', split.total);
+    } else {
+      row('Base', base);
+      row('Distance', distance);
+      row(perStop ? (safeNumber(quote.stopCount, 0) + ' stops × ' + money(quote.stopRate)) : 'Stops', stops);
+      row('Surcharge', surcharge);
+      row('Discount', -discount);
+      if (!perStop) row('Subtotal (ex. VAT)', total - adjustment);
+      row(perStop ? 'Adjustment' : 'VAT / adjustment', adjustment);
+      row(perStop ? 'Final total (+ IVA)' : 'Final total', total);
+    }
 
     const extra = document.createElement('div');
     const eta = safeNumber(quote.etaMins, 0);
@@ -1260,6 +1336,8 @@
       priceDiscount: normalizeText(editPriceDiscount && editPriceDiscount.value),
       priceAdjustment: normalizeText(editPriceAdjustment && editPriceAdjustment.value),
       priceTotal: normalizeText(editPriceTotal && editPriceTotal.value),
+      priceOverride: !!(editPriceOverride && editPriceOverride.checked),
+      promoCode: normalizeText(editPromoCode && editPromoCode.value),
       billingMode: normalizeText(editBillingMode && editBillingMode.value),
       hourlyRate: normalizeText(editHourlyRate && editHourlyRate.value),
       routeStartedAt: normalizeText(editRouteStartedAt && editRouteStartedAt.value),
@@ -1333,7 +1411,18 @@
     const adjustment = safeNumber(editPriceAdjustment && editPriceAdjustment.value, 0);
     const total = base + distance + stops + surcharge - discount + adjustment;
     if (editPriceTotal) editPriceTotal.value = total.toFixed(2);
+    renderEditorSubtotal();
     togglePriceNotice(true, 'Pricing breakdown changed. Final total recalculated to ' + total.toFixed(2) + '.');
+  }
+
+  // "Subtotal (ex. VAT)" under the breakdown fields: everything before the
+  // VAT line.
+  function renderEditorSubtotal(){
+    if (!editPriceSubtotal) return;
+    const sub = safeNumber(editPriceBase && editPriceBase.value, 0) + safeNumber(editPriceDistance && editPriceDistance.value, 0) +
+      safeNumber(editPriceStops && editPriceStops.value, 0) + safeNumber(editPriceSurcharge && editPriceSurcharge.value, 0) -
+      safeNumber(editPriceDiscount && editPriceDiscount.value, 0);
+    editPriceSubtotal.textContent = 'Subtotal (ex. VAT): EUR ' + sub.toFixed(2);
   }
 
   function recalculateElapsedMinutes(){
@@ -1498,7 +1587,8 @@
     return Object.assign(blankStopEntry(), {
       address: s.address || '', tier: s.tier || '', notes: s.notes || '', customerNote: s.customerNote || '',
       recipientName: s.recipientName || '', recipientPhone: s.recipientPhone || '',
-      recipientEmail: s.recipientEmail || '', addressDetails: s.addressDetails || ''
+      recipientEmail: s.recipientEmail || '', addressDetails: s.addressDetails || '',
+      lat: hasExactLocation(s) ? s.lat : null, lng: hasExactLocation(s) ? s.lng : null
     });
   }
 
@@ -1788,7 +1878,10 @@
     if (editTotalKm) editTotalKm.value = String(safeNumber(quote && quote.totalKm, 0));
 
     if (editCargoType) editCargoType.value = normalizeText(quote && quote.cargoType);
-    if (editLoadType) editLoadType.value = normalizeText(quote && quote.loadType);
+    if (editLoadType) editLoadType.value = cargoKeyFromQuote(quote);
+    if (editPromoCode) editPromoCode.value = (modeCreate || !Array.isArray(quote && quote.discountCodes)) ? '' : quote.discountCodes.join(', ');
+    // The stored complete breakdown is kept only while the price fields still match it.
+    editorState.pricingDetail = (!modeCreate && quote && quote.pricingDetail && typeof quote.pricingDetail === 'object') ? quote.pricingDetail : null;
     if (editVehicleType) editVehicleType.value = normalizeText(quote && quote.vehicleType);
     if (editPackageCount) editPackageCount.value = String(safeNumber(quote && quote.packageCount, 0));
     if (editWeightKg) editWeightKg.value = String(safeNumber(quote && quote.weightKg, 0));
@@ -1801,6 +1894,7 @@
     if (editPriceDiscount) editPriceDiscount.value = String(safeNumber(breakdown.discount, 0));
     if (editPriceAdjustment) editPriceAdjustment.value = String(safeNumber(breakdown.adjustment, 0));
     if (editPriceTotal) editPriceTotal.value = String(safeNumber(quote && quote.total, 0));
+    renderEditorSubtotal();
 
     if (editBillingMode) editBillingMode.value = (quote && (quote.billingMode === 'elapsed' || quote.billingMode === 'per_stop')) ? quote.billingMode : 'flat';
     if (editStopCount) editStopCount.value = (quote && quote.stopCount) ? String(safeNumber(quote.stopCount, 0)) : '';
@@ -1850,6 +1944,10 @@
     togglePriceNotice(false);
     setEditorFeedback('');
     resetPriceOverride();
+    if (!modeCreate && quote && quote.priceOverride && editPriceOverride) {
+      editPriceOverride.checked = true;
+      applyPriceOverride();
+    }
     updateMapsRouteLink();
     autoCalcStopsFee();
 
@@ -1889,6 +1987,21 @@
     updateSaveLabel();
   }
 
+  // The complete breakdown from "Get system pricing", but only if the price
+  // fields still say exactly that (nothing typed over it since); otherwise
+  // null, which also clears an old one from the order.
+  function currentPricingDetail(manualPrice, total, breakdown){
+    const d = editorState.pricingDetail;
+    if (!d || manualPrice) return null;
+    if (editBillingMode && editBillingMode.value !== 'flat') return null;
+    const near = function(a, b){ return Math.abs(safeNumber(a, 0) - safeNumber(b, 0)) < 0.005; };
+    const ok = near(d.total, total) && near(d.pickupCharge + d.minimumTopUp, breakdown.base) &&
+      near(d.distanceTotal, breakdown.distance) && near(d.addressFee, breakdown.stops) &&
+      near(d.cargoAmount + d.surchargeAmount, breakdown.surcharge) && near(d.discountAmount, breakdown.discount) &&
+      near(d.vatAmount, breakdown.adjustment);
+    return ok ? d : null;
+  }
+
   function collectEditorOrderData(){
     const breakdown = {
       base: safeNumber(editPriceBase && editPriceBase.value, 0),
@@ -1899,7 +2012,18 @@
       adjustment: safeNumber(editPriceAdjustment && editPriceAdjustment.value, 0)
     };
 
-    const total = safeNumber(editPriceTotal && editPriceTotal.value, 0);
+    let total = safeNumber(editPriceTotal && editPriceTotal.value, 0);
+    const manualPrice = isManualFlatPrice();
+    if (manualPrice) {
+      const split = vatSplit(total);
+      total = split.total;
+      breakdown.base = split.subtotal;
+      breakdown.distance = 0;
+      breakdown.stops = 0;
+      breakdown.surcharge = 0;
+      breakdown.discount = 0;
+      breakdown.adjustment = split.vat;
+    }
 
     return {
       customer: {
@@ -1918,6 +2042,7 @@
           stops: editorState.stopsModel.filter(function(s){ return normalizeText(s.address); }).map(function(s){
             const out = {
               id: s.id || '', address: normalizeText(s.address), tier: normalizeText(s.tier), priority: !!s.priority, outlier: !!s.outlier,
+              lat: hasExactLocation(s) ? Number(s.lat) : null, lng: hasExactLocation(s) ? Number(s.lng) : null,
               // Contact details are only edited here (riders can't), so always sent.
               recipientName: normalizeText(s.recipientName), recipientPhone: normalizeText(s.recipientPhone),
               recipientEmail: normalizeText(s.recipientEmail), addressDetails: normalizeText(s.addressDetails)
@@ -1933,6 +2058,7 @@
           })
         },
         total: total,
+        priceOverride: manualPrice,
         billingMode: normalizeText(editBillingMode && editBillingMode.value) || 'flat',
         hourlyRate: safeNumber(editHourlyRate && editHourlyRate.value, 0),
         elapsedMinutes: safeNumber(editElapsedMinutes && editElapsedMinutes.value, 0),
@@ -1942,7 +2068,10 @@
         totalKm: safeNumber(editTotalKm && editTotalKm.value, 0),
         currency: 'EUR',
         cargoType: normalizeText(editCargoType && editCargoType.value),
-        loadType: normalizeText(editLoadType && editLoadType.value),
+        cargoKey: normalizeText(editLoadType && editLoadType.value) || 'regular',
+        loadType: (editLoadType && editLoadType.selectedOptions && editLoadType.selectedOptions[0]) ? normalizeText(editLoadType.selectedOptions[0].textContent) : '',
+        discountCodes: promoCodesFromInput(),
+        pricingDetail: currentPricingDetail(manualPrice, total, breakdown),
         vehicleType: normalizeText(editVehicleType && editVehicleType.value),
         packageCount: safeNumber(editPackageCount && editPackageCount.value, 0),
         weightKg: safeNumber(editWeightKg && editWeightKg.value, 0),
@@ -2888,6 +3017,7 @@
     fill(editScheduleDate,   d.scheduleDate);
     fill(editScheduleTime,   d.scheduleTime);
     fill(editCargoType,      d.cargoType);
+    if (editLoadType && d.cargoType) editLoadType.value = cargoKeyFromQuote({ cargoType: d.cargoType });
     fill(editInternalNotes,  d.internalNotes);
     if (editPackageCount && d.packageCount != null) editPackageCount.value = String(d.packageCount);
     if (editWeightKg     && d.weightKg     != null) editWeightKg.value     = String(d.weightKg);
@@ -3076,13 +3206,16 @@
       addrInput.style.cssText = 'flex:1 1 auto;min-width:0;';
       addrInput.addEventListener('input', function(){
         stop.address = addrInput.value;
+        // Typed by hand: the exact point picked earlier no longer applies.
+        if (!addrInput._fromPlace) setStopLocation(stop, addrInput, null);
         updateEditorDirtyFromForm();
         updateMapsRouteLink();
         autoCalcStopsFee();
       });
       trackStopInput(addrInput, stop, 'address');
       topRow.appendChild(addrInput);
-      if (isPinned) attachAddressLookup(addrInput);
+      setStopLocation(stop, addrInput, hasExactLocation(stop) ? { lat: stop.lat, lng: stop.lng } : null);
+      attachPlacesAutocomplete(addrInput, stop);
 
       if (isFirst) {
         const locBtn = document.createElement('button');
@@ -3161,7 +3294,7 @@
       trackStopInput(internalNote, stop, 'notes');
       row.appendChild(internalNote);
 
-      if (!isFirst) row.appendChild(buildStopRecipientControls(stop));
+      row.appendChild(buildStopRecipientControls(stop, isFirst));
 
       const metaRow = document.createElement('div');
       metaRow.style.cssText = 'display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.3rem;font-size:0.72rem;';
@@ -3292,7 +3425,9 @@
   // dispatch only, never on tracking) and the customer note, which shows on
   // that stop's tracking and can be sent now, optionally also by WhatsApp
   // and/or email to the recipient.
-  function buildStopRecipientControls(stop) {
+  // Contact, access details and customer note for a stop — on the pickup the
+  // contact is whoever hands the parcel over.
+  function buildStopRecipientControls(stop, isPickup) {
     const wrap = document.createElement('div');
 
     const noteRow = document.createElement('div');
@@ -3346,7 +3481,7 @@
 
     const contactRow = document.createElement('div');
     contactRow.style.cssText = 'display:flex;gap:0.3rem;flex-wrap:wrap;margin-top:0.3rem;';
-    [['recipientName', 'Recipient name', 'text', '1 1 120px'],
+    [['recipientName', isPickup ? 'Contact at pickup' : 'Recipient name', 'text', '1 1 120px'],
      ['recipientPhone', 'Phone', 'tel', '1 1 100px'],
      ['recipientEmail', 'Email', 'email', '1 1 140px'],
      ['addressDetails', 'Floor, door, buzzer…', 'text', '1 1 100%']].forEach(function(spec){
@@ -3684,9 +3819,10 @@
       setEditorFeedback('Geolocation not supported by this browser.', true);
       return;
     }
-    function setAddress(value) {
+    function setAddress(value, lat, lng) {
       editorState.stopsModel[0].address = value;
       if (addrInput) addrInput.value = value;
+      setStopLocation(editorState.stopsModel[0], addrInput, (lat != null && lng != null) ? { lat: lat, lng: lng } : null);
     }
     if (btn) { btn.disabled = true; btn.textContent = '📍 Locating…'; }
     navigator.geolocation.getCurrentPosition(
@@ -3695,7 +3831,7 @@
         const lng = pos.coords.longitude;
         const mapsKey = window.CARGOWORKS_MAPS_KEY || '';
         if (!mapsKey) {
-          setAddress(lat.toFixed(6) + ',' + lng.toFixed(6));
+          setAddress(lat.toFixed(6) + ',' + lng.toFixed(6), lat, lng);
           if (btn) { btn.disabled = false; btn.textContent = '📍 My location'; }
           updateMapsRouteLink();
           return;
@@ -3708,11 +3844,11 @@
           if (data && data.results && data.results[0]) {
             address = data.results[0].formatted_address || '';
           }
-          setAddress(address || (lat.toFixed(6) + ',' + lng.toFixed(6)));
+          setAddress(address || (lat.toFixed(6) + ',' + lng.toFixed(6)), lat, lng);
           updateEditorDirtyFromForm();
           updateMapsRouteLink();
         } catch(err) {
-          setAddress(lat.toFixed(6) + ',' + lng.toFixed(6));
+          setAddress(lat.toFixed(6) + ',' + lng.toFixed(6), lat, lng);
           updateMapsRouteLink();
         } finally {
           if (btn) { btn.disabled = false; btn.textContent = '📍 My location'; }
@@ -3815,6 +3951,27 @@
 
   // ── Pricing manual override ──────────────────────────────────────────────
 
+  // A total that includes 21% VAT, split so subtotal + VAT add up to it exactly.
+  function vatSplit(total) {
+    const t = Math.round(safeNumber(total, 0) * 100) / 100;
+    const subtotal = Math.round((t / 1.21) * 100) / 100;
+    return { subtotal: subtotal, vat: Math.round((t - subtotal) * 100) / 100, total: t };
+  }
+
+  // Manual price on a normally priced order (per-stop and elapsed work their
+  // own totals out).
+  function isManualFlatPrice() {
+    return !!(editPriceOverride && editPriceOverride.checked) && (!editBillingMode || editBillingMode.value === 'flat');
+  }
+
+  function renderVatSplit() {
+    if (!editPriceVatSplit) return;
+    if (!isManualFlatPrice()) { editPriceVatSplit.style.display = 'none'; editPriceVatSplit.textContent = ''; return; }
+    const split = vatSplit(editPriceTotal && editPriceTotal.value);
+    editPriceVatSplit.textContent = 'Subtotal (ex. VAT) EUR ' + split.subtotal.toFixed(2) + ' + VAT 21% EUR ' + split.vat.toFixed(2) + ' = EUR ' + split.total.toFixed(2);
+    editPriceVatSplit.style.display = '';
+  }
+
   function applyPriceOverride() {
     if (!editPriceOverride) return;
     const manual = editPriceOverride.checked;
@@ -3823,6 +3980,7 @@
     if (editPriceManualHint) editPriceManualHint.style.display = manual ? 'inline' : 'none';
     if (editGetSystemPricing) editGetSystemPricing.style.display = (manual || elapsed) ? 'none' : '';
     if (manual && systemPricingStatus) { systemPricingStatus.style.display = 'none'; systemPricingStatus.textContent = ''; }
+    renderVatSplit();
   }
 
   function resetPriceOverride() {
@@ -3890,15 +4048,16 @@
   var _spCache = { prices: null, zones: null, holidays: null };
 
   async function _spLoadData() {
-    const [prices, zones, holidays] = await Promise.all([
+    const [prices, zones, holidays, discounts] = await Promise.all([
       _spCache.prices  || fetch('/data/prices.json').then(function(r){ return r.json(); }).then(function(d){ _spCache.prices = d; return d; }),
       _spCache.zones   || fetch('/data/zones.geojson').then(function(r){ return r.json(); }).then(function(d){ _spCache.zones = d; return d; }),
       _spCache.holidays|| fetch('/data/holidays.json').then(function(r){ return r.text(); }).then(function(t){
         const dates = new Set((String(t||'').match(/\d{4}-\d{2}-\d{2}/g) || []));
         _spCache.holidays = dates; return dates;
-      })
+      }),
+      _spCache.discounts || fetch('/data/discounts.json').then(function(r){ return r.json(); }).then(function(d){ _spCache.discounts = d; return d; }).catch(function(){ return { codes: [] }; })
     ]);
-    return { prices, zones, holidays };
+    return { prices, zones, holidays, discounts };
   }
 
   // Plain-object haversine (no google.maps dependency)
@@ -3934,16 +4093,6 @@
       area -= ring[j][0] * ring[i][1];
     }
     return Math.abs(area / 2);
-  }
-
-  // Bounding-box centroid of a GeoJSON ring
-  function _spRingCentroid(ring) {
-    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-    ring.forEach(function(c) {
-      if (c[1] < minLat) minLat = c[1]; if (c[1] > maxLat) maxLat = c[1];
-      if (c[0] < minLng) minLng = c[0]; if (c[0] > maxLng) maxLng = c[0];
-    });
-    return { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 };
   }
 
   // Parse geojson into [{name, outerRing, holes, area}]
@@ -4033,7 +4182,9 @@
     async function worker(){
       while (next < stops.length) {
         const i = next++;
-        try { out[i] = await geocodeCached(stops[i] && stops[i].address); } catch(_) { out[i] = null; }
+        const st = stops[i];
+        if (hasExactLocation(st)) { out[i] = { lat: Number(st.lat), lng: Number(st.lng) }; continue; }
+        try { out[i] = await geocodeCached(st && st.address); } catch(_) { out[i] = null; }
       }
     }
     await Promise.all([worker(), worker(), worker(), worker()]);
@@ -4111,34 +4262,44 @@
     };
   }
 
+  // Google Maps (the free OpenStreetMap tile servers refuse business use
+  // with a 403 under their tile policy).
   function drawStopsMap(el, stops, coords){
-    if (typeof L === 'undefined') {
-      el.textContent = 'Loading map…';
-      setTimeout(function(){ if (el.isConnected) drawStopsMap(el, stops, coords); }, 500);
-      return;
-    }
-    if (el._leafletMap) { el._leafletMap.remove(); el._leafletMap = null; }
-    el.textContent = '';
-    const map = L.map(el, { zoomControl: true, scrollWheelZoom: false });
-    map.attributionControl.setPrefix(false);
-    el._leafletMap = map;
-    // OpenStreetMap tiles (CARTO's free basemaps now require an API key);
-    // OSM's tile policy requires the credit.
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
-    const latlngs = [];
-    stops.forEach(function(stop, idx){
-      const c = coords[idx];
-      if (!c) return;
-      const done = !!(stop.status && stop.status !== 'Pending');
-      const cls = idx === 0 ? 'stop-pin stop-pin--pickup' : (done ? 'stop-pin stop-pin--done' : 'stop-pin');
-      const icon = L.divIcon({ className: '', html: '<div class="' + cls + '">' + (idx === 0 ? 'P' : idx) + '</div>', iconSize: [22, 22], iconAnchor: [11, 11] });
-      L.marker([c.lat, c.lng], { icon: icon, title: (idx === 0 ? 'Pickup: ' : (idx + '. ')) + (stop.address || '') }).addTo(map);
-      latlngs.push([c.lat, c.lng]);
+    el.textContent = 'Loading map…';
+    window.cwLoadGoogleMaps().then(function(gm){
+      if (!el.isConnected) return;
+      el.textContent = '';
+      const map = new gm.Map(el, {
+        mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
+        clickableIcons: false, gestureHandling: 'cooperative'
+      });
+      const bounds = new gm.LatLngBounds();
+      const path = [];
+      stops.forEach(function(stop, idx){
+        const c = coords[idx];
+        if (!c) return;
+        const done = !!(stop.status && stop.status !== 'Pending');
+        new gm.Marker({
+          map: map,
+          position: c,
+          title: (idx === 0 ? 'Pickup: ' : (idx + '. ')) + (stop.address || ''),
+          label: { text: idx === 0 ? 'P' : String(idx), color: '#ffffff', fontSize: '11px', fontWeight: '700' },
+          icon: { path: gm.SymbolPath.CIRCLE, scale: 11, fillColor: idx === 0 ? '#f07b39' : (done ? '#1c8a5a' : '#182335'), fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 }
+        });
+        bounds.extend(c);
+        path.push(c);
+      });
+      if (path.length > 1) new gm.Polyline({ map: map, path: path, strokeColor: '#f07b39', strokeOpacity: 0.85, strokeWeight: 3 });
+      if (path.length > 1) {
+        map.fitBounds(bounds, 24);
+        gm.event.addListenerOnce(map, 'idle', function(){ if (map.getZoom() > 16) map.setZoom(16); });
+      } else {
+        map.setCenter(path[0] || { lat: 41.3902, lng: 2.1542 });
+        map.setZoom(path.length ? 15 : 13);
+      }
+    }).catch(function(err){
+      el.textContent = 'Map unavailable: ' + ((err && err.message) || err);
     });
-    if (latlngs.length > 1) L.polyline(latlngs, { color: '#f07b39', weight: 3, opacity: 0.85 }).addTo(map);
-    if (latlngs.length) map.fitBounds(latlngs, { padding: [24, 24], maxZoom: 16 });
-    else map.setView([41.3902, 2.1542], 13);
-    setTimeout(function(){ map.invalidateSize(); }, 0);
   }
 
   // "🗺 Map" toggle plus its panel. getStops() gives the stops to draw (read
@@ -4272,200 +4433,129 @@
     await optimizeEditorStops(editorMapPanel ? editorMapPanel.optimizeBtn : btn);
   }
 
-  // Determine cargo rate from cargo type text (mirrors map.js getCargoAdjustment)
-  function _spCargoRate(cargoTypeText, stopCount) {
-    if (stopCount >= 5) return { rate: 0.20, label: 'large (auto, ≥5 stops)' };
-    const t = String(cargoTypeText || '').toLowerCase();
-    if (t.indexOf('small') >= 0 || t.indexOf('shoebox') >= 0) return { rate: -0.15, label: 'small' };
-    if (t.indexOf('large') >= 0 || t.indexOf('heavy') >= 0 || t.indexOf('bulky') >= 0) return { rate: 0.20, label: 'large' };
-    return { rate: 0, label: 'regular' };
-  }
-
-  // Determine surcharge from date/time (mirrors map.js computeSurchargeInfo)
-  function _spSurcharge(dateStr, timeStr, prices, holidays) {
-    if (!dateStr) return { rate: 0, label: '' };
-    const sur = (prices && prices.surcharges) || {};
-    const bh = (prices && prices.businessHours) || {};
-    const dateBase = new Date(dateStr + 'T00:00:00');
-    const isWeekend = dateBase.getDay() === 0 || dateBase.getDay() === 6;
-    const isHoliday = holidays instanceof Set ? holidays.has(dateStr) : false;
-    const isWeekendHoliday = isWeekend || isHoliday;
-    const hours = isWeekendHoliday
-      ? (bh.weekendHoliday || { start: '07:00', end: '14:00' })
-      : (bh.weekday || { start: '07:00', end: '17:00' });
-    function toMins(hhmm) {
-      const p = String(hhmm||'').split(':');
-      return p.length === 2 ? (Number(p[0])||0)*60 + (Number(p[1])||0) : null;
-    }
-    const startMin = toMins(hours.start) || 0;
-    const endMin   = toMins(hours.end)   || 1020;
-    const timeMin  = timeStr ? toMins(timeStr) : null;
-    const afterHours = timeMin != null && (timeMin < startMin || timeMin >= endMin);
-    const weekendRate = Number(sur.weekend_holiday || 0) || 0;
-    const afterRate   = Number(sur.after_hours || 0) || 0;
-    const rate = (isWeekendHoliday ? weekendRate : 0) + (afterHours ? afterRate : 0);
-    const parts = [];
-    if (isWeekendHoliday) parts.push('weekend/holiday +' + Math.round(weekendRate*100) + '%');
-    if (afterHours) parts.push('after-hours +' + Math.round(afterRate*100) + '%');
-    return { rate: rate, label: parts.join(', ') };
-  }
-
   function _spSetSystemPricingStatus(msg) {
     if (!systemPricingStatus) return;
     systemPricingStatus.textContent = msg || '';
     systemPricingStatus.style.display = msg ? 'block' : 'none';
   }
 
+  // Prices the route exactly like the booking page: Google geocoding and bike
+  // routing in the browser, then the shared CargoworksPricing calculation
+  // (zone, per-km, fees, load type, surcharges, promo codes, IVA). Fills the
+  // breakdown fields and keeps the complete breakdown for the order.
   async function handleGetSystemPricing() {
-    const pickup  = normalizeText(editorState.stopsModel[0] && editorState.stopsModel[0].address);
-    const dropoff = normalizeText(editorState.stopsModel.length > 1 && editorState.stopsModel[editorState.stopsModel.length - 1].address);
-    if (!pickup || !dropoff) {
+    const model = editorState.stopsModel || [];
+    const filled = model.filter(function(s){ return normalizeText(s.address); });
+    if (filled.length < 2 || !normalizeText(model[0] && model[0].address) || !normalizeText(model[model.length - 1] && model[model.length - 1].address)) {
       _spSetSystemPricingStatus('⚠ Pickup and dropoff are required.');
       return;
     }
-
     if (editGetSystemPricing) { editGetSystemPricing.disabled = true; editGetSystemPricing.textContent = '⚙ Calculating…'; }
-    _spSetSystemPricingStatus('Geocoding addresses…');
-
+    _spSetSystemPricingStatus('Looking up ' + filled.length + ' address(es)…');
     try {
-      const { prices, zones, holidays } = await _spLoadData();
-      const parsedZones = _spParseZones(zones);
+      const data = await _spLoadData();
+      const parsedZones = _spParseZones(data.zones);
+      const gm = await window.cwLoadGoogleMaps();
+      const geocoder = new gm.Geocoder();
+      const directions = new gm.DirectionsService();
 
-      // Geocode all INTERMEDIATE addresses — stopsModel[0]/[last] (pickup/
-      // dropoff) are geocoded separately below.
-      const stopLines = editorState.stopsModel.slice(1, -1).map(function(s){ return normalizeText(s.address); }).filter(Boolean);
-
-      _spSetSystemPricingStatus('Geocoding ' + (2 + stopLines.length) + ' address(es)…');
-
-      // Geocode all addresses — resolve sequentially so error messages are specific
-      let pickupLoc, dropoffLoc, stopLocs = [];
-      try { pickupLoc  = await _spGeocode(pickup);  } catch(e) { _spSetSystemPricingStatus('⚠ Pickup: ' + e.message); return; }
-      try { dropoffLoc = await _spGeocode(dropoff); } catch(e) { _spSetSystemPricingStatus('⚠ Dropoff: ' + e.message); return; }
-      for (var si = 0; si < stopLines.length; si++) {
-        try { stopLocs.push(await _spGeocode(stopLines[si])); }
-        catch(e) { _spSetSystemPricingStatus('⚠ Stop ' + (si+1) + ' ("' + stopLines[si] + '"): ' + e.message); return; }
+      const found = await Promise.all(filled.map(function(s){
+        if (hasExactLocation(s)) return { location: new gm.LatLng(Number(s.lat), Number(s.lng)), label: normalizeText(s.address), precise: true, exact: true };
+        return CargoworksPricing.geocodeBarcelona(geocoder, normalizeText(s.address));
+      }));
+      const labels = filled.map(function(s, i){ return i === 0 ? 'Pickup' : (i === filled.length - 1 ? 'Drop-off' : ('Stop ' + i)); });
+      for (let i = 0; i < found.length; i++) {
+        if (!found[i]) { _spSetSystemPricingStatus('⚠ No result for ' + labels[i].toLowerCase() + ': "' + normalizeText(filled[i].address) + '" — try a more complete address.'); return; }
       }
-
-      if (!pickupLoc)  { _spSetSystemPricingStatus('⚠ No result for pickup: "' + pickup + '" — try a more complete address.'); return; }
-      if (!dropoffLoc) { _spSetSystemPricingStatus('⚠ No result for dropoff: "' + dropoff + '" — try a more complete address.'); return; }
-      for (var sj = 0; sj < stopLocs.length; sj++) {
-        if (!stopLocs[sj]) { _spSetSystemPricingStatus('⚠ No result for stop ' + (sj+1) + ': "' + stopLines[sj] + '" — try a more complete address.'); return; }
-      }
-
-      // ── Coordinates resolved — do NOT rewrite address fields.
-      // Field values stay exactly as the dispatcher typed them.
-      // Resolved labels are shown in the status line only.
-
-      // Zone detection
-      const pickupZone = _spFindZone(pickupLoc.lat, pickupLoc.lng, parsedZones);
+      const points = found.map(function(f){ return { lat: f.location.lat(), lng: f.location.lng() }; });
+      const zonesOf = points.map(function(p){ return _spFindZone(p.lat, p.lng, parsedZones); });
+      const pickupZone = zonesOf[0];
       if (!pickupZone) { _spSetSystemPricingStatus('⚠ Pickup is outside the Cargoworks service area.'); return; }
+      const outside = labels.filter(function(l, i){ return i > 0 && !zonesOf[i]; });
 
-      // ── Real route distance via Routes API ──
-      _spSetSystemPricingStatus('Fetching route distance…');
-      let totalRouteKm, distanceNote;
-      try {
-        const routePoints = [pickupLoc].concat(stopLocs).concat([dropoffLoc])
-          .map(function(p){ return { lat: p.lat, lng: p.lng }; });
-        const routeRes = await postAdmin({ action: 'adminRoute', points: routePoints });
-        totalRouteKm = routeRes && routeRes.totalKm ? Math.round(routeRes.totalKm * 100) / 100 : null;
-        distanceNote = totalRouteKm ? (totalRouteKm.toFixed(1) + 'km routed') : null;
-      } catch(_) {}
-
-      // Fallback to haversine × 1.25 if Routes API fails
-      if (!totalRouteKm) {
-        const waypoints = [pickupLoc].concat(stopLocs).concat([dropoffLoc]);
-        let haversineKm = 0;
-        for (var hi = 0; hi < waypoints.length - 1; hi++) {
-          haversineKm += _spHaversine(waypoints[hi].lat, waypoints[hi].lng, waypoints[hi+1].lat, waypoints[hi+1].lng) * 1.25;
+      _spSetSystemPricingStatus('Routing ' + (points.length - 1) + ' leg(s) by bike…');
+      const routed = await CargoworksPricing.routeBikeLegs(directions, found.map(function(f){ return f.location; }));
+      const origin = CargoworksPricing.zoneOneCenter(data.zones);
+      const dateKey = normalizeText(editScheduleDate && editScheduleDate.value);
+      const timeLabel = normalizeText(editScheduleTime && editScheduleTime.value);
+      const codes = promoCodesFromInput();
+      let discountInfo = { totalDiscount: 0, applied: [], errors: [] };
+      const priced = CargoworksPricing.computeQuotePrice({
+        prices: data.prices,
+        holidays: data.holidays,
+        pickupZone: pickupZone,
+        legs: routed.legs,
+        dropCenterKm: CargoworksPricing.haversineKm(origin, points[points.length - 1]),
+        intermediateStops: points.length - 2,
+        cargoKey: normalizeText(editLoadType && editLoadType.value) || 'regular',
+        dateKey: dateKey,
+        timeLabel: timeLabel,
+        discount: function(sub){
+          discountInfo = CargoworksPricing.resolveDiscounts(codes, data.discounts && data.discounts.codes, sub, dateKey || formatDateKey(new Date()));
+          return discountInfo;
         }
-        totalRouteKm = Math.round(haversineKm * 100) / 100;
-        distanceNote = totalRouteKm.toFixed(1) + 'km est. (haversine ×1.25)';
-      }
+      });
+      const detail = CargoworksPricing.pricingDetail(priced, labels);
 
-      // Zone 1 centroid — used for distanceBasisKm floor, same as map.js
-      const zone1Features = parsedZones.filter(function(f){ return f.num === '1'; });
-      const origin = zone1Features.length
-        ? _spRingCentroid(zone1Features[0].outerRing)
-        : { lat: 41.3874, lng: 2.1686 };
-
-      const dropCenterKm = Math.round(_spHaversine(origin.lat, origin.lng, dropoffLoc.lat, dropoffLoc.lng) * 100) / 100;
-      const distanceBasisKm = Math.max(totalRouteKm, dropCenterKm);
-
-      // Pricing from prices.json
-      const dp = (prices && prices.distance) || {};
-      const perKmMap = dp.perKm || {};
-      const rawPerKm = Number(perKmMap[pickupZone]) || 1.5;
-      const perKm = Math.round(rawPerKm * 1.1 * 100) / 100; // ×1.1 markup (same as map.js line 3613)
-      const minimum = Number(dp.minimum) || 8;
-
-      // Base: prices.zones[zone].base * 0.88 (same as map.js basePriceForZone)
-      const zoneData = (prices && prices.zones && prices.zones[pickupZone]) || {};
-      const pickupCharge = Math.round(Number(zoneData.base || 0) * 0.88 * 100) / 100;
-
-      const distanceTotal = Math.round(distanceBasisKm * perKm * 100) / 100;
-
-      // Stops fee
-      const addressFeeCount = stopLocs.length + 1; // stops + dropoff
-      const addressFeePer   = addressFeeCount >= 3 ? 1.25 : 0;
-      const addressFee      = Math.round(addressFeePer * addressFeeCount * 100) / 100;
-
-      // Subtotal with minimum
-      let subtotal = Math.round((distanceTotal + pickupCharge) * 100) / 100;
-      if (minimum && subtotal < minimum) subtotal = minimum;
-      subtotal = Math.round((subtotal + addressFee) * 100) / 100;
-
-      // Cargo
-      const cargoText = normalizeText(editCargoType && editCargoType.value);
-      const cargo = _spCargoRate(cargoText, stopLocs.length);
-      const cargoAmount = Math.round(subtotal * cargo.rate * 100) / 100;
-      subtotal = Math.round((subtotal + cargoAmount) * 100) / 100;
-
-      // Surcharge
-      const dateStr = normalizeText(editScheduleDate && editScheduleDate.value);
-      const timeStr = normalizeText(editScheduleTime && editScheduleTime.value);
-      const surcharge = _spSurcharge(dateStr, timeStr, prices, holidays);
-      const surchargeAmount = Math.round(subtotal * surcharge.rate * 100) / 100;
-      const subtotalPreVat = Math.round((subtotal + surchargeAmount) * 100) / 100;
-
-      // VAT 21%
-      const VAT_RATE = 0.21;
-      const vatAmount = Math.round(subtotalPreVat * VAT_RATE * 100) / 100;
-      const total = Math.round((subtotalPreVat + vatAmount) * 100) / 100;
-
-      // Fill breakdown fields
-      if (editPriceBase)       editPriceBase.value       = pickupCharge.toFixed(2);
-      if (editPriceDistance)   editPriceDistance.value   = distanceTotal.toFixed(2);
-      if (editPriceStops)      editPriceStops.value      = addressFee.toFixed(2);
-      if (editPriceSurcharge)  editPriceSurcharge.value  = (cargoAmount + surchargeAmount).toFixed(2);
-      if (editPriceDiscount)   editPriceDiscount.value   = '0';
-      if (editPriceAdjustment) editPriceAdjustment.value = vatAmount.toFixed(2);
-      if (editPriceTotal)      editPriceTotal.value      = total.toFixed(2);
+      if (editPriceBase)       editPriceBase.value       = (priced.pickupCharge + priced.minimumTopUp).toFixed(2);
+      if (editPriceDistance)   editPriceDistance.value   = priced.distanceTotal.toFixed(2);
+      if (editPriceStops)      editPriceStops.value      = priced.addressFee.toFixed(2);
+      if (editPriceSurcharge)  editPriceSurcharge.value  = (priced.cargoAmount + priced.surchargeAmount).toFixed(2);
+      if (editPriceDiscount)   editPriceDiscount.value   = priced.discountAmount.toFixed(2);
+      if (editPriceAdjustment) editPriceAdjustment.value = priced.vatAmount.toFixed(2);
+      if (editPriceTotal)      editPriceTotal.value      = priced.total.toFixed(2);
+      if (editLoadType && priced.cargo.auto) editLoadType.value = 'large';
+      if (editEtaMins) editEtaMins.value = String(Math.max(15, priced.etaMins));
+      if (editTotalKm) editTotalKm.value = priced.totalKm.toFixed(2);
+      editorState.pricingDetail = detail;
+      renderEditorSubtotal();
+      togglePriceNotice(false);
       updateEditorDirtyFromForm();
 
-      // Status summary
-      const notes = [
-        'Zone ' + pickupZone,
-        distanceNote,
-        '€' + perKm.toFixed(2) + '/km',
-        cargo.rate !== 0 ? ('cargo ' + cargo.label) : null,
-        surcharge.label || null,
-        'VAT 21% → €' + vatAmount.toFixed(2)
-      ].filter(Boolean).join(' · ');
-
-      // Show resolved addresses so dispatcher can verify what was matched
-      const resolvedLines = ['✓ ' + notes];
-      if (pickupLoc.label && pickupLoc.label !== pickup) resolvedLines.push('Pickup → ' + pickupLoc.label);
-      if (dropoffLoc.label && dropoffLoc.label !== dropoff) resolvedLines.push('Dropoff → ' + dropoffLoc.label);
-      stopLocs.forEach(function(loc, i) {
-        if (loc && loc.label && loc.label !== stopLines[i]) resolvedLines.push('Stop ' + (i+1) + ' → ' + loc.label);
+      // The complete breakdown, plus what was matched, under the button.
+      const notes = ['✓ Zone ' + pickupZone + ' · ' + priced.totalKm.toFixed(2) + ' km by bike' + (routed.estimated ? ' (estimated — routing unavailable)' : '') + ' · ETA ~' + priced.etaMins + ' min'];
+      if (priced.cargo.auto) notes.push('Load set to Heavy/Big automatically (5+ stops), like the booking page.');
+      outside.forEach(function(l){ notes.push('⚠ ' + l + ' is outside the service area — the booking page would not price this route.'); });
+      (discountInfo.errors || []).forEach(function(e){ notes.push('⚠ Promo ' + e.code + ': ' + ({ not_found: 'not found', inactive: 'inactive', not_started: 'not active yet', expired: 'expired', min_order: 'minimum order not reached' }[e.reason] || e.reason)); });
+      const exactCount = found.filter(function(f){ return f.exact; }).length;
+      if (exactCount) notes.push('📍 ' + exactCount + ' of ' + found.length + ' addresses use the exact point picked from the suggestions.');
+      filled.forEach(function(s, i){
+        if (found[i].exact) return;
+        if (!found[i].precise) notes.push('⚠ ' + labels[i] + ' only matched an area ("' + found[i].label + '"), not an exact address — pick it from the suggestions to price it exactly.');
+        else if (found[i].label && found[i].label !== normalizeText(s.address)) notes.push(labels[i] + ' → ' + found[i].label);
       });
-      _spSetSystemPricingStatus(resolvedLines.join('\n'));
-
+      renderSystemPricingDetail(detail, notes);
     } catch(err) {
-      _spSetSystemPricingStatus('⚠ Error: ' + (err.message || String(err)));
+      _spSetSystemPricingStatus('⚠ Error: ' + (err && err.message || String(err)));
     } finally {
       if (editGetSystemPricing) { editGetSystemPricing.disabled = false; editGetSystemPricing.textContent = '⚙ Get system pricing'; }
     }
+  }
+
+  function renderSystemPricingDetail(detail, notes){
+    if (!systemPricingStatus) return;
+    systemPricingStatus.textContent = '';
+    const grid = document.createElement('div');
+    grid.className = 'price-detail';
+    pricingDetailRows(detail).forEach(function(r){
+      const l = document.createElement('span');
+      l.textContent = r.label;
+      if (r.kind === 'note') { l.className = 'is-note'; grid.appendChild(l); return; }
+      const v = document.createElement('span');
+      v.textContent = 'EUR ' + money(r.value);
+      if (r.kind === 'sub') l.className = 'is-sub';
+      if (r.kind === 'sum') { l.className = 'is-sum'; v.className = 'is-sum'; }
+      grid.appendChild(l);
+      grid.appendChild(v);
+    });
+    (notes || []).forEach(function(n){
+      const e = document.createElement('span');
+      e.className = /^⚠/.test(n) ? 'is-warn' : 'is-note';
+      e.textContent = n;
+      grid.appendChild(e);
+    });
+    systemPricingStatus.appendChild(grid);
+    systemPricingStatus.style.display = 'block';
   }
 
   // ── Live address inference on pickup / dropoff fields ───────────────────
@@ -4477,94 +4567,63 @@
   // (idx 0 and the last index) each time they're (re)created — intermediate
   // stop rows and the AI scanner already return validated addresses, so this
   // isn't attached per-row for those.
-  function attachAddressLookup(inputEl) {
-    var DEBOUNCE_MS = 700;
-    var MIN_CHARS   = 3;
-    if (!inputEl || !inputEl.parentNode) return;
+  function hasExactLocation(stop){
+    return !!stop && stop.lat !== '' && stop.lat != null && stop.lng !== '' && stop.lng != null &&
+      Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng));
+  }
 
-    // Insert suggestion div after the input
-    var sug = document.createElement('div');
-    sug.className = 'address-suggestion';
-    // Insert after input (but before any existing siblings like the maps link)
-    inputEl.parentNode.insertBefore(sug, inputEl.nextSibling);
-
-    var timer = null;
-    var lastQuery = '';
-    var pendingAccept = false;
-    var accepting = false;
-
-    function hideSug() { sug.className = 'address-suggestion'; sug.innerHTML = ''; }
-
-    function showSuggestion(resolved, query) {
-      if (!resolved || resolved === query) { hideSug(); return; }
-      sug.innerHTML = '';
-
-      var textSpan = document.createElement('span');
-      textSpan.className = 'address-suggestion-text';
-      textSpan.textContent = '→ ' + resolved;
-
-      var useBtn = document.createElement('button');
-      useBtn.type = 'button';
-      useBtn.className = 'address-suggestion-use';
-      useBtn.textContent = '✓ Use';
-      useBtn.addEventListener('mousedown', function(e) {
-        // mousedown fires before blur so we can prevent the hide
-        e.preventDefault();
-        pendingAccept = true;
-      });
-      useBtn.addEventListener('click', function() {
-        inputEl.value = resolved;
-        pendingAccept = false;
-        hideSug();
-        // Fire the row's own input handler so the stop itself gets the
-        // address — setting .value alone left the old text in the order,
-        // and it came back the next time the stop list redrew.
-        accepting = true;
-        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-        accepting = false;
-      });
-
-      sug.appendChild(textSpan);
-      sug.appendChild(useBtn);
-      sug.className = 'address-suggestion is-visible';
+  // The exact point of a stop (picked from Google's suggestions, the booking
+  // page or My location) — pricing and maps then use that spot instead of
+  // looking the text up again. null clears it.
+  function setStopLocation(stop, inputEl, loc){
+    if (loc) {
+      stop.lat = Math.round(Number(loc.lat) * 1e6) / 1e6;
+      stop.lng = Math.round(Number(loc.lng) * 1e6) / 1e6;
+    } else {
+      stop.lat = null;
+      stop.lng = null;
     }
+    if (inputEl) {
+      inputEl.classList.toggle('has-exact-location', !!loc);
+      inputEl.title = loc ? 'Exact location (picked from the suggestions) — used for pricing and maps' : '';
+    }
+  }
 
-    async function lookup(query) {
-      if (!currentToken()) return; // not unlocked yet
+  // Google's address suggestions, same settings as the booking page
+  // (Barcelona area, addresses and places). Loaded on first focus.
+  function attachPlacesAutocomplete(inputEl, stop){
+    if (!inputEl || typeof window.cwLoadGoogleMaps !== 'function') return;
+    function attach(gm){
+      if (inputEl._placesAttached || !gm || !gm.places || !gm.places.Autocomplete) return;
+      inputEl._placesAttached = true;
+      const ac = new gm.places.Autocomplete(inputEl, {
+        types: ['geocode', 'establishment'],
+        componentRestrictions: { country: 'es' },
+        fields: ['formatted_address', 'geometry', 'name', 'types']
+      });
       try {
-        var res = await postAdmin({ action: 'adminGeocode', query: query });
-        if (query !== lastQuery) return; // stale
-        if (res && res.result && res.result.label) {
-          showSuggestion(res.result.label, query);
-        } else {
-          hideSug();
-        }
-      } catch(_) { hideSug(); }
+        ac.setBounds(new gm.LatLngBounds(new gm.LatLng(41.30, 1.96), new gm.LatLng(41.52, 2.30)));
+        ac.setOptions({ strictBounds: true });
+      } catch(_) {}
+      ac.addListener('place_changed', function(){
+        const place = ac.getPlace();
+        const loc = place && place.geometry && place.geometry.location;
+        if (!loc) return;
+        const isPlace = Array.isArray(place.types) && place.types.indexOf('establishment') >= 0 && place.name;
+        const label = (isPlace && place.formatted_address && place.formatted_address.indexOf(place.name) !== 0)
+          ? (place.name + ', ' + place.formatted_address)
+          : (place.formatted_address || inputEl.value);
+        inputEl.value = label;
+        inputEl._fromPlace = true;
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        inputEl._fromPlace = false;
+        setStopLocation(stop, inputEl, { lat: loc.lat(), lng: loc.lng() });
+      });
     }
-
-    inputEl.addEventListener('input', function() {
-      if (accepting) return; // the accepted suggestion — nothing to look up
-      var val = inputEl.value.trim();
-      hideSug();
-      if (timer) clearTimeout(timer);
-      if (val.length < MIN_CHARS) return;
-      lastQuery = val;
-      timer = setTimeout(function() { lookup(val); }, DEBOUNCE_MS);
-    });
-
-    inputEl.addEventListener('blur', function() {
-      if (pendingAccept) return; // user is clicking Use button
-      setTimeout(hideSug, 150);
-    });
-
-    inputEl.addEventListener('focus', function() {
-      pendingAccept = false;
-    });
-    // Note: the per-line "resolve address on blur" suggestion feature that used
-    // to live here for the stops textarea was removed along with the textarea
-    // itself (see renderStopsList) — each stop is now its own input row, and
-    // the AI scanner (Quick-add) already returns validated/geocoded-quality
-    // addresses, so this isn't attached per-row for intermediate stops.
+    if (window.google && window.google.maps && window.google.maps.places) { attach(window.google.maps); return; }
+    inputEl.addEventListener('focus', function(){
+      window.cwLoadGoogleMaps().then(attach).catch(function(){});
+    }, { once: true });
   }
 
   // ── End system pricing ────────────────────────────────────────────────────
@@ -4577,6 +4636,9 @@
       return;
     }
     openEditor('create', null);
+    // Give the new order form the room — unless opening it was cancelled
+    // (kept editing another order).
+    if (editorState.open && editorState.mode === 'create') setHeaderCollapsed(true);
   }
 
   function onControlChange(){
@@ -4772,7 +4834,15 @@
   if (editGetSystemPricing) editGetSystemPricing.addEventListener('click', handleGetSystemPricing);
 
   // Pricing override toggle
-  if (editPriceOverride) editPriceOverride.addEventListener('change', function(){ applyPriceOverride(); recalculatePriceTotal(); });
+  if (editPriceOverride) editPriceOverride.addEventListener('change', function(){ applyPriceOverride(); recalculatePriceTotal(); renderVatSplit(); updateEditorDirtyFromForm(); });
+  // Typing a total by hand is a manual override.
+  if (editPriceTotal) editPriceTotal.addEventListener('input', function(){
+    if (editPriceOverride && !editPriceOverride.checked && (!editBillingMode || editBillingMode.value === 'flat')) {
+      editPriceOverride.checked = true;
+      applyPriceOverride();
+    }
+    renderVatSplit();
+  });
 
   // Elapsed-time billing
   if (editBillingMode) editBillingMode.addEventListener('change', function(){

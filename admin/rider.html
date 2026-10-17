@@ -9,11 +9,8 @@
   <title>Cargoworks — Rider</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-  <!-- defer: the map is only drawn after a sheet scan, so the page shouldn't wait for Leaflet to download before showing orders -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+  <!-- Google Maps loads on demand (gmaps-loader.js) when a scanned route's map is drawn. -->
+  <script src="../js/js/gmaps-loader.js" defer></script>
   <script>
     // Set API base — same pattern as other pages
     window.CARGOWORKS_BOOKING_API = 'https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec';
@@ -1264,30 +1261,10 @@
       border-color: var(--orange);
       border-width: 3px;
     }
-    /* Leaflet popup override for dark theme */
-    .leaflet-popup-content-wrapper {
-      background: var(--bg-card) !important;
-      color: var(--text) !important;
-      border-radius: 8px !important;
-      border: 1px solid var(--border);
-    }
-    .leaflet-popup-tip {
-      background: var(--bg-card) !important;
-      border: 1px solid var(--border);
-    }
-    .leaflet-popup-content {
-      margin: 10px 12px !important;
-      font-size: 0.82rem;
-      line-height: 1.4;
-    }
-    .leaflet-popup-content a {
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 600;
-    }
-    .leaflet-container a.leaflet-popup-close-button {
-      color: var(--text-dim) !important;
-    }
+    /* Map pop-up (Google info window has a light background) */
+    .map-popup { color: #1a1a2e; font-size: 0.82rem; line-height: 1.4; }
+    .map-popup a { color: #6d28d9; text-decoration: none; font-weight: 600; }
+    .map-popup .is-dim { color: #555; font-size: 0.75rem; }
   </style>
 </head>
 <body>
@@ -2238,8 +2215,9 @@
           row.appendChild(notesLine);
         }
 
-        // Recipient contact (from dispatch) — tap the phone to call.
-        if (!isFirst && (stop.recipientName || stop.recipientPhone || stop.addressDetails)) {
+        // Contact (from dispatch) — tap the phone to call. On the pickup it's
+        // whoever hands the parcel over.
+        if (stop.recipientName || stop.recipientPhone || stop.addressDetails) {
           const contact = document.createElement('div');
           contact.style.cssText = 'font-size:0.82rem;display:flex;flex-wrap:wrap;gap:4px 12px;';
           if (stop.recipientName) {
@@ -2262,9 +2240,9 @@
           row.appendChild(contact);
         }
 
-        // Customer note — the one note per drop that the customer sees on
+        // Customer note — the one note per stop that the customer sees on
         // this stop's tracking (the 📝 note above stays internal).
-        if (!isFirst && stop.customerNote) {
+        if (stop.customerNote) {
           const custLine = document.createElement('div');
           custLine.className = 'stop-customer-note';
           custLine.textContent = '💬 For customer: ' + stop.customerNote;
@@ -3887,69 +3865,74 @@
         return 'tier-other';
       }
 
+      var MARKER_COLORS = { 'tier-19': '#ff5a5a', 'tier-48': '#34d67e', 'tier-49': '#22d3ee', 'tier-other': '#b07dff' };
+
+      // Google Maps (OpenStreetMap's free tile servers block business use).
       function renderMap(mapEl) {
-        if (typeof L === 'undefined') return; // Leaflet not loaded
-        if (mapInstance) { mapInstance.remove(); mapInstance = null; }
         mapMarkers = [];
         mapPolyline = null;
+        mapInstance = null;
 
         var geocoded = workingStops.filter(function(s) { return s.lat && s.lng; });
         if (geocoded.length === 0) {
           mapEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.82rem;">No geocoded stops yet. Tap "📍 Load map coordinates" below.</div>';
           return;
         }
+        if (typeof window.cwLoadGoogleMaps !== 'function') return;
+        mapEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.82rem;">Loading map…</div>';
 
-        mapInstance = L.map(mapEl, { zoomControl: true });
-        mapInstance.attributionControl.setPrefix(false);
+        window.cwLoadGoogleMaps().then(function(gm) {
+          if (!mapEl.isConnected) return;
+          mapEl.innerHTML = '';
+          var map = new gm.Map(mapEl, { mapTypeControl: false, streetViewControl: false, fullscreenControl: false, clickableIcons: false, gestureHandling: 'greedy' });
+          mapInstance = map;
+          var info = new gm.InfoWindow();
+          var bounds = new gm.LatLngBounds();
+          var path = [];
 
-        // OpenStreetMap tiles (CARTO's free basemaps now require an API key
-        // and only serve a watermark). OSM's tile policy requires the credit.
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '© OpenStreetMap contributors'
-        }).addTo(mapInstance);
-
-        var latlngs = [];
-
-        workingStops.forEach(function(stop, i) {
-          if (!stop.lat || !stop.lng) return;
-          var classes = ['scan-marker', tierClassForMarker(stop.tier)];
-          if (stop.priority) classes.push('is-priority');
-          if (stop.outlier) classes.push('is-outlier');
-
-          var icon = L.divIcon({
-            html: '<div class="' + classes.join(' ') + '">' + (i + 1) + '</div>',
-            className: '',
-            iconSize: [28, 28],
-            iconAnchor: [14, 14],
-            popupAnchor: [0, -14]
+          workingStops.forEach(function(stop, i) {
+            if (!stop.lat || !stop.lng) return;
+            var pos = { lat: Number(stop.lat), lng: Number(stop.lng) };
+            var marker = new gm.Marker({
+              map: map,
+              position: pos,
+              label: { text: String(i + 1), color: '#ffffff', fontSize: '12px', fontWeight: '700' },
+              icon: {
+                path: gm.SymbolPath.CIRCLE,
+                scale: 13,
+                fillColor: MARKER_COLORS[tierClassForMarker(stop.tier)] || MARKER_COLORS['tier-other'],
+                fillOpacity: 1,
+                strokeColor: stop.outlier ? '#ff8c3a' : (stop.priority ? '#fbbf24' : '#ffffff'),
+                strokeWeight: (stop.outlier || stop.priority) ? 3 : 2
+              }
+            });
+            var popupHtml = '<div class="map-popup"><strong>' + (i + 1) + '. ' + escapeHtml(stop.address) + '</strong>';
+            if (stop.tier) popupHtml += '<br><span class="is-dim">' + escapeHtml(stop.tier) + '</span>';
+            if (stop.priority) popupHtml += '<br><span class="is-dim">⭐ Priority</span>';
+            if (stop.outlier) popupHtml += '<br><span class="is-dim">' + outlierBadgeInfo(stop.outlierReason).label + '</span>';
+            popupHtml += '<br><a href="https://www.google.com/maps/?q=' + encodeURIComponent(/barcelona/i.test(stop.address) ? stop.address : stop.address + ', Barcelona') + '" target="_blank" rel="noopener">📍 Open in Google Maps</a></div>';
+            marker.addListener('click', function() { info.setContent(popupHtml); info.open({ map: map, anchor: marker }); });
+            mapMarkers.push(marker);
+            bounds.extend(pos);
+            path.push(pos);
           });
 
-          var marker = L.marker([stop.lat, stop.lng], { icon: icon }).addTo(mapInstance);
-          var popupHtml = '<strong>' + (i + 1) + '. ' + escapeHtml(stop.address) + '</strong>';
-          if (stop.tier) popupHtml += '<br><span style="color:var(--text-dim);font-size:0.75rem;">' + escapeHtml(stop.tier) + '</span>';
-          if (stop.priority) popupHtml += '<br><span style="color:var(--yellow);font-size:0.75rem;">⭐ Priority</span>';
-          if (stop.outlier) popupHtml += '<br><span style="color:var(--orange);font-size:0.75rem;">' + outlierBadgeInfo(stop.outlierReason).label + '</span>';
-          popupHtml += '<br><a href="https://www.google.com/maps/?q=' + encodeURIComponent(/barcelona/i.test(stop.address) ? stop.address : stop.address + ', Barcelona') + '" target="_blank" rel="noopener">📍 Open in Google Maps</a>';
-          marker.bindPopup(popupHtml);
-          mapMarkers.push(marker);
-          latlngs.push([stop.lat, stop.lng]);
+          if (path.length > 1) {
+            mapPolyline = new gm.Polyline({
+              map: map,
+              path: path,
+              strokeOpacity: 0,
+              icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.9, strokeColor: '#6d28d9', strokeWeight: 3, scale: 3 }, offset: '0', repeat: '12px' }]
+            });
+            map.fitBounds(bounds, 25);
+            gm.event.addListenerOnce(map, 'idle', function() { if (map.getZoom() > 15) map.setZoom(15); });
+          } else {
+            map.setCenter(path[0]);
+            map.setZoom(15);
+          }
+        }).catch(function(err) {
+          mapEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.82rem;">Map unavailable: ' + escapeHtml((err && err.message) || String(err)) + '</div>';
         });
-
-        if (latlngs.length > 1) {
-          mapPolyline = L.polyline(latlngs, {
-            color: '#6d28d9',
-            weight: 3,
-            opacity: 0.9,
-            dashArray: '6,4'
-          }).addTo(mapInstance);
-        }
-
-        // Fit bounds
-        if (latlngs.length > 0) {
-          var bounds = L.latLngBounds(latlngs);
-          mapInstance.fitBounds(bounds, { padding: [25, 25], maxZoom: 15 });
-        }
       }
 
       // Post-geocode outlier detection — two layers:

@@ -9,11 +9,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CARGOWORKS - Dispatcher Workspace</title>
   <link rel="stylesheet" href="../css/effects/layout.css"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-  <!-- defer: route maps are only drawn when an order's 🗺 Map is opened -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+  <!-- Google Maps loads on demand (gmaps-loader.js) the first time a map or
+       "Get system pricing" needs it. -->
   <style>
     :root {
       --dispatch-ink: #182335;
@@ -499,9 +496,13 @@
     .stops-map { height: 230px; border-radius: 10px; border: 1px solid var(--dispatch-border); background: #eef1f5; overflow: hidden; }
     .stops-map-summary { font-size: 0.72rem; color: var(--dispatch-muted); }
     .stops-map-summary .is-warn { color: #a5560f; }
-    .stop-pin { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--dispatch-ink); color: #fff; font: 700 11px/1 sans-serif; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); }
-    .stop-pin--pickup { background: var(--dispatch-accent); }
-    .stop-pin--done { background: var(--dispatch-ok); }
+    .price-detail { display: grid; grid-template-columns: 1fr auto; gap: 0.1rem 0.8rem; margin-top: 0.3rem; font-size: 0.74rem; color: var(--dispatch-ink); }
+    .price-detail .is-sub { color: var(--dispatch-muted); padding-left: 0.6rem; }
+    .price-detail .is-sum { font-weight: 700; border-top: 1px solid var(--dispatch-border); padding-top: 0.15rem; }
+    .price-detail .is-note { grid-column: 1 / -1; color: var(--dispatch-muted); }
+    .price-detail .is-warn { grid-column: 1 / -1; color: #a5560f; }
+    .price-subtotal { margin-top: 0.25rem; font-size: 0.74rem; color: var(--dispatch-muted); }
+    #editStopsList input.has-exact-location { box-shadow: inset 3px 0 0 var(--dispatch-ok); }
     /* ── Inline label actions ────────────────────────────────────────── */
     .field-label-row {
       display: flex;
@@ -524,33 +525,8 @@
     }
     .maps-route-link:hover { text-decoration: underline; }
 
-    /* ── Address suggestion pill ─────────────────────────────────────── */
-    .address-suggestion {
-      display: none;
-      font-size: 0.71rem;
-      color: var(--dispatch-muted);
-      background: rgba(240,123,57,0.07);
-      border: 1px solid rgba(240,123,57,0.28);
-      border-radius: 6px;
-      padding: 0.22rem 0.42rem;
-      margin-top: 0.15rem;
-      line-height: 1.5;
-    }
-    .address-suggestion.is-visible { display: flex; align-items: baseline; gap: 0.3rem; flex-wrap: wrap; }
-    .address-suggestion-text { flex: 1; min-width: 0; word-break: break-word; }
-    .address-suggestion-use {
-      flex-shrink: 0;
-      background: var(--dispatch-accent);
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      padding: 0.1rem 0.4rem;
-      font-size: 0.68rem;
-      font-weight: 700;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .address-suggestion-use:hover { opacity: 0.88; }
+    /* Google's address suggestion dropdown sits above the inline editor */
+    .pac-container { z-index: 2000; }
 
     @media (max-width: 980px) {
       .span-1, .span-8, .span-6, .span-5, .span-4, .span-3, .span-2 { grid-column: span 12; }
@@ -590,6 +566,7 @@
         margin: 0 -0.75rem; z-index: 2;
       }
     }
+    .price-vat-split { margin-top:0.25rem; font-size:0.74rem; color:var(--dispatch-muted); }
     .stop-internal-note { display:block; width:100%; box-sizing:border-box; margin-top:0.3rem; font-size:0.78rem; background:#fbf8ef; border:1px dashed #d9cfae; }
   </style>
 </head>
@@ -866,7 +843,13 @@
         <section class="dispatcher-section span-6" id="secCargo">
           <h3>Cargo / Load</h3>
           <div class="dispatcher-field"><label for="editCargoType">Cargo type</label><input id="editCargoType" type="text" /></div>
-          <div class="dispatcher-field"><label for="editLoadType">Load type</label><input id="editLoadType" type="text" /></div>
+          <div class="dispatcher-field"><label for="editLoadType">Load type (pricing)</label>
+            <select id="editLoadType">
+              <option value="small">Shoebox size — up to 10 kg (−15%)</option>
+              <option value="regular" selected>Euronorm box — 30×40×60 cm, up to 30 kg</option>
+              <option value="large">Heavy/Big — up to 80 kg (+20%)</option>
+            </select>
+          </div>
           <div class="dispatcher-field"><label for="editVehicleType">Vehicle type</label><input id="editVehicleType" type="text" /></div>
           <div class="dispatcher-field"><label for="editPackageCount">Packages</label><input id="editPackageCount" type="number" min="0" step="1" /></div>
           <div class="dispatcher-field"><label for="editWeightKg">Weight kg</label><input id="editWeightKg" type="number" min="0" step="0.1" /></div>
@@ -885,12 +868,13 @@
             </div>
             <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
               <button type="button" id="editGetSystemPricing" class="btn btn--ghost" style="font-size:0.7rem;padding:0.18rem 0.42rem;">⚙ Get system pricing</button>
+              <input id="editPromoCode" type="text" placeholder="Promo code" title="Promo code(s) to apply, like on the booking page — separate several with commas" style="width:7.5rem;font-size:0.72rem;padding:0.15rem 0.35rem;" />
               <label class="pricing-override-label">
                 <input type="checkbox" id="editPriceOverride" />
                 Manual override
               </label>
             </div>
-          <div id="systemPricingStatus" style="display:none;font-size:0.71rem;color:var(--dispatch-muted);line-height:1.4;padding:0.1rem 0 0.2rem;"></div>
+          <div id="systemPricingStatus" style="display:none;font-size:0.71rem;color:var(--dispatch-muted);line-height:1.4;padding:0.1rem 0 0.2rem;white-space:pre-line;"></div>
           <div id="editPriceBreakdownFields">
             <div class="dispatcher-field"><label for="editPriceBase">Base (zone)</label><input id="editPriceBase" type="number" step="0.01" /></div>
             <div class="dispatcher-field"><label for="editPriceDistance">Distance</label><input id="editPriceDistance" type="number" step="0.01" /></div>
@@ -898,6 +882,7 @@
             <div class="dispatcher-field"><label for="editPriceSurcharge">Surcharge (cargo / time)</label><input id="editPriceSurcharge" type="number" step="0.01" /></div>
             <div class="dispatcher-field"><label for="editPriceDiscount">Discount</label><input id="editPriceDiscount" type="number" step="0.01" /></div>
             <div class="dispatcher-field"><label for="editPriceAdjustment">VAT / Adjustment</label><input id="editPriceAdjustment" type="number" step="0.01" /></div>
+            <div id="editPriceSubtotal" class="price-subtotal"></div>
           </div>
           <div id="editElapsedFields" style="display:none;">
             <div class="dispatcher-field"><label for="editHourlyRate">Hourly rate (EUR/h)</label><input id="editHourlyRate" type="number" step="0.5" min="0" /></div>
@@ -920,6 +905,7 @@
               <span>Final total (incl. VAT) <span id="editPriceManualHint" style="display:none; font-weight:400; color:var(--dispatch-accent); font-size:0.7rem;">✎ manual</span></span>
             </label>
             <input id="editPriceTotal" type="number" step="0.01" />
+            <div id="editPriceVatSplit" class="price-vat-split" style="display:none;"></div>
           </div>
         </section>
 
@@ -1027,6 +1013,8 @@
     </div>
   </div>
 
+  <script src="../js/js/gmaps-loader.js"></script>
+  <script src="../js/js/pricing-engine.js"></script>
   <script src="../js/js/dispatcher-admin.js"></script>
 </body>
 </html>

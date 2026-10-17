@@ -183,6 +183,8 @@ function applyPerStopPricing(quote){
   const rate = Math.max(0, safeNumber(quote.stopRate, 0));
   const total = Math.round(count * rate * 100) / 100;
   quote.billingMode = 'per_stop';
+  quote.priceOverride = false;
+  quote.pricingDetail = null;
   quote.stopCount = count;
   quote.stopRate = rate;
   quote.total = total;
@@ -2461,11 +2463,28 @@ function normalizeStopsForOrder(incomingStops, existingStops){
       recipientPhone: stopFieldOrPrior(stop, prior, 'recipientPhone'),
       recipientEmail: stopFieldOrPrior(stop, prior, 'recipientEmail'),
       addressDetails: stopFieldOrPrior(stop, prior, 'addressDetails'),
+      // Exact point (picked from address suggestions, the booking page or
+      // the rider's geocoding), so pricing and maps use the same spot. Kept
+      // while the address is unchanged; null clears it.
+      lat: stopCoordinate(stop, prior, address, 'lat'),
+      lng: stopCoordinate(stop, prior, address, 'lng'),
       trackingToken: (prior && prior.trackingToken) || generatePublicToken(16),
       completedAt: (prior && prior.completedAt) || '',
       failureReason: (prior && prior.failureReason) || ''
     };
   }).filter(Boolean);
+}
+
+function stopCoordinate(stop, prior, address, key){
+  function clean(v){
+    if (v === null || v === '' || v === undefined) return '';
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.round(n * 1e6) / 1e6 : '';
+  }
+  if (stop && Object.prototype.hasOwnProperty.call(stop, key)) return clean(stop[key]);
+  if (stop && stop.latLng && typeof stop.latLng === 'object') return clean(stop.latLng[key]);
+  if (prior && cleanOrderText(prior.address) === address) return clean(prior[key]);
+  return '';
 }
 
 function stopFieldOrPrior(stop, prior, field){
@@ -2509,8 +2528,11 @@ function getUnifiedStops(route, adminData){
   const statusIdx = ORDER_STATUS_VALUES.indexOf(ad.status || '');
   const pickedUpIdx = ORDER_STATUS_VALUES.indexOf('Picked up');
   const pastPickup = statusIdx >= 0 && pickedUpIdx >= 0 && statusIdx >= pickedUpIdx;
+  const pickupLatLng = (r.pickup && r.pickup.latLng) || null;
+  const dropoffLatLng = (r.dropoff && r.dropoff.latLng) || null;
   const pickupStop = {
     id: '', address: legacyPickupAddr, tier: '', priority: false, outlier: false,
+    latLng: pickupLatLng,
     status: pastPickup ? 'Delivered' : 'Pending',
     podUrl: ad.pickupPodUrl || '', podAt: ad.pickupPodAt || '', notes: '', customerNote: '',
     trackingToken: '',
@@ -2520,6 +2542,7 @@ function getUnifiedStops(route, adminData){
   const dropoffFailed = ad.status === 'Failed' || ad.status === 'Delivery rejected';
   const dropoffStop = {
     id: '', address: legacyDropoffAddr, tier: '', priority: false, outlier: false,
+    latLng: dropoffLatLng,
     status: ad.status === 'Delivered' ? 'Delivered' : (dropoffFailed ? 'Failed' : 'Pending'),
     podUrl: ad.podUrl || '', podAt: ad.podAt || '', notes: '', customerNote: '',
     trackingToken: '',
@@ -2596,11 +2619,21 @@ function mergeAdminOrderPayload(orderInput, existingPayload, existingAdminData){
     elapsedMinutes: safeNumber((incomingQuote.elapsedMinutes != null ? incomingQuote.elapsedMinutes : baseQuote.elapsedMinutes), 0),
     stopCount: Math.max(0, Math.round(safeNumber((incomingQuote.stopCount != null ? incomingQuote.stopCount : baseQuote.stopCount), 0))),
     stopRate: safeNumber((incomingQuote.stopRate != null ? incomingQuote.stopRate : baseQuote.stopRate), 0),
+    // Price typed in by hand in the dispatcher: the breakdown is just the
+    // subtotal (base) and VAT (adjustment) of the total.
+    priceOverride: !!(incomingQuote.priceOverride != null ? incomingQuote.priceOverride : baseQuote.priceOverride),
     etaMins: Math.max(15, safeNumber((incomingQuote.etaMins != null ? incomingQuote.etaMins : baseQuote.etaMins), DEFAULT_DURATION_MIN)),
     totalKm: safeNumber((incomingQuote.totalKm != null ? incomingQuote.totalKm : baseQuote.totalKm), 0),
     currency: cleanOrderText(incomingQuote.currency || baseQuote.currency || 'EUR'),
     cargoType: cleanOrderText(incomingQuote.cargoType || baseQuote.cargoType || ''),
+    // Load type as on the booking page: small | regular | large.
+    cargoKey: cleanOrderText(incomingQuote.cargoKey || baseQuote.cargoKey || ''),
     loadType: cleanOrderText(incomingQuote.loadType || baseQuote.loadType || ''),
+    discountCodes: cleanCodeList(Array.isArray(incomingQuote.discountCodes) ? incomingQuote.discountCodes : baseQuote.discountCodes),
+    // The complete system price breakdown (legs, fees, surcharges, subtotal,
+    // IVA) from the booking page or the dispatcher's "Get system pricing".
+    // null clears it (the price was changed by hand).
+    pricingDetail: cleanPricingDetail(Object.prototype.hasOwnProperty.call(incomingQuote, 'pricingDetail') ? incomingQuote.pricingDetail : baseQuote.pricingDetail),
     vehicleType: cleanOrderText(incomingQuote.vehicleType || baseQuote.vehicleType || ''),
     packageCount: safeNumber((incomingQuote.packageCount != null ? incomingQuote.packageCount : baseQuote.packageCount), 0),
     weightKg: safeNumber((incomingQuote.weightKg != null ? incomingQuote.weightKg : baseQuote.weightKg), 0),
@@ -2626,6 +2659,20 @@ function mergeAdminOrderPayload(orderInput, existingPayload, existingAdminData){
     attName: cleanOrderText((incoming.attName != null ? incoming.attName : base.attName) || ''),
     attContact: cleanOrderText((incoming.attContact != null ? incoming.attContact : base.attContact) || '')
   };
+}
+
+function cleanCodeList(list){
+  return (Array.isArray(list) ? list : []).map(function(c){ return cleanOrderText(c).toUpperCase(); }).filter(Boolean).slice(0, 10);
+}
+
+function cleanPricingDetail(detail){
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return null;
+  try {
+    const text = JSON.stringify(detail);
+    return text.length > 8000 ? null : JSON.parse(text);
+  } catch (_) {
+    return null;
+  }
 }
 
 function validateAdminOrderPayload(payloadData){
