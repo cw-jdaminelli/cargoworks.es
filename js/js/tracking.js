@@ -133,11 +133,60 @@
   // entries too, but they say nothing about where the delivery is.
   const NOT_DELIVERY_UPDATE = /^(Payment status changed|Marked as invoiced|Invoiced mark removed|Confirmation email|Update sent via|Update email could not|WhatsApp update|Order edited by)/i;
 
+  // The timeline is the team's English log ("Ana marked stop 2/3 (…) as
+  // Delivered"). Customers get a short line in their language instead; team
+  // bookkeeping (unassigned, auto-advance, imports) is left out (null). Notes
+  // typed by the rider or dispatcher for the customer are shown as written.
+  function customerTimelineText(item){
+    const msg = String(item && item.message || '').trim();
+    if (!msg || NOT_DELIVERY_UPDATE.test(msg)) return null;
+    let m;
+    if (/^Booking created\b/i.test(msg)) return i18n('trackingEvtCreated') || 'Order received';
+    if ((m = /^Status changed from .* to (.+)$/i.exec(msg)) || (m = / updated status to (.+)$/i.exec(msg))) {
+      return (i18n('trackingEvtStatus', { status: localizeOrderStatus(m[1]) }) || ('Status: ' + localizeOrderStatus(m[1])));
+    }
+    if (/^Rider assignment updated$|self-assigned this order$/i.test(msg)) return i18n('trackingEvtRiderAssigned') || 'Rider assigned';
+    if (/^Rider unassigned$|unassigned this order$/i.test(msg)) return null;
+    if (/^Schedule updated\b/i.test(msg)) return i18n('trackingEvtScheduleUpdated') || 'Pickup time updated';
+    if ((m = / is on the way\b(?:.*?ETA: ~?(\d+))?/i.exec(msg))) {
+      return m[1]
+        ? (i18n('trackingEvtOnTheWay', { mins: m[1] }) || ('Rider on the way (about ' + m[1] + ' min)'))
+        : (i18n('trackingEvtOnTheWayNoEta') || 'Rider on the way');
+    }
+    if ((m = / marked stop (\d+)\/(\d+) \((.*)\) as (Delivered|Failed)\b/i.exec(msg))) {
+      const params = { address: m[3] };
+      const pickup = m[1] === '1';
+      if (/^delivered$/i.test(m[4])) {
+        return pickup ? (i18n('trackingEvtPickedUpAt', params) || ('Picked up at ' + m[3]))
+          : (i18n('trackingEvtDeliveredAt', params) || ('Delivered at ' + m[3]));
+      }
+      return pickup ? (i18n('trackingEvtPickupFailedAt', params) || ('Pickup attempt failed at ' + m[3]))
+        : (i18n('trackingEvtDeliveryFailedAt', params) || ('Delivery attempt failed at ' + m[3]));
+    }
+    if (/^Pickup stop completed\b|^Backfill import$/i.test(msg)) return null;
+    if (/^Route auto-completed\b/i.test(msg)) return i18n('trackingEvtRouteDone') || 'All stops completed';
+    if (/^POD uploaded\b/i.test(msg)) return i18n('trackingEvtPodAdded') || 'Proof of delivery added';
+    if (/^Order canceled\b/i.test(msg)) return i18n('trackingEvtCanceled') || 'Order cancelled';
+    // A note written for the customer: keep it, with the status it was sent at.
+    const status = item && item.status ? localizeOrderStatus(String(item.status)) : '';
+    return (status ? (status + ': ') : '') + msg;
+  }
+
+  // Newest first, translated, without team-only lines or back-to-back repeats.
+  function customerTimeline(items){
+    const out = [];
+    sortByTimestamp(items).forEach(function(item){
+      const text = customerTimelineText(item);
+      if (!text) return;
+      const prev = out[out.length - 1];
+      if (prev && prev.text === text) return;
+      out.push({ ts: item && item.ts ? String(item.ts) : '', text: text });
+    });
+    return out;
+  }
+
   function latestDeliveryUpdate(timeline){
-    return sortByTimestamp(timeline).find(function(item){
-      const msg = String(item && item.message || '').trim();
-      return msg && !NOT_DELIVERY_UPDATE.test(msg);
-    }) || null;
+    return customerTimeline(timeline)[0] || null;
   }
 
   // Route stops only have Pending/Delivered/Failed; on the pickup leg
@@ -295,14 +344,17 @@
       div.textContent = i18n('trackingNoUpdates') || 'No updates yet.';
       return div;
     }
+    const entries = customerTimeline(items);
+    if (!entries.length) {
+      const div = document.createElement('div');
+      div.textContent = i18n('trackingNoUpdates') || 'No updates yet.';
+      return div;
+    }
     const ul = document.createElement('ul');
     ul.className = 'tracking-timeline';
-    sortByTimestamp(items).forEach(function(item){
+    entries.forEach(function(entry){
       const li = document.createElement('li');
-      const ts = item && item.ts ? formatTs(item.ts) : '';
-      const status = localizeOrderStatus(item && item.status ? String(item.status) : '');
-      const msg = item && item.message ? String(item.message) : '';
-      li.textContent = (ts ? (ts + ' - ') : '') + (status ? (status + ': ') : '') + msg;
+      li.textContent = (entry.ts ? (formatTs(entry.ts) + ' — ') : '') + entry.text;
       ul.appendChild(li);
     });
     return ul;
@@ -329,9 +381,9 @@
   }
 
   function renderDeliveryNote(entry){
-    const message = String(entry && entry.message || '').trim();
+    const message = String(entry && entry.text || '').trim();
     if (!message) return null;
-    const note = (entry.ts ? (formatTs(entry.ts) + ' - ') : '') + message;
+    const note = (entry.ts ? (formatTs(entry.ts) + ' — ') : '') + message;
     const wrap = document.createElement('div');
     wrap.className = 'tracking-delivery-note';
     const title = document.createElement('h3');

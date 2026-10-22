@@ -472,7 +472,8 @@
     #secRoute { grid-column: span 12; order: 1; }
     #secCargo, #secPricing, #secDelivery, #secAdmin { order: 2; }
     .dispatcher-card.is-editing { padding: 0; border: none; box-shadow: none; background: transparent; }
-    .dispatcher-card.is-editing > :not(.dispatcher-modal-card) { display: none; }
+    /* !important: the stops section is shown/hidden with an inline display */
+    .dispatcher-card.is-editing > :not(.dispatcher-modal-card) { display: none !important; }
 
     /* Fields changed since the editor opened — check before saving */
     .dispatcher-modal-card .is-changed { background: #fff4cc !important; border-color: #e0a800 !important; box-shadow: 0 0 0 2px rgba(224, 168, 0, 0.22); }

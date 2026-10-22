@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
   <!-- Google Maps loads on demand (gmaps-loader.js) when a scanned route's map is drawn. -->
   <script src="../js/js/gmaps-loader.js" defer></script>
+  <script src="../js/js/route-optimizer.js" defer></script>
   <script>
     // Set API base — same pattern as other pages
     window.CARGOWORKS_BOOKING_API = 'https://script.google.com/macros/s/AKfycbzDbKDqGvKsbdc4JhG03jSecjJOZbc7ASpyF8ua9yXF5ZRXdaNI3SddxnMECoPcMapA/exec';
@@ -1406,8 +1407,55 @@
       const route = order.route || {};
       const stops = Array.isArray(route.stops) ? route.stops : [];
       const parts = stops.map(function(s) { return s && s.address || ''; }).filter(Boolean);
+      if (parts.length && parts.length <= 9) return bikeDirectionsUrl(parts);
       const base = 'https://maps.google.com/maps/dir/';
       return base + parts.map(encodeURIComponent).join('/');
+    }
+
+    // Google Maps directions in bike mode (bike-legal street directions) from
+    // where the rider is now, through up to 9 stops — Maps links take 8
+    // waypoints plus the destination.
+    function bikeDirectionsUrl(addresses) {
+      const list = addresses.filter(Boolean);
+      if (!list.length) return '';
+      const wps = list.slice(0, -1);
+      return 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(list[list.length - 1]) +
+        (wps.length ? '&waypoints=' + wps.map(encodeURIComponent).join('%7C') : '') + '&travelmode=bicycling';
+    }
+
+    // A pickup/dropoff point for route planning: the stop's saved exact point,
+    // or a Barcelona-limited lookup of its address (precise matches only).
+    const _stopPointCache = {};
+    async function orderStopPoint(stop) {
+      if (!stop) return null;
+      const ll = stop.latLng && typeof stop.latLng === 'object' ? stop.latLng : stop;
+      const lat = ll.lat === '' || ll.lat == null ? NaN : Number(ll.lat);
+      const lng = ll.lng === '' || ll.lng == null ? NaN : Number(ll.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && (lat || lng)) return { lat: lat, lng: lng };
+      const address = String(stop.address || '').trim();
+      if (!address) return null;
+      if (Object.prototype.hasOwnProperty.call(_stopPointCache, address)) return _stopPointCache[address];
+      let point = null;
+      try {
+        const q = /barcelona/i.test(address) ? address : address + ', Barcelona';
+        const r = await fetch('https://maps.googleapis.com/maps/api/geocode/json?address=' + encodeURIComponent(q) +
+          '&region=ES&bounds=41.317,2.052|41.468,2.239&key=' + encodeURIComponent(window.CARGOWORKS_MAPS_KEY || ''));
+        const data = await r.json();
+        const res0 = data.results && data.results[0];
+        const lt = res0 && res0.geometry && res0.geometry.location_type;
+        const isPlace = res0 && (res0.types || []).indexOf('establishment') >= 0;
+        if (res0 && (lt === 'ROOFTOP' || lt === 'RANGE_INTERPOLATED' || isPlace)) {
+          point = { lat: res0.geometry.location.lat, lng: res0.geometry.location.lng };
+        }
+      } catch (_) {}
+      _stopPointCache[address] = point;
+      return point;
+    }
+
+    function formatRideTime(sec) {
+      const mins = Math.max(1, Math.round(sec / 60));
+      if (mins < 60) return mins + ' min';
+      return Math.floor(mins / 60) + ' h ' + String(mins % 60).padStart(2, '0') + ' min';
     }
 
     function formatIso(iso) {
@@ -2557,11 +2605,44 @@
       dispatchTextarea.lang = 'en';
       dispatchTextarea.placeholder = 'Internal note for dispatch only…';
 
+      // Sends whatever is in the two boxes now, without a status change (a
+      // status tap still takes along anything left in them).
+      const sendRow = document.createElement('div');
+      sendRow.style.cssText = 'display:flex;justify-content:flex-end;margin-top:4px;';
+      const sendBtn = document.createElement('button');
+      sendBtn.type = 'button';
+      sendBtn.className = 'btn btn-ghost';
+      sendBtn.id = 'sendNotesBtn';
+      sendBtn.style.cssText = 'padding:8px 14px;font-size:0.85rem;';
+      sendBtn.textContent = '📣 Send note';
+      sendBtn.addEventListener('click', function() {
+        doSendNotes(order, textarea.value.trim(), dispatchTextarea.value.trim(), sendBtn);
+      });
+      sendRow.appendChild(sendBtn);
+
       nw.appendChild(clientLabel);
       nw.appendChild(textarea);
       nw.appendChild(dispatchLabel);
       nw.appendChild(dispatchTextarea);
+      nw.appendChild(sendRow);
       body.appendChild(buildCollapsibleSection('Notes', nw, false));
+    }
+
+    async function doSendNotes(order, note, dispatchNote, btn) {
+      if (!note && !dispatchNote) { toast('Write a note first', 'error'); return; }
+      btn.disabled = true;
+      const res = await api('POST', {
+        action: 'riderAddNote', id: RIDER_ID, eventId: order.eventId,
+        note: note, dispatchNote: dispatchNote
+      });
+      if (res.error) {
+        // An older backend doesn't know this action and answers as the admin API.
+        toast(/unauthori[sz]ed|unknown action/i.test(String(res.error)) ? 'Could not send — the backend needs the latest deployment' : res.error, 'error');
+        btn.disabled = false;
+        return;
+      }
+      toast(note && dispatchNote ? 'Notes sent ✓ (customer + dispatch)' : (note ? 'Note sent ✓ (shown on tracking)' : 'Note sent to dispatch ✓'), 'success');
+      updateAndRerender(res.order);
     }
 
     // ── Scan Label ────────────────────────────────────────────────────────────
@@ -2936,7 +3017,7 @@
         };
       });
       var dirty = true; // becomes false after a successful commit, true again on edit
-      var routeStartOverride = null; // {lat,lng} from the rider's GPS, used as doReoptimize's starting point instead of the fixed Eixample default
+      var routeStartOverride = null; // {lat,lng} from the rider's GPS, used as doReoptimize's starting point instead of the order's pickup
       var mapInstance = null;
       var mapMarkers = [];
       var mapPolyline = null;
@@ -2945,14 +3026,23 @@
       // Count header
       var countEl = document.createElement('div');
       countEl.className = 'scan-result-count';
-      countEl.textContent = workingStops.length + ' stops — optimized order';
+      function setCountLabel(optimized) {
+        countEl.textContent = workingStops.length + ' stops' + (optimized ? ' — optimized for bike' : '');
+      }
+      setCountLabel(false);
       resultEl.appendChild(countEl);
+
+      function scanOrder() {
+        return (allOrders || []).find(function(o) { return o.eventId === orderEventId; }) ||
+          (activeOrder && activeOrder.eventId === orderEventId ? activeOrder : null);
+      }
 
       var listWrap = document.createElement('div');
       resultEl.appendChild(listWrap);
 
       function markDirty() {
         dirty = true;
+        setCountLabel(false);
         saveScanState(orderEventId, workingStops);
         var commitBtn = resultEl.querySelector('.scan-commit-btn');
         if (commitBtn) {
@@ -3344,8 +3434,8 @@
           reoptBtn.addEventListener('click', function() { doReoptimize(reoptBtn); });
           actionsWrap.appendChild(reoptBtn);
 
-          // Route-start toggle — replaces the fixed Eixample-center default
-          // with the rider's live GPS position for the nearest-neighbor sort.
+          // Route-start toggle — starts the route from the rider's live GPS
+          // position instead of the order's pickup.
           // A toggle rather than a fake "stop" in the list: it's a routing
           // input, not a delivery, so it never needs its own row, edit,
           // removal, or commit-to-order handling.
@@ -3382,20 +3472,13 @@
           actionsWrap.appendChild(startBtn);
         }
 
-        // Build chunk URLs
+        // Build chunk URLs — bike mode, each part from where the rider is
+        // then (Maps links take up to 9 stops).
         var maxPerChunk = 9;
         var chunkUrls = [];
-        var cs = 0;
-        while (cs < addresses.length) {
+        for (var cs = 0; cs < addresses.length; cs += maxPerChunk) {
           var ce = Math.min(cs + maxPerChunk, addresses.length);
-          var cp = addresses.slice(cs, ce).map(function(a) { return encodeURIComponent(a); });
-          chunkUrls.push({
-            url: 'https://www.google.com/maps/dir/' + cp.join('/'),
-            from: cs + 1,
-            to: ce
-          });
-          if (ce >= addresses.length) break;
-          cs = ce - 1;
+          chunkUrls.push({ url: bikeDirectionsUrl(addresses.slice(cs, ce)), from: cs + 1, to: ce });
         }
 
         if (chunkUrls.length === 1 && addresses.length > 0) {
@@ -3585,53 +3668,50 @@
         await geocodeAllStops();
         flagOutliers();
 
-        // Nearest-neighbor sort on geocoded stops.
-        // Priority stops jump to the front first.
-        // Non-geocoded stops get appended at the end in original order.
         var geocoded = workingStops.filter(function(s) { return s.lat && s.lng; });
         var notGeocoded = workingStops.filter(function(s) { return !s.lat || !s.lng; });
-
-        function haversine(a, b) {
-          var R = 6371;
-          var dLat = (b.lat - a.lat) * Math.PI / 180;
-          var dLng = (b.lng - a.lng) * Math.PI / 180;
-          var aa = Math.sin(dLat/2)*Math.sin(dLat/2) +
-            Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*
-            Math.sin(dLng/2)*Math.sin(dLng/2);
-          return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
+        var optimizer = window.CargoworksRouteOptimizer;
+        if (!geocoded.length || !optimizer) {
+          showScanStatus(statusEl, !optimizer ? 'Route optimizer did not load — reload the page.' : 'No stops could be located on the map.', 'error');
+          if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
+          return;
         }
 
-        // Pull priority stops out first (preserve their relative order)
-        var priority = geocoded.filter(function(s) { return s.priority; });
-        var normal = geocoded.filter(function(s) { return !s.priority; });
+        // Start: the rider's location (if switched on), else the order's
+        // pickup. End: the order's dropoff — saving keeps it last, so the
+        // route is planned to finish there.
+        var order = scanOrder();
+        var orderStops = order && order.route && Array.isArray(order.route.stops) ? order.route.stops : [];
+        var start = routeStartOverride, startLabel = 'your location';
+        if (!start && orderStops.length) { start = await orderStopPoint(orderStops[0]); startLabel = 'the pickup'; }
+        if (!start) { start = { lat: 41.3902, lng: 2.1542 }; startLabel = 'the Eixample (pickup not found)'; }
+        var end = orderStops.length >= 2 ? await orderStopPoint(orderStops[orderStops.length - 1]) : null;
 
-        // Nearest-neighbor on normal stops. Starts from the rider's live GPS
-        // position if they've toggled "Start from my location", otherwise
-        // falls back to Eixample center (Barcelona's geographic delivery hub).
-        var start = routeStartOverride || { lat: 41.3902, lng: 2.1542 };
-        var current = start;
-        var remaining = normal.slice();
-        var sorted = [];
-
-        while (remaining.length > 0) {
-          var bestIdx = 0;
-          var bestDist = Infinity;
-          for (var ri = 0; ri < remaining.length; ri++) {
-            var d = haversine(current, remaining[ri]);
-            if (d < bestDist) { bestDist = d; bestIdx = ri; }
-          }
-          var next = remaining.splice(bestIdx, 1)[0];
-          sorted.push(next);
-          current = next;
+        // Bike riding times from Google, which differ by direction where
+        // streets are one-way; priority stops stay first.
+        showScanStatus(statusEl, 'Checking bike routes between ' + geocoded.length + ' stops…', 'info');
+        var plan;
+        try {
+          plan = await optimizer.planRoute({ start: start, end: end, stops: geocoded });
+        } catch (err) {
+          showScanStatus(statusEl, 'Could not optimize: ' + (err && err.message ? err.message : String(err)), 'error');
+          if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
+          return;
         }
 
-        workingStops = priority.concat(sorted).concat(notGeocoded);
+        workingStops = plan.order.map(function(i) { return geocoded[i]; }).concat(notGeocoded);
         markDirty();
         rebuildList();
+        setCountLabel(true);
 
-        var msg = '✓ Route optimized — ' + workingStops.length + ' stops';
+        var msg = '✓ Route optimized — ' + workingStops.length + ' stops · ~' + formatRideTime(plan.afterSec) + ' riding';
+        if (plan.beforeSec > plan.afterSec + 60) msg += ' (was ~' + formatRideTime(plan.beforeSec) + ')';
+        if (plan.source === 'google') msg += ' · bike routes, one-way streets accounted for';
+        else if (plan.source === 'mixed') msg += ' · some times estimated (Google lookups failed)';
+        else msg += ' · straight-line estimate — Google bike routes unavailable' + (plan.error ? ' (' + plan.error + ')' : '');
+        msg += ' · from ' + startLabel + (end ? ' to the dropoff' : '');
         if (notGeocoded.length > 0) msg += ' (' + notGeocoded.length + ' not geocoded, moved to end)';
-        showScanStatus(statusEl, msg, 'success');
+        showScanStatus(statusEl, msg, plan.source === 'straight' ? 'info' : 'success');
 
         if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = originalLabel; }
       }

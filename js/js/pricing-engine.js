@@ -290,7 +290,7 @@
           var lt = r0.geometry && r0.geometry.location_type;
           var types = Array.isArray(r0.types) ? r0.types : [];
           var precise = lt === 'ROOFTOP' || lt === 'RANGE_INTERPOLATED' || types.some(function(t){ return EXACT_TYPES.indexOf(t) >= 0; });
-          return { location: r0.geometry.location, label: r0.formatted_address || q, precise: precise };
+          return { location: r0.geometry.location, label: r0.formatted_address || q, precise: precise, types: types };
         }
       } catch(_) {}
     }

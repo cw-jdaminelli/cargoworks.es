@@ -378,6 +378,7 @@ function doPost(e){
       if (action === 'riderUnassign') return handleRiderUnassign(payload);
       if (action === 'riderUpdateStatus') return handleRiderUpdateStatus(payload);
       if (action === 'riderSetEta') return handleRiderSetEta(payload);
+      if (action === 'riderAddNote') return handleRiderAddNote(payload);
       if (action === 'riderCompleteStop') return handleRiderCompleteStop(payload);
       if (action === 'riderSetRouteStart') return handleRiderSetRouteStart(payload);
       if (action === 'adminManageRiders') return handleAdminManageRiders(payload);
@@ -4946,6 +4947,61 @@ function handleRiderUpdateStatus(payload){
     action: 'rider_status_update', eventId: eventId, payload: payloadData,
     adminData: adminData, status: adminData.status,
     paymentStatus: adminData.paymentStatus, message: message, build: BUILD_ID
+  });
+
+  return jsonResponse({ ok: true, order: buildOrderSummary(event) }, 200);
+}
+
+// The rider's "Send note" button: the customer note goes on the tracking page
+// (timeline + notes) and the internal one into the order's internal notes,
+// without touching the status — same storage as notes sent with a status tap.
+function handleRiderAddNote(payload){
+  const riderId = String(payload.id || '').trim();
+  const rider = getRiderById(riderId);
+  if (!rider) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+  const eventId = cleanOrderText(payload.eventId);
+  const note = cleanOrderText(payload.note || '');
+  const dispatchNote = cleanOrderText(payload.dispatchNote || '');
+  if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
+  if (!note && !dispatchNote) return jsonResponse({ error: 'Write a note first' }, 400);
+
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+  const event = cal.getEventById(eventId);
+  if (!event) return jsonResponse({ error: 'Event not found' }, 404);
+
+  const desc = String(event.getDescription() || '');
+  const payloadData = extractPayloadFromDescription(desc) || {};
+  const adminData = ensureAdminData(desc, payloadData);
+
+  const assignedRiderId = adminData.rider && adminData.rider.riderId;
+  const assignedName = adminData.rider && adminData.rider.name;
+  if (assignedRiderId && assignedRiderId !== riderId && assignedName !== rider.name){
+    return jsonResponse({ error: 'Not your order' }, 403);
+  }
+
+  applyOperatorMetadata(adminData, rider.name);
+  const status = adminData.status || '';
+  if (note){
+    pushAdminTimeline(adminData, status, note, 'rider');
+    ensureDispatcherNotes(adminData).push({
+      ts: new Date().toISOString(), status: status, message: note, via: 'rider'
+    });
+  }
+  if (dispatchNote){
+    const existing = cleanOrderText(adminData.internalNotes || '');
+    const ts = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    adminData.internalNotes = (existing ? existing + '\n' : '') + '[' + ts + ' ' + rider.name + '] ' + dispatchNote;
+  }
+  event.setDescription(buildEventDescription(payloadData, adminData));
+
+  appendOrderLogEntry({
+    action: 'rider_note', eventId: eventId, payload: payloadData,
+    adminData: adminData, status: adminData.status,
+    paymentStatus: adminData.paymentStatus,
+    message: rider.name + ' sent a note' + (note ? (': ' + note) : '') + (dispatchNote ? (' [internal: ' + dispatchNote + ']') : ''),
+    build: BUILD_ID
   });
 
   return jsonResponse({ ok: true, order: buildOrderSummary(event) }, 200);

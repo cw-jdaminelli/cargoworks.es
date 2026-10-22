@@ -2106,14 +2106,23 @@
   }
 
   async function saveEditor(){
-    if (!editorState.open) return;
+    if (!editorState.open || editorState.saving) return;
+    editorState.saving = true;
+    try { await saveEditorNow(); } finally { editorState.saving = false; }
+  }
 
-    const orderData = collectEditorOrderData();
+  async function saveEditorNow(){
+    let orderData = collectEditorOrderData();
     const validation = validateEditorData(orderData);
     if (validation) {
       setEditorFeedback(validation, true);
       return;
     }
+    // Tidy typed addresses into Google's format before they reach the
+    // customer (tracking page, emails, account panel).
+    setEditorFeedback('Checking addresses…');
+    const tidy = await normalizeStopAddresses();
+    if (tidy.changed) orderData = collectEditorOrderData();
 
     const common = {
       operator: normalizeText(editOperator && editOperator.value) || currentOperator(),
@@ -2159,7 +2168,9 @@
       const savedMode = editorState.mode;
       if (order) upsertOrderInState(order, true);
       closeEditor(true, true);
-      const savedMsg = savedMode === 'create' ? 'Order created.' : (savedMode === 'duplicate' ? 'Order duplicated.' : 'Order saved.');
+      const savedMsg = (savedMode === 'create' ? 'Order created.' : (savedMode === 'duplicate' ? 'Order duplicated.' : 'Order saved.')) +
+        (tidy.vague.length ? (' Kept as typed (Google only matched the area): ' + tidy.vague.join(' · ') + '.') : '') +
+        (tidy.unchecked ? ' Addresses not checked with Google (Maps did not load) — saved as typed.' : '');
       // A split order: open the next route, pre-filled, to check and save.
       if (pendingRoutes.length) {
         const next = pendingRoutes.shift();
@@ -3785,6 +3796,86 @@
     updateEditorDirtyFromForm();
     updateMapsRouteLink();
     autoCalcStopsFee();
+  }
+
+  // Floor/door/access bits of a typed address that Google's formatted
+  // address leaves out ("3-4", "bajos, local 1", "2n 1a"), so they can move
+  // to the stop's access details instead of being lost.
+  const UNIT_HINT = /(\d+\s*[ºª°]|\d+\s*[-–\/]\s*\d+|\b(piso|planta|puerta|pta|porta|esc|escalera|escala|bajos?|baixos?|[aá]tico|àtic|atic|entresuelo|entresol|principal|local|apto|apartamento|dcha|izq|izqda|izquierda|dreta|esquerra)\b|\b\d+\s*[rntoa]\b)/i;
+  const PLACE_WORDS = /^(barcelona|bcn|spain|españa|espana|catalunya|cataluña|cataluna|españa\.?)$/i;
+  function foldText(t){ return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function leftoverUnit(typed, formatted){
+    const f = foldText(formatted);
+    const keep = [];
+    String(typed || '').split(',').map(function(p){ return p.trim(); }).filter(Boolean).forEach(function(part, i){
+      const fp = foldText(part);
+      if (!fp || f.indexOf(fp) >= 0 || PLACE_WORDS.test(fp) || /^\d{5}$/.test(fp)) return;
+      let cand = part;
+      if (i === 0) {
+        // "Còrsega 222 3-4": something after the street number
+        const m = /\d+[a-z]?\s+(.+)$/i.exec(part);
+        if (!m) return;
+        cand = m[1];
+      }
+      cand = cand.replace(/\b\d{5}\b/g, '').split(/\s+/).filter(function(w){ return !PLACE_WORDS.test(foldText(w)); }).join(' ').trim();
+      if (cand && (UNIT_HINT.test(cand) || UNIT_HINT.test(foldText(cand)))) keep.push(cand);
+    });
+    return keep.join(', ');
+  }
+
+  // Before saving: stops typed by hand (no exact point) are looked up with
+  // Google. An exact address or place replaces the text with Google's tidy
+  // version and keeps its point; floor/door bits Google drops move to the
+  // stop's access details. Area-only matches keep the typed text. Stops still
+  // to be done are covered, so saving an older order tidies it too; done stops
+  // keep the address they were completed at.
+  async function normalizeStopAddresses(){
+    const none = { changed: 0, vague: [], unchecked: false };
+    const model = editorState.stopsModel || [];
+    const todo = model.filter(function(s){
+      if (!normalizeText(s.address) || hasExactLocation(s)) return false;
+      return !s.status || s.status === 'Pending';
+    });
+    if (!todo.length) return none;
+    let gm = null;
+    try {
+      if (typeof window.cwLoadGoogleMaps !== 'function' || !window.CargoworksPricing) throw new Error('no maps');
+      gm = await window.cwLoadGoogleMaps();
+    } catch(_) { return Object.assign({}, none, { unchecked: true }); }
+    const geocoder = new gm.Geocoder();
+    // A few at a time — a long route sheet would otherwise hit Google's rate limit.
+    const found = new Array(todo.length).fill(null);
+    let next = 0;
+    await Promise.all([0, 1, 2, 3].map(async function(){
+      while (next < todo.length) {
+        const i = next++;
+        try { found[i] = await CargoworksPricing.geocodeBarcelona(geocoder, normalizeText(todo[i].address)); } catch(_) {}
+      }
+    }));
+    let changed = 0;
+    const vague = [];
+    todo.forEach(function(s, i){
+      const r = found[i];
+      if (!r) return;
+      const typed = normalizeText(s.address);
+      if (!r.precise) { vague.push(typed); return; }
+      let label = normalizeText(r.label);
+      // A business typed by name keeps its name in front of the address.
+      const isPlace = Array.isArray(r.types) && r.types.indexOf('establishment') >= 0;
+      if (isPlace && !/\d/.test(typed.split(',')[0]) && foldText(label).indexOf(foldText(typed.split(',')[0])) !== 0) {
+        label = typed.split(',')[0].trim() + ', ' + label;
+      }
+      const unit = leftoverUnit(typed, label);
+      if (unit) {
+        const details = normalizeText(s.addressDetails);
+        if (foldText(details).indexOf(foldText(unit)) < 0) s.addressDetails = details ? (unit + ' · ' + details) : unit;
+      }
+      s.address = label;
+      setStopLocation(s, null, { lat: r.location.lat(), lng: r.location.lng() });
+      changed++;
+    });
+    if (changed) renderStopsList();
+    return { changed: changed, vague: vague, unchecked: false };
   }
 
   // "+ Add stop": a new row at the END of the route, after the stop just
