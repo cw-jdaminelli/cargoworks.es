@@ -215,6 +215,9 @@ function handleAccountOrders(params) {
     const eventToken = String(payload.accountToken || '').trim().toUpperCase();
     if (eventToken !== normalizedToken) return;
     const adminData = extractAdminData(desc) || {};
+    // Canceled orders aren't the customer's to see or pay (e.g. a duplicate
+    // canceled by dispatch).
+    if (String(adminData.status || '').trim() === 'Canceled') return;
     const quote = payload.quote || {};
     const route = quote.route || {};
     const stopsArr = getUnifiedStops(route, adminData);
@@ -2716,8 +2719,39 @@ function pushAdminTimeline(adminData, status, message, via){
   adminData.lastUpdateAt = new Date().toISOString();
 }
 
-function handleAdminCreateOrder(payload){
+// The dispatcher sends one requestKey per new-order editor. A Save retried
+// after a failed reply (the order was made but the answer never arrived) gets
+// back the order already created instead of a second copy.
+const CREATE_REQUEST_KEY_TTL_SECONDS = 6 * 60 * 60;
+
+function findOrderByRequestKey(cal, requestKey){
+  if (!requestKey) return null;
   try {
+    const eventId = CacheService.getScriptCache().get('createOrder:' + requestKey);
+    return eventId ? cal.getEventById(eventId) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function rememberRequestKey(requestKey, eventId){
+  if (!requestKey || !eventId) return;
+  try { CacheService.getScriptCache().put('createOrder:' + requestKey, eventId, CREATE_REQUEST_KEY_TTL_SECONDS); } catch (_) {}
+}
+
+function handleAdminCreateOrder(payload){
+  const requestKey = cleanOrderText(payload.requestKey);
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  if (requestKey) {
+    try { locked = lock.tryLock(20000); } catch (_) { locked = false; }
+  }
+  try {
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+    const existing = findOrderByRequestKey(cal, requestKey);
+    if (existing) return jsonResponse({ ok: true, alreadyCreated: true, order: buildOrderSummary(existing) }, 200);
+
     const draft = mergeAdminOrderPayload(payload.order || {}, {});
     const validation = validateAdminOrderPayload(draft);
     if (validation) return jsonResponse({ error: validation }, 400);
@@ -2759,12 +2793,12 @@ function handleAdminCreateOrder(payload){
     pushAdminTimeline(adminData, status, 'Order created manually by ' + operator, 'dispatcher');
 
     const description = buildEventDescription(draft, adminData);
-    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-    if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
     const event = cal.createEvent(buildOrderTitle(status, draft.customer && draft.customer.name, shortRef), start, end, {
       description: description,
       location: getPickupAddress(quote)
     });
+    // Right away, so a failure further down still counts as created.
+    rememberRequestKey(requestKey, event.getId());
 
     appendOrderLogEntry({
       action: 'admin_create_order',
@@ -2781,6 +2815,8 @@ function handleAdminCreateOrder(payload){
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  } finally {
+    if (locked) lock.releaseLock();
   }
 }
 
@@ -2855,11 +2891,19 @@ function handleAdminEditOrder(payload){
 }
 
 function handleAdminDuplicateOrder(payload){
+  const requestKey = cleanOrderText(payload.requestKey);
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  if (requestKey) {
+    try { locked = lock.tryLock(20000); } catch (_) { locked = false; }
+  }
   try {
     const eventId = cleanOrderText(payload.eventId);
     if (!eventId) return jsonResponse({ error: 'Missing eventId' }, 400);
     const cal = CalendarApp.getCalendarById(CALENDAR_ID);
     if (!cal) return jsonResponse({ error: 'Calendar not found' }, 404);
+    const existing = findOrderByRequestKey(cal, requestKey);
+    if (existing) return jsonResponse({ ok: true, alreadyCreated: true, order: buildOrderSummary(existing) }, 200);
     const event = cal.getEventById(eventId);
     if (!event) return jsonResponse({ error: 'Event not found' }, 404);
 
@@ -2922,6 +2966,7 @@ function handleAdminDuplicateOrder(payload){
       description: buildEventDescription(draft, adminData),
       location: getPickupAddress(quote)
     });
+    rememberRequestKey(requestKey, duplicateEvent.getId());
 
     appendOrderLogEntry({
       action: 'admin_duplicate_order',
@@ -2938,6 +2983,8 @@ function handleAdminDuplicateOrder(payload){
   } catch (err) {
     const msg = (err && err.message) ? String(err.message) : String(err || 'Unknown error');
     return jsonResponse({ error: 'Server error', detail: msg }, 500);
+  } finally {
+    if (locked) lock.releaseLock();
   }
 }
 

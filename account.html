@@ -43,6 +43,7 @@
     .acct-badge--stops     { background: #f0edf8; color: #6c3fc5; font-size: 0.7rem; margin-left: 0.3rem; cursor: pointer; border: none; font-family: inherit; }
     .acct-paid { display: block; margin-top: 0.2rem; width: fit-content; padding: 0.05rem 0.4rem; border-radius: 5px; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; background: #d0f0d8; color: #1a5c2a; }
     .acct-paid--invoiced { background: #e8f0fd; color: #1a4fae; }
+    .acct-progress { display: block; margin-top: 0.2rem; font-size: 0.74rem; font-weight: 600; color: var(--acct-muted); white-space: nowrap; }
     .acct-stops-detail-row td { padding: 0.4rem 0.6rem 0.8rem; background: rgba(108, 63, 197, 0.03); }
     table.acct-stops-detail { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
     table.acct-stops-detail th { text-align: left; font-size: 0.68rem; text-transform: uppercase; color: var(--acct-muted); padding: 0.2rem 0.5rem; }
@@ -207,6 +208,19 @@
       return (o.stopCount || 0) > 1 || deliveryStops(o).length > 1;
     }
 
+    // Multistop orders show how many drops are done under the status, so the
+    // route can be followed from the row without opening the stops list.
+    // Per-stop orders (route sheets) have no stop list to count.
+    function progressHtml(o) {
+      if (o.stopCount) return '';
+      var stops = deliveryStops(o);
+      if (stops.length < 2) return '';
+      var delivered = stops.filter(function(s) { return s.status === 'Delivered'; }).length;
+      var failed = stops.filter(function(s) { return s.status === 'Failed'; }).length;
+      return '<span class="acct-progress">' + delivered + '/' + stops.length + ' delivered' +
+        (failed ? ' · ' + failed + ' failed' : '') + '</span>';
+    }
+
     function isPaid(o) {
       return String(o.paymentStatus || '').toLowerCase() === 'paid';
     }
@@ -268,7 +282,7 @@
         case 'notes':
           return noteHtml(o.notes, o.reference);
         case 'status':
-          return '<span class="acct-badge ' + statusBadgeClass(o.status) + '">' + escHtml(o.status || '—') + '</span>';
+          return '<span class="acct-badge ' + statusBadgeClass(o.status) + '">' + escHtml(o.status || '—') + '</span>' + progressHtml(o);
         case 'total':
           var invoicedHtml = o.invoicedAt ? '<span class="acct-paid acct-paid--invoiced">Invoiced ' + escHtml(formatIsoDate(o.invoicedAt)) + '</span>' : '';
           var paidHtml = isPaid(o) ? '<span class="acct-paid">Paid</span>' : '';

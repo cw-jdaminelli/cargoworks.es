@@ -259,10 +259,19 @@
     mode: 'edit',
     order: null,
     sourceEventId: '',
+    // One key per new/duplicate order editor, sent with every Save: if a
+    // Save's reply fails after the order was made, saving again returns that
+    // order instead of creating a second one.
+    requestKey: '',
     dirty: false,
     snapshot: '',
     stopsModel: []
   };
+
+  function newRequestKey(){
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+  }
   let cancelTargetOrder = null;
 
   function setStatus(msg, isError){
@@ -1953,6 +1962,7 @@
 
     editorState.open = true;
     editorState.mode = normalizedMode;
+    editorState.requestKey = normalizedMode === 'edit' ? '' : newRequestKey();
     editorState.order = source;
     editorState.sourceEventId = normalizeText(source && source.eventId);
     // _customerNoteOriginal lets the save send a stop's customer note only when
@@ -2144,6 +2154,7 @@
       if (editorState.mode === 'create') {
         res = await postAdmin(Object.assign({}, common, {
           action: 'adminCreateOrder',
+          requestKey: editorState.requestKey,
           order: orderData
         }));
       } else if (editorState.mode === 'duplicate') {
@@ -2152,6 +2163,7 @@
         res = await postAdmin(Object.assign({}, common, {
           action: 'adminDuplicateOrder',
           eventId: sourceEventId,
+          requestKey: editorState.requestKey,
           order: orderData
         }));
       } else {
@@ -2168,7 +2180,9 @@
       const savedMode = editorState.mode;
       if (order) upsertOrderInState(order, true);
       closeEditor(true, true);
-      const savedMsg = (savedMode === 'create' ? 'Order created.' : (savedMode === 'duplicate' ? 'Order duplicated.' : 'Order saved.')) +
+      const savedMsg = (res && res.alreadyCreated
+        ? 'This order was already created by the earlier Save — no second copy made. Open it to apply any later changes.'
+        : (savedMode === 'create' ? 'Order created.' : (savedMode === 'duplicate' ? 'Order duplicated.' : 'Order saved.'))) +
         (tidy.vague.length ? (' Kept as typed (Google only matched the area): ' + tidy.vague.join(' · ') + '.') : '') +
         (tidy.unchecked ? ' Addresses not checked with Google (Maps did not load) — saved as typed.' : '');
       // A split order: open the next route, pre-filled, to check and save.
