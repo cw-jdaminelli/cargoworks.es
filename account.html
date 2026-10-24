@@ -210,9 +210,7 @@
 
     // Multistop orders show how many drops are done under the status, so the
     // route can be followed from the row without opening the stops list.
-    // Per-stop orders (route sheets) have no stop list to count.
     function progressHtml(o) {
-      if (o.stopCount) return '';
       var stops = deliveryStops(o);
       if (stops.length < 2) return '';
       var delivered = stops.filter(function(s) { return s.status === 'Delivered'; }).length;
@@ -254,9 +252,10 @@
     function cellHtml(col, o) {
       switch (col.key) {
         case 'ref':
-          // Per-stop orders (route sheets) record how many stops there were,
-          // not each stop, so there's no list to open.
-          if (o.stopCount) {
+          // Per-stop orders from route sheets record how many stops there
+          // were, not each stop, so there's no list to open. A per-stop order
+          // whose stops are on the route shows them like any other.
+          if (o.stopCount && deliveryStops(o).length < 2) {
             return escHtml(o.reference || '—') + ' <span class="acct-badge acct-badge--stops" style="cursor:default">' + o.stopCount + (o.stopCount === 1 ? ' stop' : ' stops') + '</span>';
           }
           var stopCount = deliveryStops(o).length;
