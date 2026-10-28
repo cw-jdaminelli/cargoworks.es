@@ -3463,10 +3463,9 @@
   // the page was opened inside WhatsApp or Gmail, which can't install apps).
   // Neither shows once it runs as the installed app.
   function setupQuickInstall(){
-    const installed = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
-    if (installed) return;
     let installPrompt = null;
-    if (quickInstallHint) quickInstallHint.hidden = false;
+    const installed = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    if (installed) { if (quickInstallHint) quickInstallHint.hidden = true; return; }
     function done(){
       installPrompt = null;
       if (quickInstallBtn) quickInstallBtn.hidden = true;

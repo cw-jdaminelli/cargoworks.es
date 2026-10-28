@@ -670,7 +670,7 @@
       <p id="quickStatus" class="quick-status" role="status" aria-live="polite"></p>
       <div id="quickResult" class="quick-result" hidden></div>
       <button type="button" id="quickInstallBtn" class="btn btn--ghost quick-install" hidden>📲 Install app on this phone</button>
-      <p id="quickInstallHint" class="quick-install-hint" hidden>To install: open this page in Chrome itself (opened from WhatsApp or Gmail? tap ⋮ ▸ <strong>Open in Chrome</strong>), then ⋮ ▸ <strong>Install app</strong> or <strong>Add to home screen</strong>.</p>
+      <p id="quickInstallHint" class="quick-install-hint">To install: open this page in Chrome itself (opened from WhatsApp or Gmail? tap ⋮ ▸ <strong>Open in Chrome</strong>), then ⋮ ▸ <strong>Install app</strong> or <strong>Add to home screen</strong>.</p>
       <div class="quick-foot">
         <a href="dispatcher.html">Full dispatcher</a>
         <button type="button" id="quickForget" class="quick-link">Forget this device</button>
@@ -1106,8 +1106,10 @@
     </div>
   </div>
 
-  <script src="../js/js/gmaps-loader.js"></script>
-  <script src="../js/js/pricing-engine.js"></script>
-  <script src="../js/js/dispatcher-admin.js"></script>
+  <!-- ?v= changes with each release so phones don't pair this page with an
+       older cached script (the site lets browsers keep files for 10 min). -->
+  <script src="../js/js/gmaps-loader.js?v=2026-10-28b"></script>
+  <script src="../js/js/pricing-engine.js?v=2026-10-28b"></script>
+  <script src="../js/js/dispatcher-admin.js?v=2026-10-28b"></script>
 </body>
 </html>
