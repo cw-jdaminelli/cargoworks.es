@@ -8,6 +8,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CARGOWORKS - Dispatcher Workspace</title>
+  <!-- Installs on a phone as "CW Dispatch" (quick note mode, see dispatcher-admin.js). -->
+  <link rel="manifest" href="dispatch.webmanifest" />
+  <meta name="theme-color" content="#f07b39" />
+  <link rel="apple-touch-icon" href="../img/cw-dispatch-192.png" />
   <link rel="stylesheet" href="../css/effects/layout.css"/>
   <!-- Google Maps loads on demand (gmaps-loader.js) the first time a map or
        "Get system pricing" needs it. -->
@@ -569,6 +573,62 @@
     }
     .price-vat-split { margin-top:0.25rem; font-size:0.74rem; color:var(--dispatch-muted); }
     .stop-internal-note { display:block; width:100%; box-sizing:border-box; margin-top:0.3rem; font-size:0.78rem; background:#fbf8ef; border:1px dashed #d9cfae; }
+
+    .admin-gate-remember { display:flex; align-items:center; gap:0.4rem; margin-top:0.55rem; font-size:0.82rem; color:var(--dispatch-muted); }
+
+    /* Quick note — the installed phone app (?quick=1) */
+    body.is-quick .dispatcher-header,
+    body.is-quick .dispatcher-bulk-bar { display: none; }
+    .quick-note {
+      width: 100%; max-width: 560px; justify-self: center; box-sizing: border-box;
+      margin-top: 0.75rem; padding: 1rem;
+      display: grid; gap: 0.75rem;
+      background: var(--dispatch-card); border: 1px solid var(--dispatch-border); border-radius: 16px;
+      box-shadow: 0 18px 36px rgba(24, 35, 53, 0.08);
+    }
+    .quick-note[hidden] { display: none; }
+    .quick-note-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .quick-note-top strong { font-size: 1.05rem; }
+    .quick-lang { display: flex; border: 1px solid var(--dispatch-border); border-radius: 999px; overflow: hidden; }
+    .quick-lang button { border: 0; background: transparent; padding: 0.35rem 0.7rem; font: inherit; font-size: 0.78rem; font-weight: 700; color: var(--dispatch-muted); cursor: pointer; }
+    .quick-lang button.is-active { background: var(--dispatch-accent); color: #fff; }
+    .quick-mic {
+      justify-self: center; width: 128px; height: 128px; border-radius: 50%; border: 0;
+      background: var(--dispatch-accent); color: #fff; font-size: 3.2rem; cursor: pointer;
+      box-shadow: 0 10px 24px rgba(240, 123, 57, 0.35);
+    }
+    .quick-mic:disabled { opacity: 0.5; cursor: default; }
+    .quick-mic.is-listening { background: var(--dispatch-danger); animation: quick-pulse 1.2s ease-in-out infinite; }
+    .quick-mic.is-waiting { animation: quick-pulse 1.8s ease-in-out infinite; }
+    @keyframes quick-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(240, 123, 57, 0.5); }
+      50% { box-shadow: 0 0 0 20px rgba(240, 123, 57, 0); }
+    }
+    @media (prefers-reduced-motion: reduce) { .quick-mic { animation: none !important; } }
+    .quick-hint { margin: 0; text-align: center; font-size: 0.88rem; color: var(--dispatch-muted); }
+    .quick-note textarea {
+      width: 100%; min-height: 120px; box-sizing: border-box; padding: 0.65rem;
+      font: inherit; font-size: 1rem; border: 1px solid var(--dispatch-border); border-radius: 10px; resize: vertical;
+    }
+    .quick-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .quick-photo { cursor: pointer; }
+    .quick-photo input { display: none; }
+    .quick-photo-name { font-size: 0.78rem; color: var(--dispatch-accent); }
+    .quick-send { margin-left: auto; padding: 0.65rem 1.15rem; font-size: 0.98rem; }
+    .quick-status { margin: 0; min-height: 1.2em; font-size: 0.88rem; }
+    .quick-status.is-error { color: var(--dispatch-danger); }
+    .quick-result {
+      display: grid; gap: 0.5rem; padding: 0.8rem; border-radius: 12px;
+      background: rgba(28, 138, 90, 0.08); border: 1px solid rgba(28, 138, 90, 0.3);
+    }
+    .quick-result[hidden] { display: none; }
+    .quick-result.is-undone { background: var(--dispatch-soft); border-color: var(--dispatch-border); }
+    .quick-result-title { font-weight: 800; color: var(--dispatch-ok); }
+    .quick-result.is-undone .quick-result-title { color: var(--dispatch-muted); }
+    .quick-result-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+    .quick-foot { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.8rem; }
+    .quick-foot a, .quick-link { color: var(--dispatch-muted); }
+    .quick-link { background: none; border: 0; padding: 0; font: inherit; text-decoration: underline; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -580,11 +640,38 @@
         <input id="dispatcherTokenInput" type="password" placeholder="Admin token" aria-label="Admin token" />
         <button id="dispatcherTokenButton" class="btn" type="button">Unlock</button>
       </div>
+      <label class="admin-gate-remember"><input id="dispatcherTokenRemember" type="checkbox" /> Remember on this device</label>
       <p id="dispatcherGateStatus" class="admin-gate-status" role="status" aria-live="polite"></p>
     </div>
   </div>
 
   <main class="dispatcher-shell">
+    <!-- Quick note: the installed phone app (dispatcher.html?quick=1) -->
+    <section class="quick-note" id="quickNote" hidden>
+      <div class="quick-note-top">
+        <strong>CW Dispatch</strong>
+        <div class="quick-lang" role="group" aria-label="Voice language">
+          <button type="button" data-lang="es-ES">ES</button>
+          <button type="button" data-lang="en-US">EN</button>
+          <button type="button" data-lang="ca-ES">CA</button>
+        </div>
+      </div>
+      <button type="button" id="quickMic" class="quick-mic" aria-label="Speak the order">🎤</button>
+      <p id="quickHint" class="quick-hint">Tap 🎤 and say the order: pickup, drops, time, rider, price.</p>
+      <textarea id="quickText" aria-label="Order note" placeholder="…or type or paste the note here"></textarea>
+      <div class="quick-row">
+        <label class="btn btn--ghost quick-photo">📷 Photo<input type="file" id="quickPhoto" accept="image/*" /></label>
+        <span id="quickPhotoName" class="quick-photo-name"></span>
+        <button type="button" id="quickSend" class="btn quick-send">Create order</button>
+      </div>
+      <p id="quickStatus" class="quick-status" role="status" aria-live="polite"></p>
+      <div id="quickResult" class="quick-result" hidden></div>
+      <div class="quick-foot">
+        <a href="dispatcher.html">Full dispatcher</a>
+        <button type="button" id="quickForget" class="quick-link">Forget this device</button>
+      </div>
+    </section>
+
     <section class="dispatcher-panel dispatcher-header">
       <div class="dispatcher-title-row">
         <div class="dispatcher-title">

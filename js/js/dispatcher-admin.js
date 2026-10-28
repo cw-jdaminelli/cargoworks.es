@@ -54,6 +54,7 @@
   const tokenInput = document.getElementById('dispatcherTokenInput');
   const tokenButton = document.getElementById('dispatcherTokenButton');
   const gateStatus = document.getElementById('dispatcherGateStatus');
+  const gateRemember = document.getElementById('dispatcherTokenRemember');
 
   const dateInput = document.getElementById('dispatcherDate');
   const operatorInput = document.getElementById('dispatcherOperator');
@@ -308,8 +309,24 @@
     initHeaderToggle();
   }
 
-  function saveToken(token){
+  // "Remember on this device" (the installed phone app) keeps the token and
+  // operator in localStorage too, so the app opens unlocked.
+  function saveToken(token, remember){
     try { sessionStorage.setItem(tokenKey, token); } catch(_) {}
+    if (remember) {
+      try { localStorage.setItem(tokenKey, token); } catch(_) {}
+    }
+  }
+
+  function isRememberedDevice(){
+    try { return !!localStorage.getItem(tokenKey); } catch(_) { return false; }
+  }
+
+  function forgetDevice(){
+    [tokenKey, operatorKey].forEach(function(key){
+      try { localStorage.removeItem(key); } catch(_) {}
+      try { sessionStorage.removeItem(key); } catch(_) {}
+    });
   }
 
   // Folds the Load/Filter/View controls away (▲ Controls, and New order —
@@ -349,15 +366,19 @@
   }
 
   function loadToken(){
-    try { return sessionStorage.getItem(tokenKey) || ''; } catch(_) { return ''; }
+    try { return sessionStorage.getItem(tokenKey) || localStorage.getItem(tokenKey) || ''; } catch(_) { return ''; }
   }
 
   function saveOperator(value){
-    try { sessionStorage.setItem(operatorKey, String(value || '').trim()); } catch(_) {}
+    const v = String(value || '').trim();
+    try { sessionStorage.setItem(operatorKey, v); } catch(_) {}
+    if (isRememberedDevice()) {
+      try { localStorage.setItem(operatorKey, v); } catch(_) {}
+    }
   }
 
   function loadOperator(){
-    try { return sessionStorage.getItem(operatorKey) || ''; } catch(_) { return ''; }
+    try { return sessionStorage.getItem(operatorKey) || localStorage.getItem(operatorKey) || ''; } catch(_) { return ''; }
   }
 
   function currentToken(){
@@ -2115,10 +2136,12 @@
     return '';
   }
 
+  // Resolves to the saved order, or null when it wasn't saved (the reason is
+  // shown in the editor).
   async function saveEditor(){
-    if (!editorState.open || editorState.saving) return;
+    if (!editorState.open || editorState.saving) return null;
     editorState.saving = true;
-    try { await saveEditorNow(); } finally { editorState.saving = false; }
+    try { return await saveEditorNow(); } finally { editorState.saving = false; }
   }
 
   async function saveEditorNow(){
@@ -2126,7 +2149,7 @@
     const validation = validateEditorData(orderData);
     if (validation) {
       setEditorFeedback(validation, true);
-      return;
+      return null;
     }
     // Tidy typed addresses into Google's format before they reach the
     // customer (tracking page, emails, account panel).
@@ -2193,8 +2216,10 @@
       } else {
         setStatus(savedMsg);
       }
+      return order;
     } catch (err) {
       setEditorFeedback(err && err.message ? err.message : 'Save failed.', true);
+      return null;
     }
   }
 
@@ -2880,11 +2905,12 @@
       if (gateStatus) gateStatus.textContent = 'Enter a token.';
       return;
     }
-    saveToken(token);
+    saveToken(token, !!(gateRemember && gateRemember.checked));
     saveOperator(currentOperator());
     if (gateStatus) gateStatus.textContent = '';
     unlockGate();
     setStatus('Workspace unlocked.');
+    startQuickNote();
   }
 
   // ── Quick Import ─────────────────────────────────────────────────────────
@@ -2981,15 +3007,7 @@
     if (importExtractBtn) importExtractBtn.disabled = true;
 
     try {
-      // Extraction runs in the backend (adminExtractOrder) so the Anthropic key
-      // stays in Apps Script instead of each dispatcher's browser.
-      const res = await postAdmin({
-        action: 'adminExtractOrder',
-        text: text,
-        image: image || '',
-        mimeType: importImageMime || ''
-      });
-      applyImportedFields(res.order);
+      await applyImportedFields(await requestOrderExtraction(text, image, importImageMime));
       setImportStatus('✓ Fields populated — review and adjust before saving.');
 
     } catch(err) {
@@ -2999,8 +3017,24 @@
     }
   }
 
-  function applyImportedFields(d) {
-    if (!d) return;
+  // Extraction runs in the backend (adminExtractOrder) so the Anthropic key
+  // stays in Apps Script instead of each dispatcher's browser.
+  async function requestOrderExtraction(text, image, mimeType) {
+    const res = await postAdmin({
+      action: 'adminExtractOrder',
+      text: text || '',
+      image: image || '',
+      mimeType: mimeType || ''
+    });
+    return res.order;
+  }
+
+  // Fills the new order form from an extraction reply. Returns what couldn't
+  // be applied as asked (an unregistered rider, an account that didn't
+  // verify), which the quick note checks before saving on its own.
+  async function applyImportedFields(d) {
+    const problems = [];
+    if (!d) return { problems: ['Nothing could be read from the note.'] };
     function fill(el, val) {
       if (el && val != null && val !== '') el.value = String(val);
     }
@@ -3046,10 +3080,389 @@
     fill(editInternalNotes,  d.internalNotes);
     if (editPackageCount && d.packageCount != null) editPackageCount.value = String(d.packageCount);
     if (editWeightKg     && d.weightKg     != null) editWeightKg.value     = String(d.weightKg);
+    // "between 16 and 18" — the order lasts the whole window.
+    const windowMins = minutesBetween(editScheduleTime && editScheduleTime.value, d.endTime);
+    if (editEtaMins && windowMins) editEtaMins.value = String(windowMins);
+    // A rider for the whole order (a split order sets one per route instead).
+    if (d.riderName) {
+      const rider = resolveRiderName(d.riderName);
+      if (editRiderName && rider.name) editRiderName.value = rider.name;
+      editorState.routeWarning = rider.warning || '';
+      if (rider.warning) problems.push(rider.warning);
+    }
+    // The backend only returns a token for an account it has, by name.
+    if (d.accountToken && editAccountToken) {
+      editAccountToken.value = String(d.accountToken).toUpperCase();
+      if (!await verifyAccountToken(false)) problems.push('Account ' + (d.accountName || d.accountToken) + ' could not be verified.');
+      else if (editCustomerName && !normalizeText(editCustomerName.value) && d.accountName) editCustomerName.value = String(d.accountName);
+    }
+    if (d.paymentStatus === 'Paid' && editPaymentStatus) editPaymentStatus.value = 'Paid';
+    if (d.paymentNote && editInternalNotes) {
+      editInternalNotes.value = (editInternalNotes.value ? editInternalNotes.value + '\n' : '') + 'Payment: ' + String(d.paymentNote);
+    }
+    // A price stated in the note is a manual override, like typing the total.
+    const statedPrice = safeNumber(d.priceTotal, 0);
+    if (statedPrice > 0 && editPriceOverride && editPriceTotal) {
+      editPriceOverride.checked = true;
+      applyPriceOverride();
+      editPriceTotal.value = statedPrice.toFixed(2);
+      renderVatSplit();
+    }
     applyImportedRoutes(d);
     renderRoutesBanner();
     updateSaveLabel();
     updateEditorDirtyFromForm();
+    return { problems: problems, windowMins: windowMins };
+  }
+
+  // ── Quick note (the installed phone app) ──────────────────────────────────
+  // dispatcher.html?quick=1 (the home-screen app's start page) swaps the
+  // workspace for one note box: speak or type the order, and it's read,
+  // priced and saved with no review step — unless something is missing or
+  // unsure (see runQuickOrder), then the order form stays open to finish by
+  // hand. ?mic=1 starts listening on open; ?text= is a note shared from
+  // another app (Android's share sheet).
+
+  const quickParams = new URLSearchParams(window.location.search);
+  const quickShared = ['title', 'text', 'url'].map(function(k){ return normalizeText(quickParams.get(k)); }).filter(Boolean).join('\n');
+  const quickMode = quickParams.has('quick') || !!quickShared;
+  const quickLangKey = 'cwQuickNoteLang';
+  const quickNote = document.getElementById('quickNote');
+  const quickMic = document.getElementById('quickMic');
+  const quickHint = document.getElementById('quickHint');
+  const quickText = document.getElementById('quickText');
+  const quickPhoto = document.getElementById('quickPhoto');
+  const quickPhotoName = document.getElementById('quickPhotoName');
+  const quickSend = document.getElementById('quickSend');
+  const quickStatus = document.getElementById('quickStatus');
+  const quickResult = document.getElementById('quickResult');
+  const quickForget = document.getElementById('quickForget');
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let quickImage = null;
+  let quickImageMime = '';
+  let quickRec = null;
+  let quickCountdown = null;
+  let quickBusy = false;
+  let quickStarted = false;
+
+  function setQuickStatus(msg, isError){
+    if (!quickStatus) return;
+    quickStatus.textContent = msg || '';
+    quickStatus.classList.toggle('is-error', !!isError);
+  }
+
+  function setQuickHint(msg){
+    if (quickHint) quickHint.textContent = msg;
+  }
+
+  function quickLang(){
+    let saved = '';
+    try { saved = localStorage.getItem(quickLangKey) || ''; } catch(_) {}
+    if (saved) return saved;
+    const phone = String(navigator.language || '').toLowerCase();
+    return phone.indexOf('en') === 0 ? 'en-US' : (phone.indexOf('ca') === 0 ? 'ca-ES' : 'es-ES');
+  }
+
+  function renderQuickLang(){
+    const lang = quickLang();
+    Array.prototype.forEach.call(document.querySelectorAll('#quickNote [data-lang]'), function(b){
+      b.classList.toggle('is-active', b.getAttribute('data-lang') === lang);
+      b.setAttribute('aria-pressed', b.getAttribute('data-lang') === lang ? 'true' : 'false');
+    });
+  }
+
+  // Sends the note a few seconds after speech ends (or a share arrives), so a
+  // misheard word can still be fixed: touching the note stops the countdown.
+  function startQuickCountdown(){
+    stopQuickCountdown();
+    let left = 3;
+    (function tick(){
+      if (left <= 0) { quickCountdown = null; runQuickOrder(); return; }
+      setQuickStatus('Creating the order in ' + left + '… tap the note to change it.');
+      left--;
+      quickCountdown = window.setTimeout(tick, 1000);
+    })();
+  }
+
+  function stopQuickCountdown(msg){
+    if (!quickCountdown) return;
+    window.clearTimeout(quickCountdown);
+    quickCountdown = null;
+    setQuickStatus(msg || '');
+  }
+
+  // One phrase at a time (Android ends it at a pause); tapping 🎤 again adds
+  // to what's already in the note.
+  function toggleListening(auto){
+    if (quickBusy) return;
+    if (quickRec) { quickRec.stop(); return; }
+    if (!SpeechRec) {
+      setQuickHint('Voice isn\'t available here — use the 🎤 on your keyboard instead.');
+      if (quickText) quickText.focus();
+      return;
+    }
+    stopQuickCountdown();
+    const base = normalizeText(quickText && quickText.value);
+    const rec = new SpeechRec();
+    rec.lang = quickLang();
+    rec.interimResults = true;
+    rec.continuous = false;
+    let heard = '';
+    let error = '';
+    rec.onresult = function(e){
+      let text = '';
+      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+      heard = text.trim();
+      if (quickText) quickText.value = (base ? base + ' ' : '') + heard;
+    };
+    rec.onerror = function(e){ error = e && e.error || 'error'; };
+    rec.onend = function(){
+      quickRec = null;
+      if (quickMic) quickMic.classList.remove('is-listening');
+      if (error === 'not-allowed' || error === 'service-not-allowed') {
+        if (quickMic && auto) quickMic.classList.add('is-waiting');
+        setQuickHint(auto ? 'Tap 🎤 and say the order.' : 'Allow the microphone for this app (Android Settings ▸ Apps), then tap 🎤.');
+        return;
+      }
+      if (heard) {
+        setQuickHint('Tap 🎤 to add more.');
+        startQuickCountdown();
+      } else {
+        setQuickHint(error === 'network' ? 'Voice needs a connection — check it and tap 🎤.' : 'Didn\'t catch that — tap 🎤 and try again.');
+      }
+    };
+    try {
+      rec.start();
+      quickRec = rec;
+      if (quickMic) { quickMic.classList.remove('is-waiting'); quickMic.classList.add('is-listening'); }
+      setQuickHint('Listening… pickup, drops, time, rider, price.');
+    } catch(_) {
+      if (quickMic) quickMic.classList.add('is-waiting');
+      setQuickHint('Tap 🎤 and say the order.');
+    }
+  }
+
+  // Phone photos are several MB; the order reader only needs ~1600px.
+  function loadQuickPhoto(file){
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e){
+      const img = new Image();
+      img.onload = function(){
+        const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        quickImage = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+        quickImageMime = 'image/jpeg';
+        if (quickPhotoName) quickPhotoName.textContent = '✓ ' + (file.name || 'Photo');
+      };
+      img.onerror = function(){ setQuickStatus('That file couldn\'t be read as an image.', true); };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearQuickNote(){
+    stopQuickCountdown();
+    if (quickText) quickText.value = '';
+    if (quickPhoto) quickPhoto.value = '';
+    if (quickPhotoName) quickPhotoName.textContent = '';
+    quickImage = null;
+    quickImageMime = '';
+  }
+
+  // Now, rounded up to the next quarter hour.
+  function asapSlot(){
+    const d = new Date(Math.ceil((Date.now() + 60000) / 900000) * 900000);
+    return { date: formatDateKey(d), time: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') };
+  }
+
+  function appendInternalNote(text){
+    if (!editInternalNotes) return;
+    editInternalNotes.value = (editInternalNotes.value ? editInternalNotes.value + '\n' : '') + text;
+  }
+
+  function showQuickProblems(problems){
+    setEditorFeedback('Not saved yet: ' + problems.join(' '), true);
+    setQuickStatus('Not saved yet — ' + problems.join(' ') + ' Fix it in the form below and press Save.', true);
+    if (editorCard && editorCard.scrollIntoView) editorCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Reads the note into a new order form, then saves it only if nothing is
+  // missing or unsure: every address matched exactly, a price (system,
+  // stated, or the account's per-stop rate), a registered rider if one was
+  // named, a verified account if one was named, and a single route.
+  async function runQuickOrder(){
+    if (quickBusy) return;
+    stopQuickCountdown();
+    const text = String(quickText && quickText.value || '').trim();
+    if (!text && !quickImage) { setQuickStatus('Say or type the order first.', true); return; }
+    quickBusy = true;
+    if (quickSend) quickSend.disabled = true;
+    if (quickMic) quickMic.disabled = true;
+    if (quickResult) quickResult.hidden = true;
+    try {
+      setQuickStatus('Reading the note…');
+      await ensureRidersCache();
+      const previousKey = editorState.requestKey;
+      openEditor('create', null);
+      // Kept editing an unsaved order instead (openEditor asked).
+      if (!editorState.open || editorState.mode !== 'create' || editorState.requestKey === previousKey) { setQuickStatus(''); return; }
+      if (importPanel) importPanel.style.display = 'none';
+      if (editSaveNote) editSaveNote.value = 'Created from a quick note';
+
+      let d;
+      try {
+        d = await requestOrderExtraction(text, quickImage, quickImageMime);
+      } catch (err) {
+        setQuickStatus((err && err.message) || 'The note couldn\'t be read.', true);
+        return;
+      }
+      const applied = await applyImportedFields(d);
+      d = d || {};
+      const problems = applied.problems.slice();
+
+      const today = formatDateKey(new Date());
+      if (!normalizeText(d.scheduleTime)) {
+        if (normalizeText(d.scheduleDate) && normalizeText(d.scheduleDate) !== today) {
+          problems.push('No time given for ' + normalizeText(d.scheduleDate) + '.');
+        } else {
+          const slot = asapSlot();
+          if (editScheduleDate) editScheduleDate.value = slot.date;
+          if (editScheduleTime) editScheduleTime.value = slot.time;
+          appendInternalNote('No time given — booked for now (ASAP).');
+        }
+      } else if (!normalizeText(d.scheduleDate) && editScheduleDate) {
+        editScheduleDate.value = today;
+      }
+      if (pendingRoutes.length) problems.push('The note splits into ' + (pendingRoutes.length + 1) + ' routes — check and save each one.');
+      const invalid = validateEditorData(collectEditorOrderData());
+      if (invalid) problems.unshift(invalid);
+      if (problems.length) { showQuickProblems(problems); return; }
+
+      setQuickStatus('Checking addresses…');
+      const tidy = await normalizeStopAddresses();
+      if (tidy.unchecked) {
+        problems.push('Google Maps didn\'t load, so the addresses couldn\'t be checked.');
+      } else {
+        const unsure = (editorState.stopsModel || []).filter(function(s){ return normalizeText(s.address) && !hasExactLocation(s); });
+        if (unsure.length) problems.push('Not an exact address: ' + unsure.map(function(s){ return '"' + normalizeText(s.address) + '"'; }).join(', ') + ' — pick it from the suggestions.');
+      }
+      updateMapsRouteLink();
+      if (problems.length) { showQuickProblems(problems); return; }
+
+      const billing = editBillingMode ? editBillingMode.value : 'flat';
+      if (billing === 'flat' && !(editPriceOverride && editPriceOverride.checked)) {
+        setQuickStatus('Working out the price…');
+        const priced = await handleGetSystemPricing();
+        if (!priced || !priced.ok) problems.push('Price: ' + ((priced && priced.error) || 'couldn\'t be worked out.'));
+        else if (priced.outside.length) problems.push(priced.outside.join(', ') + ' outside the service area — set the price by hand.');
+        // Pricing sets the ride time; a time window from the note wins.
+        if (applied.windowMins && editEtaMins) editEtaMins.value = String(applied.windowMins);
+      }
+      if (billing === 'flat' && !problems.length && safeNumber(editPriceTotal && editPriceTotal.value, 0) <= 0) problems.push('The price came out as 0.');
+      if (problems.length) { showQuickProblems(problems); return; }
+
+      setQuickStatus('Saving…');
+      const price = safeNumber(editPriceTotal && editPriceTotal.value, 0);
+      const order = await saveEditor();
+      if (!order) { setQuickStatus('Not saved — see the message in the form below.', true); return; }
+      clearQuickNote();
+      setQuickStatus('');
+      renderQuickResult(order, billing === 'per_stop' ? '' : ('EUR ' + price.toFixed(2)));
+    } finally {
+      quickBusy = false;
+      if (quickSend) quickSend.disabled = false;
+      if (quickMic) quickMic.disabled = false;
+    }
+  }
+
+  function renderQuickResult(order, priceLabel){
+    if (!quickResult) return;
+    const stops = (order.quote && order.quote.route && Array.isArray(order.quote.route.stops)) ? order.quote.route.stops.length - 1 : 0;
+    const date = normalizeText(order.schedule && order.schedule.date);
+    const when = (date === formatDateKey(new Date()) ? 'today' : date) + ' ' + normalizeText(order.schedule && order.schedule.time);
+    const bits = [normalizeText(order.customer && order.customer.name), when.trim(),
+      stops > 0 ? (stops + ' drop' + (stops === 1 ? '' : 's')) : '',
+      normalizeText(order.riderName) || 'no rider', priceLabel].filter(Boolean);
+    quickResult.innerHTML = '';
+    quickResult.classList.remove('is-undone');
+    const title = document.createElement('div');
+    title.className = 'quick-result-title';
+    title.textContent = '✓ Order ' + normalizeText(order.reference) + ' created';
+    const line = document.createElement('div');
+    line.textContent = bits.join(' · ');
+    const actions = document.createElement('div');
+    actions.className = 'quick-result-actions';
+    function button(label, ghost, onClick){
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn' + (ghost ? ' btn--ghost' : '');
+      b.textContent = label;
+      b.addEventListener('click', onClick);
+      actions.appendChild(b);
+      return b;
+    }
+    const undo = button('Undo', true, async function(){
+      undo.disabled = true;
+      try {
+        const res = await postAdmin({ action: 'adminCancelOrder', eventId: order.eventId, reason: 'Undone from quick note', operator: currentOperator() });
+        if (res && res.order) upsertOrderInState(res.order, false);
+        title.textContent = 'Order ' + normalizeText(order.reference) + ' canceled.';
+        quickResult.classList.add('is-undone');
+        undo.remove();
+        edit.remove();
+      } catch (err) {
+        undo.disabled = false;
+        setQuickStatus('Undo failed: ' + ((err && err.message) || 'try again'), true);
+      }
+    });
+    const edit = button('Edit', true, function(){ openEditor('edit', order); });
+    button('New note', false, function(){
+      quickResult.hidden = true;
+      clearQuickNote();
+      toggleListening(false);
+    });
+    [title, line, actions].forEach(function(el){ quickResult.appendChild(el); });
+    quickResult.hidden = false;
+  }
+
+  function setupQuickNote(){
+    if (!quickMode || !quickNote) return;
+    document.body.classList.add('is-quick');
+    quickNote.hidden = false;
+    if (gateRemember) gateRemember.checked = true;
+    renderQuickLang();
+    if (quickMic) quickMic.addEventListener('click', function(){ toggleListening(false); });
+    if (quickSend) quickSend.addEventListener('click', runQuickOrder);
+    if (quickText) {
+      quickText.addEventListener('focus', function(){ stopQuickCountdown('Paused — press Create order when ready.'); });
+      quickText.addEventListener('input', function(){ stopQuickCountdown('Paused — press Create order when ready.'); });
+    }
+    if (quickPhoto) quickPhoto.addEventListener('change', function(){ loadQuickPhoto(quickPhoto.files && quickPhoto.files[0]); });
+    Array.prototype.forEach.call(quickNote.querySelectorAll('[data-lang]'), function(b){
+      b.addEventListener('click', function(){
+        try { localStorage.setItem(quickLangKey, b.getAttribute('data-lang')); } catch(_) {}
+        renderQuickLang();
+      });
+    });
+    if (quickForget) quickForget.addEventListener('click', function(){
+      if (!window.confirm('Forget the admin token on this device? You\'ll need it again to unlock.')) return;
+      forgetDevice();
+      window.location.reload();
+    });
+    if (quickShared && quickText) quickText.value = quickShared;
+  }
+
+  // After unlocking: a shared note counts down to sending; otherwise ?mic=1
+  // starts listening straight away.
+  function startQuickNote(){
+    if (!quickMode || quickStarted) return;
+    quickStarted = true;
+    if (quickShared) startQuickCountdown();
+    else if (quickParams.get('mic') === '1') toggleListening(true);
   }
 
   // ── Structured stops list ────────────────────────────────────────────────
@@ -4025,7 +4438,7 @@
     const token = normalizeText(editAccountToken && editAccountToken.value).toUpperCase();
     if (!token) {
       resetAccountStatus();
-      return;
+      return false;
     }
     if (!silent) setAccountStatus('Verifying…', false);
     try {
@@ -4034,7 +4447,7 @@
       if (!json || !json.valid) {
         setAccountStatus('Invalid or inactive account token.', true);
         if (editAccountFieldsWrap) editAccountFieldsWrap.style.display = 'none';
-        return;
+        return false;
       }
       setAccountStatus('✓ ' + (json.accountName || 'Account') + ' — order will appear in their account panel, no payment link needed.', false);
       if (editAccountFieldsWrap) editAccountFieldsWrap.style.display = '';
@@ -4049,8 +4462,10 @@
         recalculatePriceTotal();
       }
       updateEditorDirtyFromForm();
+      return true;
     } catch (err) {
       setAccountStatus('Could not verify token: ' + ((err && err.message) || 'network error'), true);
+      return false;
     }
   }
 
@@ -4548,12 +4963,13 @@
   // routing in the browser, then the shared CargoworksPricing calculation
   // (zone, per-km, fees, load type, surcharges, promo codes, IVA). Fills the
   // breakdown fields and keeps the complete breakdown for the order.
+  // Resolves to { ok, error, outside, vague } for the quick note's checks.
   async function handleGetSystemPricing() {
     const model = editorState.stopsModel || [];
     const filled = model.filter(function(s){ return normalizeText(s.address); });
+    function fail(msg){ _spSetSystemPricingStatus('⚠ ' + msg); return { ok: false, error: msg }; }
     if (filled.length < 2 || !normalizeText(model[0] && model[0].address) || !normalizeText(model[model.length - 1] && model[model.length - 1].address)) {
-      _spSetSystemPricingStatus('⚠ Pickup and dropoff are required.');
-      return;
+      return fail('Pickup and dropoff are required.');
     }
     if (editGetSystemPricing) { editGetSystemPricing.disabled = true; editGetSystemPricing.textContent = '⚙ Calculating…'; }
     _spSetSystemPricingStatus('Looking up ' + filled.length + ' address(es)…');
@@ -4570,12 +4986,12 @@
       }));
       const labels = filled.map(function(s, i){ return i === 0 ? 'Pickup' : (i === filled.length - 1 ? 'Drop-off' : ('Stop ' + i)); });
       for (let i = 0; i < found.length; i++) {
-        if (!found[i]) { _spSetSystemPricingStatus('⚠ No result for ' + labels[i].toLowerCase() + ': "' + normalizeText(filled[i].address) + '" — try a more complete address.'); return; }
+        if (!found[i]) return fail('No result for ' + labels[i].toLowerCase() + ': "' + normalizeText(filled[i].address) + '" — try a more complete address.');
       }
       const points = found.map(function(f){ return { lat: f.location.lat(), lng: f.location.lng() }; });
       const zonesOf = points.map(function(p){ return _spFindZone(p.lat, p.lng, parsedZones); });
       const pickupZone = zonesOf[0];
-      if (!pickupZone) { _spSetSystemPricingStatus('⚠ Pickup is outside the Cargoworks service area.'); return; }
+      if (!pickupZone) return fail('Pickup is outside the Cargoworks service area.');
       const outside = labels.filter(function(l, i){ return i > 0 && !zonesOf[i]; });
 
       _spSetSystemPricingStatus('Routing ' + (points.length - 1) + ' leg(s) by bike…');
@@ -4630,8 +5046,13 @@
         else if (found[i].label && found[i].label !== normalizeText(s.address)) notes.push(labels[i] + ' → ' + found[i].label);
       });
       renderSystemPricingDetail(detail, notes);
+      return {
+        ok: true,
+        outside: outside,
+        vague: labels.filter(function(l, i){ return !found[i].exact && !found[i].precise; })
+      };
     } catch(err) {
-      _spSetSystemPricingStatus('⚠ Error: ' + (err && err.message || String(err)));
+      return fail('Error: ' + (err && err.message || String(err)));
     } finally {
       if (editGetSystemPricing) { editGetSystemPricing.disabled = false; editGetSystemPricing.textContent = '⚙ Get system pricing'; }
     }
@@ -4975,6 +5396,7 @@
   (function init(){
     const token = loadToken();
     const operator = loadOperator();
+    setupQuickNote();
     if (token) unlockGate();
     if (operatorInput) operatorInput.value = operator || 'dispatcher';
     const today = formatDateKey(new Date());
@@ -4982,6 +5404,12 @@
     renderAccountOptions(loadKnownAccounts());
     setupImportPanel();
     setupStopsQuickAdd();
+    if (token) startQuickNote();
   })();
+
+  // The installed phone app (dispatch.webmanifest) needs a service worker.
+  if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
+    navigator.serviceWorker.register('dispatch-sw.js').catch(function(){});
+  }
 
 })();

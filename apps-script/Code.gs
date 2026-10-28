@@ -147,6 +147,30 @@ function getAccountConfig(rawToken) {
   return config;
 }
 
+// Active accounts as { token, name } — for the order extraction prompt, which
+// is given the names only.
+function activeAccountEntries() {
+  try {
+    const raw = String(PropertiesService.getScriptProperties().getProperty(ACCOUNT_TOKENS_PROPERTY) || '').trim();
+    const tokens = raw ? JSON.parse(raw) : {};
+    return Object.keys(tokens).filter(function(k) {
+      return tokens[k] && tokens[k].active !== false && cleanOrderText(tokens[k].name);
+    }).map(function(k) {
+      return { token: k.toUpperCase(), name: cleanOrderText(tokens[k].name) };
+    });
+  } catch (_) {
+    return [];
+  }
+}
+
+// The token of the account the extraction named (case-insensitive), or ''.
+function accountTokenForName(accounts, name) {
+  const wanted = cleanOrderText(name).toLowerCase();
+  if (!wanted) return '';
+  const match = (accounts || []).find(function(a) { return a.name.toLowerCase() === wanted; });
+  return match ? match.token : '';
+}
+
 function buildAccountRequires(config){
   return {
     staffName:   !!(config && config.requiresStaffName),
@@ -1585,6 +1609,17 @@ function handleAdminExtractOrder(payload) {
     if (!apiKey) return jsonResponse({ error: 'Anthropic API key not configured' }, 500);
 
     var today = formatDateKey(new Date());
+    var nowTime = Utilities.formatDate(new Date(), TIMEZONE, 'HH:mm');
+
+    // Registered riders and business accounts, so a note saying "Alex" or
+    // "for Flores" can be matched to the exact name. Account tokens stay here:
+    // the model picks a name and accountTokenForName maps it back.
+    var ridersData = getRidersData();
+    var riderNames = Object.keys(ridersData).filter(function(id){
+      return ridersData[id] && ridersData[id].active !== false && cleanOrderText(ridersData[id].name);
+    }).map(function(id){ return cleanOrderText(ridersData[id].name); });
+    var accounts = activeAccountEntries();
+    var accountNames = accounts.map(function(a){ return a.name; });
 
     var systemPrompt =
       'You are a logistics dispatcher assistant for a cargo bike delivery company in Barcelona. ' +
@@ -1608,14 +1643,26 @@ function handleAdminExtractOrder(payload) {
       '      "deliveries": [ numbers: 1-based positions in the deliveries list that belong to this route ],\n' +
       '      "notes": string or null (only the customer notes/instructions that belong to this route) } ],\n' +
       '  "scheduleDate": string (YYYY-MM-DD; interpret "today"/"hoy"/"hoje" as ' + today + '),\n' +
-      '  "scheduleTime": string (HH:MM 24h format),\n' +
+      '  "scheduleTime": string (HH:MM 24h format; the start of the job or of the time window),\n' +
+      '  "endTime": string or null (HH:MM; the end of the time window, e.g. "between 16 and 18" → "18:00"),\n' +
+      '  "riderName": string or null (the rider who does the whole order, as written or matched to the list below;\n' +
+      '    "me" if the writer means themself; leave null when the order is split into routes),\n' +
+      '  "accountName": string or null (only when the order is for one of the business accounts listed below —\n' +
+      '    copy that name exactly; null otherwise),\n' +
+      '  "paymentStatus": "Paid" | "Pending" | null ("Paid" only when the text says it is already paid),\n' +
+      '  "paymentNote": string or null (how it will be paid, e.g. "cash on delivery", "invoice", "Bizum"),\n' +
+      '  "priceTotal": number or null (EUR including VAT — only when the text states the price to charge),\n' +
       '  "notes": string (customer instructions or special requirements),\n' +
       '  "cargoType": string,\n' +
       '  "packageCount": number or null,\n' +
       '  "weightKg": number or null,\n' +
       '  "internalNotes": string (any operational info not for the customer)\n' +
       '}\n\n' +
-      'Today\'s date: ' + today + '.\n' +
+      'Today\'s date: ' + today + '. Time now: ' + nowTime + ' (Barcelona).\n' +
+      'Registered riders: ' + (riderNames.length ? riderNames.join(', ') : '(none)') + '.\n' +
+      'Business accounts: ' + (accountNames.length ? accountNames.join(', ') : '(none)') + '.\n' +
+      'The text may be a quick spoken note from the dispatcher (e.g. "pickup at X, drop at Y for Marta, 5pm, Alex") —\n' +
+      'read it the same way; names of riders and accounts may be misheard, so match them to the lists when close.\n' +
       (text ? 'Text content:\n' + text : '');
 
     var content = [];
@@ -1654,6 +1701,10 @@ function handleAdminExtractOrder(payload) {
     var order;
     try { order = JSON.parse(cleaned); } catch (parseErr) {
       return jsonResponse({ error: 'Could not read the AI response — try again.' }, 502);
+    }
+    if (order && typeof order === 'object') {
+      order.accountToken = accountTokenForName(accounts, order.accountName);
+      if (!order.accountToken) order.accountName = null;
     }
     return jsonResponse({ order: order }, 200);
   } catch (err) {
