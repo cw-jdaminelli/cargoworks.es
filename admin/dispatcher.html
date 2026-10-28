@@ -626,6 +626,9 @@
     .quick-result-title { font-weight: 800; color: var(--dispatch-ok); }
     .quick-result.is-undone .quick-result-title { color: var(--dispatch-muted); }
     .quick-result-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+    .quick-install { justify-self: center; }
+    .quick-install[hidden], .quick-install-hint[hidden] { display: none; }
+    .quick-install-hint { margin: 0; padding: 0.6rem 0.7rem; border-radius: 10px; background: var(--dispatch-soft); font-size: 0.8rem; color: var(--dispatch-muted); }
     .quick-foot { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.8rem; }
     .quick-foot a, .quick-link { color: var(--dispatch-muted); }
     .quick-link { background: none; border: 0; padding: 0; font: inherit; text-decoration: underline; cursor: pointer; }
@@ -666,6 +669,8 @@
       </div>
       <p id="quickStatus" class="quick-status" role="status" aria-live="polite"></p>
       <div id="quickResult" class="quick-result" hidden></div>
+      <button type="button" id="quickInstallBtn" class="btn btn--ghost quick-install" hidden>📲 Install app on this phone</button>
+      <p id="quickInstallHint" class="quick-install-hint" hidden>To install: open this page in Chrome itself (opened from WhatsApp or Gmail? tap ⋮ ▸ <strong>Open in Chrome</strong>), then ⋮ ▸ <strong>Install app</strong> or <strong>Add to home screen</strong>.</p>
       <div class="quick-foot">
         <a href="dispatcher.html">Full dispatcher</a>
         <button type="button" id="quickForget" class="quick-link">Forget this device</button>

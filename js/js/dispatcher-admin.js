@@ -3137,6 +3137,8 @@
   const quickStatus = document.getElementById('quickStatus');
   const quickResult = document.getElementById('quickResult');
   const quickForget = document.getElementById('quickForget');
+  const quickInstallBtn = document.getElementById('quickInstallBtn');
+  const quickInstallHint = document.getElementById('quickInstallHint');
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   let quickImage = null;
   let quickImageMime = '';
@@ -3454,6 +3456,35 @@
       window.location.reload();
     });
     if (quickShared && quickText) quickText.value = quickShared;
+    setupQuickInstall();
+  }
+
+  // One-tap install while Chrome offers it; otherwise the how-to hint (e.g.
+  // the page was opened inside WhatsApp or Gmail, which can't install apps).
+  // Neither shows once it runs as the installed app.
+  function setupQuickInstall(){
+    const installed = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    if (installed) return;
+    let installPrompt = null;
+    if (quickInstallHint) quickInstallHint.hidden = false;
+    function done(){
+      installPrompt = null;
+      if (quickInstallBtn) quickInstallBtn.hidden = true;
+      if (quickInstallHint) quickInstallHint.hidden = true;
+    }
+    window.addEventListener('beforeinstallprompt', function(e){
+      e.preventDefault();
+      installPrompt = e;
+      if (quickInstallBtn) quickInstallBtn.hidden = false;
+      if (quickInstallHint) quickInstallHint.hidden = true;
+    });
+    window.addEventListener('appinstalled', done);
+    if (quickInstallBtn) quickInstallBtn.addEventListener('click', async function(){
+      if (!installPrompt) return;
+      installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice && choice.outcome === 'accepted') done();
+    });
   }
 
   // After unlocking: a shared note counts down to sending; otherwise ?mic=1
