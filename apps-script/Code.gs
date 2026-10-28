@@ -163,6 +163,45 @@ function activeAccountEntries() {
   }
 }
 
+// Active promo code names from the public discounts file, for the order
+// extraction prompt (never the codes' notes). Cached for 10 minutes.
+function activePromoCodes() {
+  const cache = CacheService.getScriptCache();
+  try {
+    const cached = cache.get('activePromoCodes');
+    if (cached) return JSON.parse(cached);
+  } catch (_) {}
+  try {
+    const response = UrlFetchApp.fetch(DISCOUNTS_URL, { muteHttpExceptions: true });
+    if (response.getResponseCode() !== 200) return [];
+    const discounts = JSON.parse(response.getContentText());
+    const codes = (Array.isArray(discounts.codes) ? discounts.codes : []).filter(function(c) {
+      return c && c.active !== false && cleanOrderText(c.code);
+    }).map(function(c) { return cleanOrderText(c.code).toUpperCase(); });
+    try { cache.put('activePromoCodes', JSON.stringify(codes), 600); } catch (_) {}
+    return codes;
+  } catch (_) {
+    return [];
+  }
+}
+
+// The codes the extraction read, as listed (case, spaces and "&"/"and"
+// don't matter); unlisted ones are kept so pricing reports them as not found.
+function matchPromoCodes(promoCodes, read) {
+  function key(c) { return cleanOrderText(c).toUpperCase().replace(/\bAND\b/g, '&').replace(/[\s&]+/g, ''); }
+  const seen = {};
+  return (Array.isArray(read) ? read : []).map(function(c) {
+    const wanted = key(c);
+    if (!wanted) return '';
+    const match = (promoCodes || []).find(function(p) { return key(p) === wanted; });
+    return match || cleanOrderText(c).toUpperCase().replace(/\s+/g, '');
+  }).filter(function(c) {
+    if (!c || seen[c]) return false;
+    seen[c] = true;
+    return true;
+  }).slice(0, 5);
+}
+
 // The token of the account the extraction named (case-insensitive), or ''.
 function accountTokenForName(accounts, name) {
   const wanted = cleanOrderText(name).toLowerCase();
@@ -1620,6 +1659,7 @@ function handleAdminExtractOrder(payload) {
     }).map(function(id){ return cleanOrderText(ridersData[id].name); });
     var accounts = activeAccountEntries();
     var accountNames = accounts.map(function(a){ return a.name; });
+    var promoCodes = activePromoCodes();
 
     var systemPrompt =
       'You are a logistics dispatcher assistant for a cargo bike delivery company in Barcelona. ' +
@@ -1652,6 +1692,8 @@ function handleAdminExtractOrder(payload) {
       '  "paymentStatus": "Paid" | "Pending" | null ("Paid" only when the text says it is already paid),\n' +
       '  "paymentNote": string or null (how it will be paid, e.g. "cash on delivery", "invoice", "Bizum"),\n' +
       '  "priceTotal": number or null (EUR including VAT — only when the text states the price to charge),\n' +
+      '  "discountCodes": [ strings ] (promo/discount codes the text mentions, matched to the promo codes below\n' +
+      '    when close — e.g. spoken "first fifty" → "FIRST50"; [] if none),\n' +
       '  "notes": string (customer instructions or special requirements),\n' +
       '  "cargoType": string,\n' +
       '  "packageCount": number or null,\n' +
@@ -1661,6 +1703,7 @@ function handleAdminExtractOrder(payload) {
       'Today\'s date: ' + today + '. Time now: ' + nowTime + ' (Barcelona).\n' +
       'Registered riders: ' + (riderNames.length ? riderNames.join(', ') : '(none)') + '.\n' +
       'Business accounts: ' + (accountNames.length ? accountNames.join(', ') : '(none)') + '.\n' +
+      'Promo codes: ' + (promoCodes.length ? promoCodes.join(', ') : '(none)') + '.\n' +
       'The text may be a quick spoken note from the dispatcher (e.g. "pickup at X, drop at Y for Marta, 5pm, Alex") —\n' +
       'read it the same way; names of riders and accounts may be misheard, so match them to the lists when close.\n' +
       (text ? 'Text content:\n' + text : '');
@@ -1705,6 +1748,7 @@ function handleAdminExtractOrder(payload) {
     if (order && typeof order === 'object') {
       order.accountToken = accountTokenForName(accounts, order.accountName);
       if (!order.accountToken) order.accountName = null;
+      order.discountCodes = matchPromoCodes(promoCodes, order.discountCodes);
     }
     return jsonResponse({ order: order }, 200);
   } catch (err) {

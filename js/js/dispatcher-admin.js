@@ -3007,9 +3007,20 @@
     if (importExtractBtn) importExtractBtn.disabled = true;
 
     try {
-      await applyImportedFields(await requestOrderExtraction(text, image, importImageMime));
-      setImportStatus('✓ Fields populated — review and adjust before saving.');
-
+      const applied = await applyImportedFields(await requestOrderExtraction(text, image, importImageMime));
+      const model = editorState.stopsModel || [];
+      const routed = model.length >= 2 && normalizeText(model[0].address) && normalizeText(model[model.length - 1].address);
+      if (routed) setImportStatus('Working out the price…');
+      const priced = routed ? await autoPriceEditor(applied.windowMins) : null;
+      if (!priced) {
+        setImportStatus('✓ Fields populated — review and adjust before saving.');
+      } else if (!priced.ok) {
+        setImportStatus('Fields populated, but the price couldn\'t be worked out: ' + priced.error, true);
+      } else if (priced.promoErrors.length) {
+        setImportStatus('Fields populated and priced, but ' + priced.promoErrors.map(promoErrorText).join('; ') + ' — check the promo code.', true);
+      } else {
+        setImportStatus('✓ Fields populated and priced' + promoAppliedText(priced.promoApplied, ' (', ')') + ' — review and adjust before saving.');
+      }
     } catch(err) {
       setImportStatus(err && err.message ? err.message : 'Extraction failed.', true);
     } finally {
@@ -3100,6 +3111,9 @@
     if (d.paymentNote && editInternalNotes) {
       editInternalNotes.value = (editInternalNotes.value ? editInternalNotes.value + '\n' : '') + 'Payment: ' + String(d.paymentNote);
     }
+    // Promo codes it mentions are applied when the order is priced.
+    const codes = Array.isArray(d.discountCodes) ? d.discountCodes.map(normalizeText).filter(Boolean) : [];
+    if (codes.length && editPromoCode) editPromoCode.value = codes.join(', ');
     // A price stated in the note is a manual override, like typing the total.
     const statedPrice = safeNumber(d.priceTotal, 0);
     if (statedPrice > 0 && editPriceOverride && editPriceTotal) {
@@ -3356,15 +3370,14 @@
       if (problems.length) { showQuickProblems(problems); return; }
 
       const billing = editBillingMode ? editBillingMode.value : 'flat';
-      if (billing === 'flat' && !(editPriceOverride && editPriceOverride.checked)) {
-        setQuickStatus('Working out the price…');
-        const priced = await handleGetSystemPricing();
-        if (!priced || !priced.ok) problems.push('Price: ' + ((priced && priced.error) || 'couldn\'t be worked out.'));
-        else if (priced.outside.length) problems.push(priced.outside.join(', ') + ' outside the service area — set the price by hand.');
-        // Pricing sets the ride time; a time window from the note wins.
-        if (applied.windowMins && editEtaMins) editEtaMins.value = String(applied.windowMins);
-      }
-      if (billing === 'flat' && !problems.length && safeNumber(editPriceTotal && editPriceTotal.value, 0) <= 0) problems.push('The price came out as 0.');
+      setQuickStatus('Working out the price…');
+      const priced = await autoPriceEditor(applied.windowMins);
+      if (priced && !priced.ok) problems.push('Price: ' + priced.error);
+      else if (priced && priced.outside.length) problems.push(priced.outside.join(', ') + ' outside the service area — set the price by hand.');
+      // A code that doesn't apply would change the price that was promised.
+      if (priced && priced.ok) priced.promoErrors.forEach(function(e){ problems.push(promoErrorText(e) + ' — fix or clear the promo code.'); });
+      const promoApplied = (priced && priced.ok) ? priced.promoApplied : [];
+      if (billing === 'flat' && !problems.length && !promoApplied.length && safeNumber(editPriceTotal && editPriceTotal.value, 0) <= 0) problems.push('The price came out as 0.');
       if (problems.length) { showQuickProblems(problems); return; }
 
       setQuickStatus('Saving…');
@@ -3373,7 +3386,7 @@
       if (!order) { setQuickStatus('Not saved — see the message in the form below.', true); return; }
       clearQuickNote();
       setQuickStatus('');
-      renderQuickResult(order, billing === 'per_stop' ? '' : ('EUR ' + price.toFixed(2)));
+      renderQuickResult(order, billing === 'per_stop' ? '' : ('EUR ' + price.toFixed(2) + promoAppliedText(promoApplied, ' · ', '')));
     } finally {
       quickBusy = false;
       if (quickSend) quickSend.disabled = false;
@@ -4989,6 +5002,35 @@
     systemPricingStatus.style.display = msg ? 'block' : 'none';
   }
 
+  function promoErrorText(e){
+    return 'Promo ' + e.code + ': ' + ({ not_found: 'not found', inactive: 'inactive', not_started: 'not active yet', expired: 'expired', min_order: 'minimum order not reached' }[e.reason] || e.reason);
+  }
+
+  // "promo FIRST50 −50%", wrapped in before/after, or '' when none applied.
+  // Fixed codes come off the subtotal, before VAT.
+  function promoAppliedText(applied, before, after){
+    if (!applied || !applied.length) return '';
+    return before + applied.map(function(a){
+      const d = a.discount || {};
+      const off = String(d.type || '').toLowerCase() === 'percent'
+        ? safeNumber(d.amount, 0) + '%'
+        : 'EUR ' + safeNumber(a.amount, 0).toFixed(2) + ' before VAT';
+      return 'promo ' + a.code + ' −' + off;
+    }).join(', ') + after;
+  }
+
+  // System price for the form as filled from a note — only for flat billing
+  // with no price typed or stated, so a set price or an account's per-stop
+  // billing is kept. Pricing sets the ride time; a time window from the note
+  // wins. Resolves to handleGetSystemPricing's result, or null when skipped.
+  async function autoPriceEditor(windowMins){
+    if (editBillingMode && editBillingMode.value !== 'flat') return null;
+    if (editPriceOverride && editPriceOverride.checked) return null;
+    const priced = await handleGetSystemPricing();
+    if (windowMins && editEtaMins) editEtaMins.value = String(windowMins);
+    return priced;
+  }
+
   // Prices the route exactly like the booking page: Google geocoding and bike
   // routing in the browser, then the shared CargoworksPricing calculation
   // (zone, per-km, fees, load type, surcharges, promo codes, IVA). Fills the
@@ -5067,7 +5109,7 @@
       const notes = ['✓ Zone ' + pickupZone + ' · ' + priced.totalKm.toFixed(2) + ' km by bike' + (routed.estimated ? ' (estimated — routing unavailable)' : '') + ' · ETA ~' + priced.etaMins + ' min'];
       if (priced.cargo.auto) notes.push('Load set to Heavy/Big automatically (5+ stops), like the booking page.');
       outside.forEach(function(l){ notes.push('⚠ ' + l + ' is outside the service area — the booking page would not price this route.'); });
-      (discountInfo.errors || []).forEach(function(e){ notes.push('⚠ Promo ' + e.code + ': ' + ({ not_found: 'not found', inactive: 'inactive', not_started: 'not active yet', expired: 'expired', min_order: 'minimum order not reached' }[e.reason] || e.reason)); });
+      (discountInfo.errors || []).forEach(function(e){ notes.push('⚠ ' + promoErrorText(e)); });
       const exactCount = found.filter(function(f){ return f.exact; }).length;
       if (exactCount) notes.push('📍 ' + exactCount + ' of ' + found.length + ' addresses use the exact point picked from the suggestions.');
       filled.forEach(function(s, i){
@@ -5079,7 +5121,9 @@
       return {
         ok: true,
         outside: outside,
-        vague: labels.filter(function(l, i){ return !found[i].exact && !found[i].precise; })
+        vague: labels.filter(function(l, i){ return !found[i].exact && !found[i].precise; }),
+        promoErrors: discountInfo.errors || [],
+        promoApplied: discountInfo.applied || []
       };
     } catch(err) {
       return fail('Error: ' + (err && err.message || String(err)));
