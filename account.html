@@ -107,11 +107,11 @@
 
       <div id="acctTotals" class="acct-totals" style="display:none">
         <div class="acct-totals__row">
-          <span class="acct-totals__label">Total due (<span id="acctOrderCount">0</span> unpaid orders)</span>
+          <span class="acct-totals__label">Total due before IVA (<span id="acctOrderCount">0</span> unpaid orders)</span>
           <span class="acct-totals__value" id="acctTotalNet"></span>
         </div>
         <div class="acct-totals__row acct-totals__row--iva">
-          <span class="acct-totals__label">Total due + IVA (21%)</span>
+          <span class="acct-totals__label">Total due with IVA (21%)</span>
           <span class="acct-totals__value" id="acctTotalIva"></span>
         </div>
       </div>
@@ -285,12 +285,19 @@
         case 'total':
           var invoicedHtml = o.invoicedAt ? '<span class="acct-paid acct-paid--invoiced">Invoiced ' + escHtml(formatIsoDate(o.invoicedAt)) + '</span>' : '';
           var paidHtml = isPaid(o) ? '<span class="acct-paid">Paid</span>' : '';
-          return escHtml(o.total ? 'EUR ' + Number(o.total).toFixed(2) : '—') + invoicedHtml + paidHtml;
+          return escHtml(o.total ? 'EUR ' + Number(o.total).toFixed(2) + (isPricedBeforeIva(o) ? ' + IVA' : '') : '—') + invoicedHtml + paidHtml;
         case 'track':
           return o.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(publicTrackUrl(o.trackingUrl)) + '" target="_blank">Track →</a>' : '—';
         default:
           return '';
       }
+    }
+
+    // Per-stop jobs (route sheets, stopCount set) are priced before IVA;
+    // every other order's total already includes it (booking page and
+    // dispatcher prices), so IVA is split out of those, not added on top.
+    function isPricedBeforeIva(o) {
+      return o.stopCount > 0;
     }
 
     function renderRows(orders) {
@@ -307,15 +314,19 @@
       elTable.style.display = '';
 
       // Paid orders are already settled, so only unpaid ones count towards the total due.
-      var netSum = 0;
+      // Rounded once on the sums, the way an invoice is.
+      var beforeIvaSum = 0;
+      var withIvaSum = 0;
       var unpaidCount = 0;
       orders.forEach(function(o) {
         if (isPaid(o)) return;
-        netSum += Number(o.total) || 0;
+        var total = Number(o.total) || 0;
+        if (isPricedBeforeIva(o)) beforeIvaSum += total;
+        else withIvaSum += total;
         unpaidCount++;
       });
-      var ivaSum = Math.round(netSum * 1.21 * 100) / 100;
-      netSum = Math.round(netSum * 100) / 100;
+      var netSum = Math.round((beforeIvaSum + withIvaSum / 1.21) * 100) / 100;
+      var ivaSum = Math.round((withIvaSum + beforeIvaSum * 1.21) * 100) / 100;
       if (elTotals) {
         elTotals.style.display = '';
         if (elOrderCount) elOrderCount.textContent = unpaidCount;
