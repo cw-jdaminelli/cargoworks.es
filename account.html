@@ -237,6 +237,42 @@
       return pad(d.getDate()) + pad(d.getMonth() + 1) + d.getFullYear();
     }
 
+    // Addresses are shown short: the usual street abbreviations, and no
+    // district, Barcelona postcode, ", Barcelona" or ", Spain" at the end
+    // (another town keeps its name). The full address stays in the tooltip.
+    var STREET_TYPES = [
+      [/^(carrer|calle|c\.)\s+(de\s+les\s+|de\s+la\s+|de\s+l'|dels\s+|del\s+|d'|de\s+)?/i, 'C/ '],
+      [/^(avinguda|avenida|av\.)\s+(de\s+les\s+|de\s+la\s+|de\s+l'|dels\s+|del\s+|d'|de\s+)?/i, 'Av. '],
+      [/^passeig\s+(de\s+les\s+|de\s+la\s+|de\s+l'|dels\s+|del\s+|d'|de\s+)?/i, 'Pg. '],
+      [/^paseo\s+(de\s+la\s+|del\s+|de\s+)?/i, 'Pº '],
+      [/^(ronda|rda\.)\s+(de\s+la\s+|de\s+l'|del\s+|de\s+)?/i, 'Rda. '],
+      [/^(plaça|plaza)\s+(de\s+les\s+|de\s+la\s+|de\s+l'|dels\s+|del\s+|d'|de\s+)?/i, 'Pl. '],
+      [/^travessera\s+/i, 'Trav. '],
+      [/^gran via de les corts catalanes/i, 'Gran Via']
+    ];
+    var ADDRESS_TAIL = /^(\d{5}\s+)?(barcelona|spain|españa|espanya)(\s+\d{5})?$|^\d{5}$|^(l'eixample|eixample|gràcia|gracia|les corts|sant martí|sant marti|sants-montjuïc|sants|sarrià-sant gervasi|sarrià|sarria|horta-guinardó|horta|nou barris|sant andreu|ciutat vella)$/i;
+    function shortAddress(address, maxLength) {
+      var parts = String(address || '').split(',').map(function(p) { return p.trim(); }).filter(Boolean);
+      parts = parts.filter(function(p, i) { return i === 0 || !ADDRESS_TAIL.test(p); }).map(function(p) {
+        STREET_TYPES.forEach(function(t) { p = p.replace(t[0], t[1]); });
+        return p.replace(/^\d{5}\s+/, '');
+      });
+      var text = parts.join(', ').replace(/\s{2,}/g, ' ');
+      // Unpunctuated endings like "... Atico 4 Barcelona 08029".
+      var before;
+      do {
+        before = text;
+        text = text.replace(/[\s,]+(barcelona|spain|españa|espanya|\d{5})$/i, '');
+      } while (text !== before);
+      if (maxLength && text.length > maxLength) text = text.slice(0, maxLength - 1).trim() + '…';
+      return text;
+    }
+
+    function addressHtml(address, maxLength) {
+      if (!address) return '—';
+      return '<span title="' + escHtml(address) + '">' + escHtml(shortAddress(address, maxLength)) + '</span>';
+    }
+
     // Notes can be very long, so they start collapsed to a one-line preview;
     // clicking it shows the full text. Opened notes (by order reference) stay
     // open across the 60s auto-refresh.
@@ -268,8 +304,8 @@
         case 'route':
           var destHtml = isMultistop(o)
             ?'<span class="acct-route-multistop">Multistop</span>'
-            : escHtml(o.dropoff || '—');
-          return '<span class="acct-route">' + escHtml(o.pickup || '—') + '<span class="acct-route-arrow">→</span>' + destHtml + '</span>';
+            : addressHtml(o.dropoff, 36);
+          return '<span class="acct-route">' + addressHtml(o.pickup, 36) + '<span class="acct-route-arrow">→</span>' + destHtml + '</span>';
         case 'staff':
           return escHtml(o.staffName || '—');
         case 'pickupTime':
@@ -358,7 +394,7 @@
             var trackHtml = s.trackingUrl ? '<a class="acct-track-link" href="' + escHtml(publicTrackUrl(s.trackingUrl)) + '" target="_blank">Track →</a>' : '—';
             return '<tr>' +
               '<td>' + escHtml(label) + '</td>' +
-              '<td>' + escHtml(s.address || '—') + dropoffHtml + '</td>' +
+              '<td>' + addressHtml(s.address, 48) + dropoffHtml + '</td>' +
               '<td>' + escHtml(s.customerNote || '—') + '</td>' +
               '<td>' + statusHtml + '</td>' +
               '<td>' + podHtml + '</td>' +
