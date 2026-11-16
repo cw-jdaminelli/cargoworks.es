@@ -722,70 +722,116 @@ function getReturnOverrideMinutes(event){
   }
 }
 
+// An order lives entirely in its calendar event's description (summary,
+// admin data, raw payload), and Google Calendar keeps only about the first
+// 8,192 characters of it. A route of ~13+ stops used to lose its raw payload
+// past that point — the rider and dispatcher then saw the order with no
+// route, customer or full reference. A description that won't fit as plain
+// text stores the admin data and payload gzip-compressed instead (36 fully
+// delivered stops come to about 7,000 characters), and one that still won't
+// fit is refused rather than saved half-written.
+const DESCRIPTION_PLAIN_MAX = 7000;
+const DESCRIPTION_MAX = 8000;
+const PACKED_JSON_PREFIX = 'gz:';
+
+function packOrderJson(value){
+  const blob = Utilities.newBlob('', 'application/json').setDataFromString(JSON.stringify(value), 'UTF-8');
+  return PACKED_JSON_PREFIX + Utilities.base64Encode(Utilities.gzip(blob).getBytes());
+}
+
+// Reads JSON stored by buildEventDescription, plain or packed.
+function parseOrderJson(text){
+  const value = String(text || '').trim();
+  if (value.indexOf(PACKED_JSON_PREFIX) !== 0) return JSON.parse(value);
+  const gz = Utilities.newBlob(Utilities.base64Decode(value.slice(PACKED_JSON_PREFIX.length)), 'application/x-gzip');
+  return JSON.parse(Utilities.ungzip(gz).getDataAsString('UTF-8'));
+}
+
+// Without adminData it's only text (the owner's booking email), never packed.
 function buildEventDescription(payload, adminData){
+  let text;
   try {
-    const customer = payload.customer || {};
-    const quote = payload.quote || {};
-    const route = quote.route || {};
-    const lines = [];
-    if (payload && payload.reference) {
-      lines.push('Reference: ' + String(payload.reference || ''));
-      lines.push('');
-    }
-    lines.push('Customer');
-    lines.push('Name: ' + String(customer.name || ''));
-    lines.push('Email: ' + String(customer.email || ''));
-    lines.push('Phone: ' + String(customer.phone || ''));
-    lines.push('');
-    lines.push('Schedule');
-    lines.push('Date: ' + String((quote.schedule && quote.schedule.date) || ''));
-    lines.push('Time: ' + String((quote.schedule && quote.schedule.time) || ''));
-    lines.push('');
-    lines.push('Route');
-    const descStops = getUnifiedStops(route, adminData);
-    lines.push('Pickup: ' + String((descStops[0] && descStops[0].address) || ''));
-    descStops.slice(1, -1).forEach(function(stop, idx){
-      lines.push('Stop ' + (idx + 1) + ': ' + String((stop && stop.address) || ''));
-    });
-    lines.push('Dropoff: ' + String((descStops.length && descStops[descStops.length - 1].address) || ''));
-    lines.push('');
-    lines.push('Quote');
-    lines.push('Total: ' + String(quote.total || ''));
-    lines.push('ETA (mins): ' + String(quote.etaMins || ''));
-    lines.push('Distance (km): ' + String(quote.totalKm || ''));
-    lines.push('');
-    if (payload.notes) {
-      lines.push('Notes');
-      lines.push(String(payload.notes || ''));
-      lines.push('');
-    }
-    if (payload && payload.paymentUrl) {
-      lines.push('Payment');
-      lines.push(String(payload.paymentUrl || ''));
-      lines.push('');
-    }
-    if (payload && payload.whatsappUrl) {
-      lines.push('WhatsApp');
-      lines.push(String(payload.whatsappUrl || ''));
-      lines.push('');
-    }
-    if (payload && payload.trackingUrl) {
-      lines.push('Tracking');
-      lines.push(String(payload.trackingUrl || ''));
-      lines.push('');
-    }
-    if (adminData) {
-      lines.push(ADMIN_DATA_START);
-      lines.push(JSON.stringify(adminData));
-      lines.push(ADMIN_DATA_END);
-      lines.push('');
-    }
-    lines.push('Raw JSON');
-    lines.push(JSON.stringify(payload));
-    return lines.join('\n');
+    text = describeOrder(payload, adminData, false);
   } catch (err) {
     return 'Booking payload unavailable.';
   }
+  if (!adminData || text.length <= DESCRIPTION_PLAIN_MAX) return text;
+  // Errors from here on throw, so the caller saves nothing instead of a
+  // broken order.
+  text = describeOrder(payload, adminData, true);
+  if (text.length > DESCRIPTION_MAX) {
+    const stopCount = getUnifiedStops((payload.quote || {}).route || {}, adminData).length;
+    throw new Error('This order is too long to save (' + stopCount + ' stops) — split it into two orders.');
+  }
+  return text;
+}
+
+// packed: a short summary (no stop-by-stop list or links) with the admin
+// data and payload compressed.
+function describeOrder(payload, adminData, packed){
+  const customer = payload.customer || {};
+  const quote = payload.quote || {};
+  const route = quote.route || {};
+  const lines = [];
+  if (payload && payload.reference) {
+    lines.push('Reference: ' + String(payload.reference || ''));
+    lines.push('');
+  }
+  lines.push('Customer');
+  lines.push('Name: ' + String(customer.name || ''));
+  lines.push('Email: ' + String(customer.email || ''));
+  lines.push('Phone: ' + String(customer.phone || ''));
+  lines.push('');
+  lines.push('Schedule');
+  lines.push('Date: ' + String((quote.schedule && quote.schedule.date) || ''));
+  lines.push('Time: ' + String((quote.schedule && quote.schedule.time) || ''));
+  lines.push('');
+  lines.push('Route');
+  const descStops = getUnifiedStops(route, adminData);
+  lines.push('Pickup: ' + String((descStops[0] && descStops[0].address) || ''));
+  if (packed) {
+    if (descStops.length > 2) lines.push((descStops.length - 2) + ' stops in between (see the dispatcher)');
+  } else {
+    descStops.slice(1, -1).forEach(function(stop, idx){
+      lines.push('Stop ' + (idx + 1) + ': ' + String((stop && stop.address) || ''));
+    });
+  }
+  lines.push('Dropoff: ' + String((descStops.length && descStops[descStops.length - 1].address) || ''));
+  lines.push('');
+  lines.push('Quote');
+  lines.push('Total: ' + String(quote.total || ''));
+  lines.push('ETA (mins): ' + String(quote.etaMins || ''));
+  lines.push('Distance (km): ' + String(quote.totalKm || ''));
+  lines.push('');
+  if (payload.notes && !packed) {
+    lines.push('Notes');
+    lines.push(String(payload.notes || ''));
+    lines.push('');
+  }
+  if (payload && payload.paymentUrl && !packed) {
+    lines.push('Payment');
+    lines.push(String(payload.paymentUrl || ''));
+    lines.push('');
+  }
+  if (payload && payload.whatsappUrl && !packed) {
+    lines.push('WhatsApp');
+    lines.push(String(payload.whatsappUrl || ''));
+    lines.push('');
+  }
+  if (payload && payload.trackingUrl) {
+    lines.push('Tracking');
+    lines.push(String(payload.trackingUrl || ''));
+    lines.push('');
+  }
+  if (adminData) {
+    lines.push(ADMIN_DATA_START);
+    lines.push(packed ? packOrderJson(adminData) : JSON.stringify(adminData));
+    lines.push(ADMIN_DATA_END);
+    lines.push('');
+  }
+  lines.push('Raw JSON');
+  lines.push(packed ? packOrderJson(payload) : JSON.stringify(payload));
+  return lines.join('\n');
 }
 
 function buildDefaultAdminData(payload, payment, trackingUrl, updatesPreference, trackingToken){
@@ -1766,15 +1812,21 @@ function handleVisionExtract(payload) {
     var isAdmin = !rider && isAdminAuthorized(String(payload.token || '').trim());
     if (!rider && !isAdmin) return jsonResponse({ error: 'Unauthorized' }, 401);
 
+    // A photo of the sheet, or the same list pasted as text (the rider app's
+    // paste box) — read with the same rules either way.
     var imageBase64 = String(payload.image || '').trim();
     var mimeType = String(payload.mimeType || 'image/jpeg').trim();
-    if (!imageBase64) return jsonResponse({ error: 'Missing image' }, 400);
+    var pastedText = String(payload.text || '').trim();
+    if (!imageBase64 && !pastedText) return jsonResponse({ error: 'Missing image or text' }, 400);
 
     var apiKey = String(PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY') || '').trim();
     if (!apiKey) return jsonResponse({ error: 'Anthropic API key not configured' }, 500);
 
+    var source = imageBase64
+      ? 'this image of a delivery sheet'
+      : 'this pasted list of deliveries (a copied sheet, WhatsApp message or email)';
     var prompt = [
-      'Extract every delivery entry from this image of a delivery sheet — one entry per',
+      'Extract every delivery entry from ' + source + ' — one entry per',
       'row/line item, EVEN IF it looks incomplete, messy, or you are unsure it is a real',
       'address. Do not skip or drop an entry just because it seems doubtful — the app will',
       'flag anything it cannot confidently place on a map, but it can only do that if every',
@@ -1799,18 +1851,15 @@ function handleVisionExtract(payload) {
       '- Deduplicate only EXACT repeats (same address AND same unit AND same name) — keep entries',
       '  that share an address but differ in unit or name, since those are different deliveries.',
       '- Return ONLY the JSON array, no explanation, no markdown fences'
-    ].join('\n');
+    ].join('\n') + (pastedText ? '\n\nPasted text:\n' + pastedText : '');
 
+    var content = [];
+    if (imageBase64) content.push({ type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } });
+    content.push({ type: 'text', text: prompt });
     var requestBody = {
       model: 'claude-sonnet-4-6',
       max_tokens: 4000,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } },
-          { type: 'text', text: prompt }
-        ]
-      }]
+      messages: [{ role: 'user', content: content }]
     };
 
     var call = callAnthropicMessages(apiKey, requestBody, {}, 'Vision API');
@@ -1915,7 +1964,7 @@ function handleVisionExtract(payload) {
     // a logging failure break the response the rider is waiting on.
     // The rider app sends deferLog and archives through riderLogScan after it
     // has its results, so the Drive/Sheets writes don't add seconds to the scan.
-    if (stops.length > 0 && !payload.deferLog) {
+    if (stops.length > 0 && !payload.deferLog && imageBase64) {
       try {
         logScanResult({
           riderId: riderId,
@@ -3852,11 +3901,18 @@ function extractPayloadFromDescription(desc){
       for (let i = idx + 1; i < lines.length; i++) {
         const line = String(lines[i] || '').trim();
         if (!line) continue;
-        try { return JSON.parse(line); } catch(_) {}
+        try { return parseOrderJson(line); } catch(_) {}
       }
+      // Cut off: no payload — never the admin data line below, which a
+      // save would then write back as the order.
+      return null;
     }
+    let inAdminData = false;
     for (let j = 0; j < lines.length; j++) {
       const line = String(lines[j] || '').trim();
+      if (line === ADMIN_DATA_START) inAdminData = true;
+      if (line === ADMIN_DATA_END) inAdminData = false;
+      if (inAdminData) continue;
       if (line.charAt(0) === '{' && line.charAt(line.length - 1) === '}') {
         try { return JSON.parse(line); } catch(_) {}
       }
@@ -3875,7 +3931,7 @@ function extractAdminData(desc){
     if (start < 0 || end < 0 || end <= start) return null;
     const jsonText = text.slice(start + ADMIN_DATA_START.length, end).trim();
     if (!jsonText) return null;
-    return JSON.parse(jsonText);
+    return parseOrderJson(jsonText);
   } catch (err) {
     return null;
   }
@@ -3919,6 +3975,10 @@ function ensureAdminData(desc, payload){
 }
 
 function upsertAdminData(desc, adminData){
+  // Rebuilt in full when the payload is readable, so admin-only updates
+  // follow buildEventDescription's size rules too.
+  const payload = extractPayloadFromDescription(desc);
+  if (payload) return buildEventDescription(payload, adminData);
   const block = ADMIN_DATA_START + '\n' + JSON.stringify(adminData) + '\n' + ADMIN_DATA_END;
   const text = String(desc || '');
   if (text.indexOf(ADMIN_DATA_START) >= 0 && text.indexOf(ADMIN_DATA_END) >= 0) {
@@ -4177,7 +4237,7 @@ function extractDispatcherNotes(timeline){
 }
 
 function extractReferenceFromText(text){
-  const match = String(text || '').match(/CW-\d{8}-[A-Z0-9]{4}/i);
+  const match = String(text || '').match(/CW-\d{8}-[A-Z0-9]{4,8}/i);
   return match ? String(match[0]).toUpperCase() : '';
 }
 
@@ -5772,6 +5832,63 @@ function setupTrevolAccount() {
     Logger.log(ref + ': ' + count + ' stops, EUR ' + quote.total.toFixed(2) + ' + IVA');
   });
   Logger.log('Done: ' + stopsTotal + ' stops, EUR ' + netTotal.toFixed(2) + ' + IVA (EUR ' + (Math.round(netTotal * 121) / 100).toFixed(2) + ' with IVA).');
+}
+
+// ONE-OFF (2026-11-16): run once from the Apps Script editor (select
+// repairTruncatedOrders, press Run) after deploying the compressed
+// descriptions (buildEventDescription). Orders whose description the
+// calendar cut off — route, customer and full reference lost, e.g.
+// CW-16112026-BB1E — get their details back from the orders log, which keeps
+// every saved version in full. Their current status, rider and history are
+// kept. Safe to re-run: orders that read fine are left alone.
+function repairTruncatedOrders() {
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  const day = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const broken = cal.getEvents(new Date(now - 60 * day), new Date(now + 60 * day)).filter(function(event) {
+    const desc = String(event.getDescription() || '');
+    if (desc.indexOf('Raw JSON') < 0) return false;
+    const payload = extractPayloadFromDescription(desc);
+    return !payload || !payload.quote || !payload.customer;
+  });
+  if (!broken.length) {
+    Logger.log('No cut-off orders found.');
+    return;
+  }
+
+  const sheet = ensureOrdersLogSheet();
+  const rowCount = sheet.getLastRow() - 1;
+  const loggedEventIds = rowCount > 0 ? sheet.getRange(2, 3, rowCount, 1).getValues() : [];
+  broken.forEach(function(event) {
+    // The newest log entry for this order that still has its whole route.
+    let restored = null;
+    for (let i = loggedEventIds.length - 1; i >= 0 && !restored; i--) {
+      if (String(loggedEventIds[i][0]) !== event.getId()) continue;
+      const cells = sheet.getRange(i + 2, 23, 1, 2).getValues()[0];
+      let payload = null;
+      try { payload = JSON.parse(String(cells[0] || '')); } catch (_) {}
+      if (!payload || !payload.quote || !payload.customer || getUnifiedStops(payload.quote.route || {}, null).length < 2) continue;
+      let loggedAdmin = null;
+      try { loggedAdmin = JSON.parse(String(cells[1] || '')); } catch (_) {}
+      restored = { payload: payload, loggedAdmin: loggedAdmin };
+    }
+    if (!restored) {
+      Logger.log('NOT RESTORED (no full copy in the orders log): ' + event.getTitle());
+      return;
+    }
+    const desc = String(event.getDescription() || '');
+    // Admin data still on the event is newer (status, rider); the log's copy
+    // only if that was lost too.
+    const adminSource = extractAdminData(desc) ? desc
+      : ADMIN_DATA_START + '\n' + JSON.stringify(restored.loggedAdmin || {}) + '\n' + ADMIN_DATA_END;
+    const adminData = ensureAdminData(adminSource, restored.payload);
+    pushAdminTimeline(adminData, adminData.status, 'Order details restored from the orders log (the calendar had cut them off)', 'system');
+    adminData.timeline[adminData.timeline.length - 1].internal = true;
+    event.setDescription(buildEventDescription(restored.payload, adminData));
+    const stops = getUnifiedStops(restored.payload.quote.route || {}, adminData).length;
+    Logger.log('Restored ' + restored.payload.reference + ': ' + adminData.status + ', ' + stops + ' stops (pickup and dropoff included)' +
+      (adminData.rider && adminData.rider.name ? ', rider ' + adminData.rider.name : ''));
+  });
 }
 
 function testAccountOrder() {

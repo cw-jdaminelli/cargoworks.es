@@ -2000,8 +2000,10 @@
 
       // Scan label section — only for rider's own active orders. Placed after
       // the primary action area (Order info / POD / stop completion) since
-      // it's an occasional-use tool, not the main flow.
-      if (order.riderName === RIDER_NAME && activeStatuses.indexOf(order.status) >= 0) {
+      // it's an occasional-use tool, not the main flow. Also on a Confirmed
+      // order the dispatcher already gave this rider, so the route sheet can
+      // go on before the run starts.
+      if (order.riderName === RIDER_NAME && (activeStatuses.indexOf(order.status) >= 0 || order.status === 'Confirmed')) {
         body.appendChild(buildScanSection(order));
       }
 
@@ -2672,7 +2674,7 @@
 
       var header = document.createElement('div');
       header.className = 'scan-section-header';
-      header.textContent = '📷 Scan Route Sheet';
+      header.textContent = '📷 Scan or paste route sheet';
       wrap.appendChild(header);
 
       var scanBtn = document.createElement('button');
@@ -2690,6 +2692,39 @@
       fileInput.style.display = 'none';
       wrap.appendChild(fileInput);
 
+      // The same list pasted as text (copied sheet, WhatsApp message) is read
+      // the same way as a photo of it.
+      var pasteBtn = document.createElement('button');
+      pasteBtn.type = 'button';
+      pasteBtn.className = 'scan-action-btn secondary';
+      pasteBtn.style.marginTop = '10px';
+      pasteBtn.textContent = '📋 Paste addresses instead';
+      wrap.appendChild(pasteBtn);
+
+      var pasteWrap = document.createElement('div');
+      pasteWrap.className = 'scan-add-typewrap';
+      pasteWrap.style.marginTop = '10px';
+      var pasteHint = document.createElement('div');
+      pasteHint.className = 'scan-add-hint';
+      pasteHint.textContent = 'Paste the list as it came: names, floors and doors are picked out too.';
+      var pasteArea = document.createElement('textarea');
+      pasteArea.placeholder = 'Maria García — Carrer de Mallorca 550, 3r 2a\nValència 627\n...';
+      pasteArea.style.minHeight = '140px';
+      var pasteRow = document.createElement('div');
+      pasteRow.className = 'scan-add-row';
+      var pasteCancel = document.createElement('button');
+      pasteCancel.type = 'button';
+      pasteCancel.className = 'scan-add-cancel';
+      pasteCancel.textContent = 'Cancel';
+      var pasteRead = document.createElement('button');
+      pasteRead.type = 'button';
+      pasteRead.className = 'scan-add-confirm';
+      pasteRead.textContent = '✓ Read addresses';
+      pasteRow.appendChild(pasteCancel);
+      pasteRow.appendChild(pasteRead);
+      [pasteHint, pasteArea, pasteRow].forEach(function(el) { pasteWrap.appendChild(el); });
+      wrap.appendChild(pasteWrap);
+
       var statusEl = document.createElement('div');
       statusEl.className = 'scan-status';
       wrap.appendChild(statusEl);
@@ -2705,11 +2740,29 @@
       resultEl.className = 'scan-result';
       wrap.appendChild(resultEl);
 
+      pasteBtn.addEventListener('click', function() {
+        pasteWrap.classList.add('visible');
+        pasteBtn.style.display = 'none';
+        pasteArea.focus();
+      });
+      pasteCancel.addEventListener('click', function() {
+        pasteWrap.classList.remove('visible');
+        pasteBtn.style.display = '';
+      });
+      pasteRead.addEventListener('click', function() {
+        var text = pasteArea.value.trim();
+        if (!text) { pasteArea.focus(); return; }
+        pasteWrap.classList.remove('visible');
+        pasteBtn.style.display = '';
+        clearScanRetry(retryWrap);
+        doScanExtract({ text: text }, scanBtn, statusEl, resultEl, orderEventId, retryWrap);
+      });
+
       scanBtn.addEventListener('click', function() {
         openScanCamera(
           function(b64) {
             clearScanRetry(retryWrap);
-            doScanExtract(b64, 'image/jpeg', scanBtn, statusEl, resultEl, orderEventId, retryWrap);
+            doScanExtract({ image: b64, mimeType: 'image/jpeg' }, scanBtn, statusEl, resultEl, orderEventId, retryWrap);
           },
           function() { fileInput.value = ''; fileInput.click(); }
         );
@@ -2735,7 +2788,7 @@
         img.onload = function() {
           var b64 = toScanJpegBase64(img, img.width, img.height);
           URL.revokeObjectURL(imgUrl);
-          doScanExtract(b64, 'image/jpeg', scanBtn, statusEl, resultEl, orderEventId, retryWrap);
+          doScanExtract({ image: b64, mimeType: 'image/jpeg' }, scanBtn, statusEl, resultEl, orderEventId, retryWrap);
         };
         img.onerror = function() {
           URL.revokeObjectURL(imgUrl);
@@ -2841,14 +2894,14 @@
     // A failed scan (bad connection, server hiccup, Claude timing out) is no
     // reason to make the rider physically retake the photo — the image
     // they already captured is still good. Offer to resend it as-is.
-    function showScanRetry(retryWrap, onRetry) {
+    function showScanRetry(retryWrap, onRetry, isText) {
       if (!retryWrap) return;
       retryWrap.innerHTML = '';
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'btn btn-primary';
       btn.style.marginTop = '6px';
-      btn.textContent = '🔄 Retry same photo';
+      btn.textContent = isText ? '🔄 Retry same text' : '🔄 Retry same photo';
       btn.addEventListener('click', function() {
         clearScanRetry(retryWrap);
         onRetry();
@@ -2856,7 +2909,10 @@
       retryWrap.appendChild(btn);
     }
 
-    async function doScanExtract(b64, mime, scanBtn, statusEl, resultEl, orderEventId, retryWrap) {
+    // sheet: { image, mimeType } (a photo of the route sheet) or { text }
+    // (the same list pasted).
+    async function doScanExtract(sheet, scanBtn, statusEl, resultEl, orderEventId, retryWrap) {
+      function retry() { doScanExtract(sheet, scanBtn, statusEl, resultEl, orderEventId, retryWrap); }
       scanBtn.disabled = true;
       scanBtn.innerHTML = '⏳ Sending to Claude…';
       showScanStatus(statusEl, 'Extracting addresses — this can take 10–20 seconds…', 'info');
@@ -2865,16 +2921,14 @@
       resultEl.innerHTML = '';
 
       try {
-        var res = await api('POST', {
+        var res = await api('POST', Object.assign({
           action: 'visionExtract',
           id: RIDER_ID,
-          image: b64,
-          mimeType: mime,
           eventId: orderEventId || '',
           // Archive separately (riderLogScan below) so the Drive/Sheets
           // writes don't hold up the rider's results.
           deferLog: true
-        }, { timeoutMs: 75000 });
+        }, sheet.text ? { text: sheet.text } : { image: sheet.image, mimeType: sheet.mimeType }), { timeoutMs: 75000 });
 
         if (res.error) {
           var errMsg = (res.errorKind === 'timeout' || res.errorKind === 'server_unavailable')
@@ -2883,9 +2937,7 @@
           showScanStatus(statusEl, errMsg, 'error');
           scanBtn.disabled = false;
           scanBtn.innerHTML = '📷 Tap to scan route sheet';
-          showScanRetry(retryWrap, function() {
-            doScanExtract(b64, mime, scanBtn, statusEl, resultEl, orderEventId, retryWrap);
-          });
+          showScanRetry(retryWrap, retry, sheet.text);
           return;
         }
 
@@ -2928,27 +2980,25 @@
           };
         });
 
-        if (stops.length > 0) {
+        if (stops.length > 0 && sheet.image) {
           // Background archive of this read for the office — not awaited,
           // and a failure here never affects the rider.
           api('POST', {
             action: 'riderLogScan',
             id: RIDER_ID,
             eventId: orderEventId || '',
-            image: b64,
-            mimeType: mime,
+            image: sheet.image,
+            mimeType: sheet.mimeType,
             stops: stops
           }, { timeoutMs: 120000 });
         }
 
         if (stops.length === 0) {
-          showScanStatus(statusEl, 'No addresses found. Try a clearer photo with better lighting.', 'error');
+          showScanStatus(statusEl, sheet.text ? 'No addresses found in the pasted text.' : 'No addresses found. Try a clearer photo with better lighting.', 'error');
           scanBtn.disabled = false;
           scanBtn.innerHTML = '📷 Tap to scan route sheet';
           _appendMode = false;
-          showScanRetry(retryWrap, function() {
-            doScanExtract(b64, mime, scanBtn, statusEl, resultEl, orderEventId, retryWrap);
-          });
+          showScanRetry(retryWrap, retry, sheet.text);
           return;
         }
 
@@ -2981,9 +3031,7 @@
         showScanStatus(statusEl, 'Request failed: ' + (err.message || String(err)), 'error');
         scanBtn.disabled = false;
         scanBtn.innerHTML = '📷 Tap to scan route sheet';
-        showScanRetry(retryWrap, function() {
-          doScanExtract(b64, mime, scanBtn, statusEl, resultEl, orderEventId, retryWrap);
-        });
+        showScanRetry(retryWrap, retry, sheet.text);
       }
     }
 
